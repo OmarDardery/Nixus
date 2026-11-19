@@ -94,7 +94,6 @@ def parser_args():
     mode.add_argument('--switch', dest='switch', action='store_true', help='Install the full stack (default)')
     mode.add_argument('--wizard', dest='switch', action='store_false', help='Only bootstrap the optional web wizard')
     parser.set_defaults(switch=True)
-    parser.add_argument('--web-enrollment', action='store_true', help='Use console-approved administrator enrollment with --wizard')
     parser.add_argument('--ssh-key', action='append', default=[], type=Path, help='Client public key file, never a private key')
     ssh = parser.add_mutually_exclusive_group()
     ssh.add_argument('--ssh-password-login', action='store_true', dest='ssh_password_login', help='Enable SSH password login for non-root Linux accounts (default on fresh installs)')
@@ -105,7 +104,7 @@ def parser_args():
     parser.add_argument('--no-update', action='store_true', help='Keep the current platform source on retry')
     interaction = parser.add_mutually_exclusive_group()
     interaction.add_argument('--interactive', action='store_true', help='Interview on a terminal and review planned services')
-    interaction.add_argument('--non-interactive', action='store_true', help='Keep unattended defaults and never prompt')
+    interaction.add_argument('--non-interactive', action='store_true', help='Default; kept for compatibility. Never prompt')
     parser.add_argument('--answers', type=Path, help='Versioned, non-secret JSON answers file (for unattended use)')
     parser.add_argument('--plan-only', action='store_true', help='Preview the plan; never publish or activate changes')
     parser.add_argument('--workloads', choices=['containers', 'compose', 'both'])
@@ -114,8 +113,6 @@ def parser_args():
     parser.add_argument('--laptop-mode', action='store_true', help='Enable always-on laptop lid policy')
     parser.add_argument('--no-monitoring', action='store_true', help='Disable host metric collection')
     args = parser.parse_args()
-    if args.web_enrollment and args.switch:
-        parser.error('--web-enrollment requires --wizard')
     return parser, args
 
 
@@ -145,14 +142,12 @@ def installed_host():
 
 
 def ensure_portal_account():
-    """Keep legacy private provisioning compatible without returning plaintext.
+    """Open console-approved browser enrollment unless a portal account exists.
 
-    Console-approved enrollment is still an explicit release-gated option. A
-    legacy credential may be loaded privately to establish its existing verifier;
-    summaries and callers never receive that credential.
+    No credential is generated, stored for later retrieval, or returned.
     """
     import enrollment
-    enrollment.ensure_legacy_account()
+    enrollment.ensure_web_enrollment()
 
 
 def publish_etc():
@@ -174,9 +169,12 @@ def summarize(settings, record=None):
     address = diagnostics.management_address(settings)
     if not settings['management']['configure']:
         print('Preserving current addressing: ' + address + '. DHCP is retained; no static address was assigned.')
-    print('Nixus: https://' + address + ':' + str(settings['setup']['port']) + ' (username: admin)')
-    if (rt.STATE / 'web-enrollment').is_file() and not (rt.STATE / 'auth.json').exists():
-        print('Open the portal, then approve its browser code with sudo nixus-admin approve-enrollment.')
+    print('Nixus: https://' + address + ':' + str(settings['setup']['port']))
+    import enrollment
+    if not enrollment.account_valid():
+        print('Next: open the portal in your browser, then approve the code it shows from this host:')
+        print('  sudo nixus-admin approve-enrollment')
+        print('Then choose your administrator name and password in that browser and finish setup there.')
     else:
         print('Use your existing portal account. Choose a replacement password from an authorized host terminal: sudo nixus-admin reset-password.')
     if settings['ready']:
@@ -328,8 +326,8 @@ def main():
             if getattr(args, arg): flags[field] = True
         if args.no_monitoring: flags['monitoring'] = False
         if args.guest_subnet: flags['guestSubnet'] = args.guest_subnet
-        explicit_intent = (args.answers is not None or args.interactive or bool(flags) or args.plan_only or
-                           (not existing and sys.stdin.isatty() and not args.non_interactive))
+        # One command installs safe defaults; the browser walkthrough handles choices.
+        explicit_intent = args.answers is not None or args.interactive or bool(flags) or args.plan_only
         proposal = None
         if explicit_intent:
             draft = rt.STATE / 'installer-intent-draft.json'
@@ -339,8 +337,7 @@ def main():
                 # existing host metrics or the laptop lid policy.
                 chosen.update(laptop=default['maintenance']['laptopMode'],
                               monitoring=default['monitoring']['collection'])
-            interview_mode = args.interactive or (not existing and sys.stdin.isatty() and
-                                                  not args.non_interactive and not args.answers)
+            interview_mode = args.interactive
             if interview_mode:
                 if draft.is_file() and not args.plan_only and not args.answers:
                     chosen = intent.normalize(rt.read_json(draft))
@@ -356,7 +353,7 @@ def main():
             if args.plan_only:
                 print('Plan only: no source, network, guest, or system changes were made.')
                 return
-            if (args.interactive or (not existing and sys.stdin.isatty() and not args.non_interactive and not args.answers)):
+            if args.interactive:
                 if input('Apply this reviewed plan using the guarded Nixus installer? [y/N] ').strip().lower() not in ('y', 'yes'):
                     print('Cancelled before publishing any configuration.')
                     return
@@ -442,9 +439,6 @@ def main():
                 raise ValueError('Source changed during planning; retry to preserve the latest local changes')
             if args.switch:
                 rt.write_json(rt.machine_path(stage, 'settings'), candidate)
-    if args.web_enrollment:
-        import accounts
-        accounts.enable_enrollment()
     ensure_portal_account()
     pin = rt.STATE / 'original-system'
     if not pin.exists() and installation.get('originalSystem'):

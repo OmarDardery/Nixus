@@ -77,21 +77,19 @@ class RetirementTests(unittest.TestCase):
         self.assertFalse(hasattr(local_access, 'operator_password'))
         self.assertFalse(hasattr(installer, 'setup_password'))
 
-    def test_existing_private_bootstrap_input_is_not_regenerated_or_returned(self):
+    def test_stray_bootstrap_input_is_never_adopted_or_returned(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
                 patch.object(installer.secrets, 'token_urlsafe') as generate:
             rt.atomic(rt.STATE / 'setup-password', SECRETS['setup'])
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                result = installer.ensure_portal_account()
+                with self.assertRaises(ValueError) as error:
+                    installer.ensure_portal_account()
             generate.assert_not_called()
-            self.assertTrue(result is None, 'Credential initialization must not return data')
-            self.assertTrue(accounts.matches('admin', SECRETS['setup']))
-            original = (rt.STATE / 'auth.json').read_bytes()
-            self.assertTrue(installer.ensure_portal_account() is None, 'Credential initialization must not return data')
-            self.assertTrue((rt.STATE / 'auth.json').read_bytes() == original, 'Existing verifier changed unexpectedly')
-            self.assertTrue((rt.STATE / 'setup-password').exists())
-            assert_public_clean(self, [result, output.getvalue()])
+            self.assertFalse((rt.STATE / 'auth.json').exists())
+            self.assertFalse((rt.STATE / 'web-enrollment').exists())
+            self.assertEqual((rt.STATE / 'setup-password').read_text(), SECRETS['setup'])
+            assert_public_clean(self, [str(error.exception), output.getvalue()])
 
     def test_supplied_password_commit_retires_setup_plaintext_and_revokes_old_session(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \

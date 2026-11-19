@@ -28,10 +28,10 @@ Append options after `--` to the command:
 |---|---|
 | `--ssh-key /path/to/laptop.pub` | Enroll a client public key for the `operator` account |
 | `--no-ssh-password-login` | Choose key-only SSH; remote installs then require a client key |
-| `--no-apps` | Omit the Docker/Arcane VM on first installation |
 | `--adopt-incus` | Explicitly select the backup-and-adopt workflow described below |
 | `--no-update` | Keep the installed platform source on retry |
-| `--wizard` | Bootstrap the web setup instead of installing the full stack |
+| `--wizard` | Bootstrap only the portal instead of installing the full stack |
+| `--interactive` | Ask about workloads, access and backups on the terminal before activation |
 | `--guest-subnet 10.78.0.0/24` | Select an unused private guest subnet |
 
 The default enables SSH password login for non-root Linux accounts, including
@@ -69,23 +69,23 @@ separate identities. Enroll the Incus browser certificate through the portal.
 ## Portal access without printed passwords
 
 The install, retry, resume and update commands report status, service URLs,
-fingerprints and recovery steps. They do not return or print generated credentials.
-On a host explicitly installed with `--wizard --web-enrollment`, open the HTTPS
-portal, verify the CA, approve the displayed browser code with
-`sudo nixus-admin approve-enrollment`, then choose the portal password in that
-browser. Existing portal accounts keep their current login.
+fingerprints and recovery steps. They never generate, print or return a credential.
 
-For the default legacy path or forgotten portal access, an authorized administrator
-can run `sudo nixus-admin reset-password` from a private local/SSH/Cockpit terminal
-and choose a new password. This is rotation, not retrieval. The command refuses
-non-terminal input or an echoing password prompt. A successful verifier commit
-retires the old setup plaintext, and old sessions are rejected. Arcane and
-Linux passwords remain independent.
+A fresh installation finishes with browser enrollment open:
 
-Private legacy service files are preserved while secure enrollment/recovery
-release gates are completed. Do not delete them simply to remove output. Default
-web-first enrollment and browser recovery remain gated on OmarDardery/nixlab#63/OmarDardery/nixlab#64/#28; transient
-Arcane bootstrap and supplied-password reset remain OmarDardery/nixlab#65/OmarDardery/nixlab#66 work.
+1. Open the printed `https://ADDRESS:9440` portal and compare the management CA
+   fingerprint with the one the installer printed.
+2. The portal shows a one-time code. On the host (console, SSH or Cockpit), run
+   `sudo nixus-admin approve-enrollment` and paste that code.
+3. Return to the same browser and choose the administrator name and password.
+
+Approval expires after ten minutes or at reboot; refreshing the page shows a new
+code. Retrying the install command before the claim keeps enrollment open.
+
+For forgotten portal access, an authorized administrator runs
+`sudo nixus-admin reset-password` from a private local/SSH/Cockpit terminal and
+chooses a new password. This is rotation, not retrieval; old sessions are rejected.
+
 
 ## Retry and source updates
 
@@ -157,12 +157,6 @@ Transaction logs stay under `/var/lib/nixus-admin/jobs/<id>/build.log`.
 The installer prints a fixed failure message and saves a non-secret
 `installation-failure.json`; transaction and rollback status remain separate. Recovery skips absent services and
 NetworkManager connections that no longer exist.
-
-Arcane recovery uses its installed upstream `admin reset-password` command in a private interactive guest terminal. It asks for a supplied password, leaves Docker workloads and persistent application data in place, and prints no generated credential. Back up `/srv/arcane` (including its independent encryption key) before recovery.
-
-```sh
-sudo nixus-admin arcane reset-password
-```
 
 ## Installation regression checklist
 
