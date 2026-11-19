@@ -15,19 +15,19 @@ const state = {
 const app = document.querySelector("#app");
 // Page IDs continue to match the existing renderers and API handlers.
 const pages = [
-  ["overview","Overview"],["projects","Projects"],["guests","Guests"],["network","Networking"],["storage","Storage"],
+  ["setup","Setup"],["overview","Overview"],["projects","Projects"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
   ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Help"],
 ];
 const navigationGroups = [
-  ["WORKSPACE",["overview","projects","guests"]],
+  ["WORKSPACE",["setup","overview","projects","guests"]],
   ["INFRASTRUCTURE",["network","storage","hardware","integrations"]],
   ["SECURITY",["security","accounts","ingress"]],
   ["OPERATIONS",["operations","review","system","files"]],
   ["RESOURCES",["commands"]],
 ];
-const pageIcons = {overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
+const pageIcons = {setup:"✓",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
@@ -222,7 +222,7 @@ function shell() {
       <button class="theme-toggle" id="ui-theme-toggle" aria-label="Toggle light and dark theme" type="button">◐</button>
       <a class="pill" href="/docs/beta.md">${esc(state.status.release?.version || "Development")}</a>
       <span class="principal" title="Signed-in portal identity">${esc(state.principal.username)} · ${esc(state.principal.role)}</span></div>
-  </header><main id="main" class="page" tabindex="-1">${pendingBanner()}${ownershipBanner()}${renderPage()}${stagedBanner()}
+  </header><main id="main" class="page" tabindex="-1">${pendingBanner()}${setupBanner()}${ownershipBanner()}${renderPage()}${stagedBanner()}
      <footer class="footer-note">NixOS owns the host · Incus owns guests · <a href="/docs/projects.md">Upstream credits</a></footer>
   </main></div></div>
   <dialog id="ui-jump" class="ui-dialog" aria-label="Navigate to a console page"><div class="ui-dialog-heading"><strong>Go to a page</strong><form method="dialog"><button aria-label="Close page search" type="submit">✕</button></form></div><label for="ui-search-input">Search navigation</label><input id="ui-search-input" type="search" placeholder="Guests, backups, access…" autocomplete="off"><nav aria-label="Search results">${pages.map(([id,label]) => `<button type="button" data-go="${id}">${esc(label)}</button>`).join("")}</nav></dialog>`;
@@ -236,11 +236,13 @@ function shell() {
   bindNativeProjects();
   bindFoundation();
   bindCommands();
+  bindSetup();
   bindUiChrome();
   countdown();
 }
 function renderPage() {
   return {
+    setup: setupPage,
     overview: hostOverview,
     projects: nativeProjectPage,
     guests: () => title("", "Guests & addresses", "Observed Incus guests and IP addresses. Manage guest lifecycles in Incus.") + guestNetwork(),
@@ -523,7 +525,10 @@ async function load() {
   state.host = await api("inventory");
   await refreshOverview();
   state.draft = copy(state.status.settings);
-  state.page = state.status.pending ? "review" : selectedHash();
+  await refreshSetupProgress();
+  // A fresh host opens the walkthrough unless the address names another page.
+  const requested = window.location.hash.length > 1;
+  state.page = state.status.pending ? "review" : !requested && setupIncomplete() ? "setup" : selectedHash();
   shell();
   if (!state.timer) state.timer = setInterval(poll, 3000);
 }
@@ -543,6 +548,11 @@ async function refreshOverview() {
 async function poll() {
   try {
     if (state.page === "operations") await refreshOperations(false);
+    if (state.page === "setup" || setupIncomplete()) {
+      const before = JSON.stringify(setupView.progress);
+      await refreshSetupProgress();
+      if (state.page === "setup" && before !== JSON.stringify(setupView.progress)) shell();
+    }
     let healthChanged = false;
     if (["overview","guests","system"].includes(state.page) && Date.now() - lastOverviewHealthPoll >= 30000) {
       lastOverviewHealthPoll = Date.now();

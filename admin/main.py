@@ -172,6 +172,9 @@ def backend():
                     result = accounts.enrollment_status()
                 elif self.path == '/status':
                     result = manager.status()
+                elif self.path == '/setup-progress':
+                    import setup_progress
+                    result = setup_progress.progress(manager.status())
                 elif self.path == '/inventory':
                     result = manager.host_inventory()
                 elif self.path == '/releases':
@@ -683,6 +686,7 @@ def web():
                           '/events.js': ('events.js', 'text/javascript; charset=utf-8'),
                           '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'),
                           '/commands.js': ('commands.js', 'text/javascript; charset=utf-8'),
+                          '/setup.js': ('setup.js', 'text/javascript; charset=utf-8'),
                           '/foundation.js': ('foundation.js', 'text/javascript; charset=utf-8'),
                           '/style.css': ('style.css', 'text/css; charset=utf-8'),
                           '/brand.css': ('brand.css', 'text/css; charset=utf-8'),
@@ -733,7 +737,7 @@ def web():
                 if path == '/api/browser-certificates':
                     if session['role'] != 'admin': raise access_accounts.AuthorizationError('Administrator account required')
                     return reply(self, 200, broker_request('GET', '/browser-certificates'))
-                if path in ('/api/releases', '/api/main-revision', '/api/project-imports', '/api/project/status', '/api/project-secrets'):
+                if path in ('/api/releases', '/api/main-revision', '/api/project-imports', '/api/project/status', '/api/project-secrets', '/api/setup-progress'):
                     if session['role'] != 'admin': raise access_accounts.AuthorizationError('Administrator account required')
                     return reply(self, 200, broker_request('GET', path[4:]))
                 if path.startswith('/api/deployment/'):

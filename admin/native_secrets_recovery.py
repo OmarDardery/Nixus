@@ -118,6 +118,8 @@ class RecoveryKit:
             raise ValueError("Recovery kit self-test failed")
         rt.audit("native-recovery-kit-exported", principal=actor,
                  backupCredentials=sorted(saved), encrypted=True)
+        import setup_progress
+        setup_progress.record_recovery_kit(self.manager.identity)
         return {"format": "nixus-recovery-kit-v1", "encrypted": _b64(serial),
                 "sha256": hashlib.sha256(serial).hexdigest(),
                 "verified": True, "recipient": recipient,
