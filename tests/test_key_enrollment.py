@@ -45,7 +45,7 @@ class KeyEnrollmentTests(unittest.TestCase):
             principal='root-key-enrollment')
         readiness.assert_called_once()
         self.assertIn('fresh session: ssh operator@192.0.2.10', output)
-        self.assertIn('sudo nixlab-admin config confirm ' + 'a' * 32, output)
+        self.assertIn('sudo nixus-admin config confirm ' + 'a' * 32, output)
         self.assertIn('automatic rollback remains armed', output)
         self.assertIn('Confirmation deadline:', output)
         self.assertNotIn('fixture', output)

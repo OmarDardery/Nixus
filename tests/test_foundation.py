@@ -38,7 +38,7 @@ class BackupGenerationTests(unittest.TestCase):
         for attribute, value in [('ROOT', self.root), ('PENDING', self.root / 'pending.json')]:
             p = patch.object(backup, attribute, value); p.start(); self.addCleanup(p.stop)
         p = patch.object(backup, 'incus', side_effect=self.incus); p.start(); self.addCleanup(p.stop)
-        p = patch.dict(os.environ, {'NIXLAB_DEMO_BACKUP': '0', 'NIXLAB_BACKUP_POLICY': ''}); p.start(); self.addCleanup(p.stop)
+        p = patch.dict(os.environ, {'NIXUS_DEMO_BACKUP': '0', 'NIXUS_BACKUP_POLICY': ''}); p.start(); self.addCleanup(p.stop)
 
     def incus(self, *args):
         self.calls.append(args)
@@ -94,7 +94,7 @@ class BackupGenerationTests(unittest.TestCase):
 
     def test_recovery_kit_failure_cannot_publish_or_replace_previous_generation(self):
         previous = backup.backup()
-        with patch.dict(os.environ, {'NIXLAB_RECOVERY_TOOL': '/fake/admin'}), \
+        with patch.dict(os.environ, {'NIXUS_RECOVERY_TOOL': '/fake/admin'}), \
                 patch.object(backup.subprocess, 'run', side_effect=RuntimeError('kit failed')), self.assertRaisesRegex(RuntimeError, 'kit failed'):
             backup.backup(with_recovery=True)
         self.assertEqual(json.loads((self.root / 'latest.json').read_text())['generation'], previous.name)
@@ -108,7 +108,7 @@ class BackupGenerationTests(unittest.TestCase):
 
     def test_excluded_guest_is_not_stopped_and_partial_coverage_is_explicit(self):
         policy = self.root / 'policy.json'; policy.write_text(json.dumps({'exclude': ['lab/one']}))
-        with patch.dict(os.environ, {'NIXLAB_BACKUP_POLICY': str(policy)}): directory = backup.backup()
+        with patch.dict(os.environ, {'NIXUS_BACKUP_POLICY': str(policy)}): directory = backup.backup()
         manifest = json.loads((directory / 'inventory.json').read_text())
         self.assertEqual(manifest['excluded'], ['lab/one']); self.assertEqual(manifest['coverage'], 'selected')
         self.assertNotIn('one', [g['name'] for g in manifest['guests']])
@@ -147,7 +147,7 @@ class BackupGenerationTests(unittest.TestCase):
 
     def test_missing_recovery_secrets_refuse_before_stopping_guests(self):
         response = subprocess.CompletedProcess([], 0, stdout='{"format":1,"complete":false}')
-        with patch.dict(os.environ, {'NIXLAB_RECOVERY_TOOL': '/fake/admin'}), \
+        with patch.dict(os.environ, {'NIXUS_RECOVERY_TOOL': '/fake/admin'}), \
                 patch.object(backup.subprocess, 'run', return_value=response), \
                 self.assertRaisesRegex(ValueError, 'credentials'):
             backup.backup(with_recovery=True)
@@ -220,7 +220,7 @@ class BackupGenerationTests(unittest.TestCase):
         self.assertEqual(len(groups), 3)
         self.assertEqual(next(g for g in groups if g['volumes'])['guests'], [])
         policy = self.root / 'policy.json'; policy.write_text(json.dumps({'exclude': ['lab/typo']}))
-        with patch.dict(os.environ, {'NIXLAB_BACKUP_POLICY': str(policy)}), self.assertRaisesRegex(ValueError, 'absent'):
+        with patch.dict(os.environ, {'NIXUS_BACKUP_POLICY': str(policy)}), self.assertRaisesRegex(ValueError, 'absent'):
             backup.backup()
         self.assertFalse(any(args[0] == 'stop' for args in self.calls))
 
@@ -246,7 +246,7 @@ class BackupGenerationTests(unittest.TestCase):
     def test_exclusion_protects_entire_explicit_group(self):
         policy = self.root / 'policy.json'
         policy.write_text(json.dumps({'groups': [['lab/one','lab/two']], 'exclude':['lab/one']}))
-        with patch.dict(os.environ, {'NIXLAB_BACKUP_POLICY': str(policy)}): directory = backup.backup()
+        with patch.dict(os.environ, {'NIXUS_BACKUP_POLICY': str(policy)}): directory = backup.backup()
         manifest = json.loads((directory / 'inventory.json').read_text())
         self.assertEqual(set(manifest['excluded']), {'lab/one','lab/two'})
         self.assertFalse(any(args[0] == 'stop' for args in self.calls))
@@ -256,10 +256,10 @@ class BackupGenerationTests(unittest.TestCase):
             result = original(*args)
             if args[0] == 'list':
                 values = json.loads(result)
-                values[0]['expanded_config'] = {'user.nixlab.backup': 'manual'}
+                values[0]['expanded_config'] = {'user.nixus.backup': 'manual'}
                 return json.dumps(values)
             return result
-        with patch.dict(os.environ, {'NIXLAB_BACKUP_POLICY': str(policy)}), patch.object(backup, 'incus', side_effect=manual_profile):
+        with patch.dict(os.environ, {'NIXUS_BACKUP_POLICY': str(policy)}), patch.object(backup, 'incus', side_effect=manual_profile):
             directory = backup.backup()
         self.assertEqual(set(json.loads((directory / 'inventory.json').read_text())['excluded']), {'lab/one','lab/two'})
         self.assertFalse(any(args[0] == 'stop' for args in self.calls))
@@ -441,12 +441,12 @@ class HelperRunnerTests(unittest.TestCase):
             for name in ('debian', 'adguard', 'unqualified'): (root / 'ct' / (name + '.sh')).write_text('#!/bin/bash')
             with patch.object(helper, 'SCRIPTS', root):
                 self.assertEqual(len(helper.catalog()), 3)
-                self.assertTrue(all(not item['verifiedOnNixlab'] for item in helper.catalog()))
+                self.assertTrue(all(not item['verifiedOnNixus'] for item in helper.catalog()))
 
     def test_remote_project_and_non_tty_install_are_rejected_before_commands(self):
         with tempfile.TemporaryDirectory() as folder, self.assertRaises(ValueError): helper.environment('remote:lab', Path(folder))
         with patch.object(helper.os, 'geteuid', return_value=0), patch.object(helper, 'catalog', return_value=[{'id': 'debian'}]), \
-                patch.object(sys, 'argv', ['nixlab-helpers', 'run', 'debian']), patch.object(sys.stdin, 'isatty', return_value=False), \
+                patch.object(sys, 'argv', ['nixus-helpers', 'run', 'debian']), patch.object(sys.stdin, 'isatty', return_value=False), \
                 patch.object(helper, 'doctor') as doctor, self.assertRaises(SystemExit):
             helper.main()
         doctor.assert_not_called()

@@ -1,5 +1,5 @@
 {
-  description = "NixLab: Incus-native NixOS homelab management";
+  description = "Nixus: Incus-native NixOS homelab management";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   inputs.sops-nix = {
     url = "github:Mic92/sops-nix/60182817ee048ac94b4c68ea76d5ef2e8aac730d";
@@ -37,11 +37,11 @@
         hardware.serialAliases = [ { name = "example"; vendorId = "1234"; productId = "5678"; serial = "FIXTURE-ONLY"; } ];
       };
     in {
-      # Reusable pure evaluator for a separate /srv/nixlab/projects flake.
+      # Reusable pure evaluator for a separate /srv/nixus/projects flake.
       # No system, Incus instance or host service is changed by this export.
       lib.evalProjects = import ./lib/project-workspace.nix { lib = nixpkgs.lib; };
-      nixlabProjectChecks = self.lib.evalProjects { root = ./tests/project-workspace; };
-      nixlabProjectValidationChecks = let
+      nixusProjectChecks = self.lib.evalProjects { root = ./tests/project-workspace; };
+      nixusProjectValidationChecks = let
         rejected = root: !(builtins.tryEval
           (builtins.deepSeq (self.lib.evalProjects { inherit root; }) true)).success;
       in {
@@ -57,12 +57,12 @@
         # Evaluation fixtures, never an installation target.
         validation-minimal = mkHost testSite [ ./tests/hardware.nix ];
         validation-recovery = mkHost (testSite // { setup = testSite.setup // { enable = true; }; })
-          [ ./tests/hardware.nix { nixlab.recovery.enable = true; } ];
+          [ ./tests/hardware.nix { nixus.recovery.enable = true; } ];
         validation-file-disk = mkHost testSite
           ([ ./tests/hardware.nix ] ++ (import ./lib/site-modules.nix ./tests/module-tree));
         validation-recipes = mkHost testSite
-          ([ ./tests/hardware.nix { nixlab.notifications.enable = true; } ] ++ map
-            (path: builtins.toFile "nixlab-recipe.nix" (builtins.fromJSON (builtins.readFile path)).module)
+          ([ ./tests/hardware.nix { nixus.notifications.enable = true; } ] ++ map
+            (path: builtins.toFile "nixus-recipe.nix" (builtins.fromJSON (builtins.readFile path)).module)
             [ ./admin/recipes/laptop.json ./admin/recipes/disk-health.json ./admin/recipes/private-access.json ]);
         validation-host = mkHost testSite [ ./tests/hardware.nix ];
         validation-management = mkHost (testSite // {
@@ -82,7 +82,7 @@
         }) [ ./tests/hardware.nix { networking.networkmanager.enable = true; } ] { networkManager = true; };
         validation-services = mkHost (testSite // {
           monitoring = testSite.monitoring // { history = true; };
-          backup = testSite.backup // { enable = true; repository = "sftp:backup@example.invalid:/nixlab"; };
+          backup = testSite.backup // { enable = true; repository = "sftp:backup@example.invalid:/nixus"; };
           tunnel = testSite.tunnel // { enable = true; uuid = "00000000-0000-4000-8000-000000000001";
             ingress."app.example.invalid" = "http://10.77.0.10:8080"; };
         }) [ ./tests/hardware.nix ];
@@ -101,10 +101,10 @@
           management = testSite.management // { configure = true; };
           radios = { wifi = { enable = true; interface = "wlan0"; ssid = "TEST-ONLY"; manageProfile = true; }; bluetooth.enable = true; };
           mounts = [
-            { name = "guests"; uuid = "11111111-1111-1111-1111-111111111111"; path = "/srv/nixlab/guests"; fsType = "ext4"; role = "guests"; required = true; readOnly = false; }
-            { name = "archive"; uuid = "22222222-2222-2222-2222-222222222222"; path = "/srv/nixlab/archive"; fsType = "xfs"; role = "pool"; required = true; readOnly = false; }
+            { name = "guests"; uuid = "11111111-1111-1111-1111-111111111111"; path = "/srv/nixus/guests"; fsType = "ext4"; role = "guests"; required = true; readOnly = false; }
+            { name = "archive"; uuid = "22222222-2222-2222-2222-222222222222"; path = "/srv/nixus/archive"; fsType = "xfs"; role = "pool"; required = true; readOnly = false; }
           ];
-          storage = testSite.storage // { source = "/srv/nixlab/guests/incus"; };
+          storage = testSite.storage // { source = "/srv/nixus/guests/incus"; };
         }) [ ./tests/hardware.nix ];
         validation-zfs = mkHost (testSite // {
           storage = { driver = "zfs"; source = "testpool/incus";
@@ -121,25 +121,25 @@
         homelab = import ./scripts/homelab.nix { inherit pkgs; };
         helpers = import ./helpers/package.nix { inherit pkgs; };
       };
-      apps.x86_64-linux.install = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixlab-install"; };
-      apps.x86_64-linux.update = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixlab-update"; };
-      nixlabMigrationChecks = import ./tests/settings-checks.nix { lib = nixpkgs.lib; };
-      nixlabManagementChecks = let
+      apps.x86_64-linux.install = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-install"; };
+      apps.x86_64-linux.update = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-update"; };
+      nixusMigrationChecks = import ./tests/settings-checks.nix { lib = nixpkgs.lib; };
+      nixusManagementChecks = let
         c = self.nixosConfigurations.validation-management.config;
         lib = nixpkgs.lib;
-        inventory = builtins.fromJSON c.environment.etc."nixlab/management-exposure.json".text;
+        inventory = builtins.fromJSON c.environment.etc."nixus/management-exposure.json".text;
         filtered = builtins.filter (item: item.exposure == "local") inventory.listeners;
         actualLocalPorts = map (item: item.port) filtered;
         case = address: ([ ./tests/hardware.nix {
           services.openssh.listenAddresses = [{ addr = address; port = 9090; }];
-          nixlab.settings.cockpit.enable = true;
+          nixus.settings.cockpit.enable = true;
         } ]);
         collisions = address: builtins.filter (entry:
           !entry.assertion && lib.hasPrefix "Management listener collision" entry.message)
           (mkHost testSite (case address)).config.assertions;
         monitoringCollision = (mkHost testSite [ ./tests/hardware.nix {
-          nixlab.settings.cockpit = { enable = true; port = 9091; };
-          nixlab.settings.monitoring.history = true;
+          nixus.settings.cockpit = { enable = true; port = 9091; };
+          nixus.settings.monitoring.history = true;
         } ]).config.assertions;
       in {
         onlyLoopbackTrusted = c.networking.firewall.trustedInterfaces == [ "lo" ];
@@ -160,28 +160,28 @@
         monitoringWithCockpit = c.services.prometheus.enable
           && c.services.prometheus.listenAddress == "127.0.0.1"
           && c.services.prometheus.port == 9091
-          && c.services.prometheus.port != c.nixlab.settings.cockpit.port;
+          && c.services.prometheus.port != c.nixus.settings.cockpit.port;
         hostDockerDisabled = !c.virtualisation.docker.enable;
         noLegacyExposedPorts = !(lib.any (item: builtins.elem item.port [ 9441 9443 ]) inventory.listeners);
         lidClosedOperation = c.services.logind.settings.Login.HandleLidSwitch == "ignore";
       };
-      nixlabFoundationChecks = let
+      nixusFoundationChecks = let
         native = self.nixosConfigurations.validation-ethernet.config;
         nm = self.nixosConfigurations.validation-ethernet-nm.config;
         wifi = self.nixosConfigurations.validation-ethernet-wifi.config;
       in {
         nativeBridgePorts = native.networking.bridges.br-apps.interfaces == [ "vlan20" ];
         nativePortAddressRemoved = native.networking.interfaces.eth0.ipv4.addresses == [ ];
-        vlanActivationName = nm.networking.networkmanager.ensureProfiles.profiles.nixlab-vlan-vlan20.connection.id == "nixlab-vlan-vlan20";
-        vlanBridgeMembership = nm.networking.networkmanager.ensureProfiles.profiles.nixlab-vlan-vlan20.connection.master == "br-apps";
+        vlanActivationName = nm.networking.networkmanager.ensureProfiles.profiles.nixus-vlan-vlan20.connection.id == "nixus-vlan-vlan20";
+        vlanBridgeMembership = nm.networking.networkmanager.ensureProfiles.profiles.nixus-vlan-vlan20.connection.master == "br-apps";
         guestNetworkOwnership = builtins.elem "interface-name:incus-private" nm.networking.networkmanager.unmanaged;
-        wifiManagementActivation = nixpkgs.lib.hasInfix "connection up nixlab-wifi" wifi.systemd.services.nixlab-connectivity.script;
-        noWiredManagementOnWifi = !(nixpkgs.lib.hasInfix "connection up nixlab-management" wifi.systemd.services.nixlab-connectivity.script);
+        wifiManagementActivation = nixpkgs.lib.hasInfix "connection up nixus-wifi" wifi.systemd.services.nixus-connectivity.script;
+        noWiredManagementOnWifi = !(nixpkgs.lib.hasInfix "connection up nixus-management" wifi.systemd.services.nixus-connectivity.script);
       };
-      nixlabDefaults = import ./site-defaults.nix;
-      nixlabDesiredSettings = site;
-      nixlabSettings = self.nixosConfigurations.hypervisor.config.nixlab.settings;
-      nixlabOverview = {
+      nixusDefaults = import ./site-defaults.nix;
+      nixusDesiredSettings = site;
+      nixusSettings = self.nixosConfigurations.hypervisor.config.nixus.settings;
+      nixusOverview = {
         stateVersion = bootstrap.config.system.stateVersion;
         boot = { systemdBoot = bootstrap.config.boot.loader.systemd-boot.enable; grub = bootstrap.config.boot.loader.grub.enable; };
         networkManager = installedNetworking.networkManager;
@@ -192,7 +192,7 @@
             (builtins.attrValues bootstrap.config.users.users)));
       };
       checks.x86_64-linux = {
-        backup-verification = pkgs.runCommand "nixlab-backup-verification" {
+        backup-verification = pkgs.runCommand "nixus-backup-verification" {
           nativeBuildInputs = [ pkgs.python3 pkgs.restic ];
         } ''
           PYTHONPATH=${./admin}:${./scripts}:${./tests} python3 ${./tests/backup-verification-integration.py}

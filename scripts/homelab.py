@@ -19,15 +19,15 @@ def name(value):
 def execute(argv, action, target):
     # Deliberately do not log command arguments/output: they can contain secrets.
     start = time.monotonic()
-    syslog.syslog(syslog.LOG_NOTICE, f"nixlab begin uid={os.getuid()} action={action} target={target}")
+    syslog.syslog(syslog.LOG_NOTICE, f"nixus begin uid={os.getuid()} action={action} target={target}")
     result = subprocess.run(argv, check=False)
-    syslog.syslog(syslog.LOG_NOTICE, f"nixlab end action={action} target={target} exit={result.returncode} elapsed={time.monotonic()-start:.2f}s")
+    syslog.syslog(syslog.LOG_NOTICE, f"nixus end action={action} target={target} exit={result.returncode} elapsed={time.monotonic()-start:.2f}s")
     return result.returncode
 
 
 def main():
-    syslog.openlog("nixlab", syslog.LOG_PID, syslog.LOG_AUTHPRIV)
-    default = Path("/etc/nixlab/client.json")
+    syslog.openlog("nixus", syslog.LOG_PID, syslog.LOG_AUTHPRIV)
+    default = Path("/etc/nixus/client.json")
     config = Path(os.environ.get("HOMELAB_CONFIG", str(default)))
     cfg = json.loads(config.read_text()) if config.exists() else {}
     p = argparse.ArgumentParser(description=__doc__)
@@ -48,7 +48,7 @@ def main():
     if args.action in ("doctor", "enroll-key", "commissioning", "install-plan"):
         if os.geteuid() != 0:
             p.error('Run this host administration command with sudo')
-        command = ["nixlab-admin", args.action]
+        command = ["nixus-admin", args.action]
         if args.action == "enroll-key": command += [str(args.file)]
         if args.action == "commissioning": command += args.arguments
         return execute(command, args.action, "host")

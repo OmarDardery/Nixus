@@ -1,6 +1,6 @@
 # Single-host release qualification
 
-NixLab is an unqualified single-host beta candidate. No physical target is qualified by adding a
+Nixus is an unqualified single-host beta candidate. No physical target is qualified by adding a
 test, enabling a workflow, or completing source-level checks.
 
 | Target | Fresh installation | Upgrade | Physical restore evidence |
@@ -100,7 +100,7 @@ candidate SHA they identify:
 - `qualification/fresh.json` and `upgrade.json`: strict commissioning exports,
   current for the candidate version, source and pinned inputs, with all mandatory
   checks passed. Simulated, stale, skipped or other-revision reports are rejected.
-- `qualification/recovery.json`: redacted `nixlab-admin recovery export-report` after a
+- `qualification/recovery.json`: redacted `nixus-admin recovery export-report` after a
   completed data-verified independent recovery, with full coverage, source/input
   identity, attestation time and measured duration. Selected-data, future-dated
   or older-than-30-day recovery evidence is insufficient. Operational `status`
@@ -115,7 +115,7 @@ records. Passing schema validation is not independent proof of physical activity
 Keep sensitive source inventories, keys, addresses and application data out of
 public evidence. Use the existing commissioning redaction/export mechanism.
 
-Record successful exact-source run IDs for `Validate Nixlab`, installer, portal,
+Record successful exact-source run IDs for `Validate Nixus`, installer, portal,
 three-trial dedicated real apps deployment, real apps commissioning, and Website
 **publication**. The workflow verifies all jobs and eligible steps passed; a PR
 website build with a skipped deployment does not satisfy publication. The
@@ -125,7 +125,7 @@ the release tag and VERSION. No skipped integration is accepted.
 When all these gates are genuinely satisfied:
 
 ```sh
-gh workflow run release.yml --repo OmarDardery/nixlab --ref main \
+gh workflow run release.yml --repo OmarDardery/Nixus --ref main \
   -f tag=v0.1.0-beta.1 -f evidence_commit=FULL_EVIDENCE_COMMIT_SHA \
   -f runs='{"validate":RUN_ID,"installer":RUN_ID,"portal":RUN_ID,"apps":RUN_ID,"commissioning":RUN_ID,"website":RUN_ID}'
 ```

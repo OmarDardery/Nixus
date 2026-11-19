@@ -16,10 +16,10 @@ let
     ../scripts/incus_client.py
     ../scripts/project_workspace.py
   ];
-in pkgs.runCommand "nixlab-admin-runtime" { } ''
+in pkgs.runCommand "nixus-admin-runtime" { } ''
   mkdir -p "$out"
   cp -r ${./.}/. "$out/"
   chmod -R u+w "$out"
   ${pkgs.lib.concatMapStringsSep "\n" (file: ''cp ${file} "$out/${builtins.baseNameOf file}"'') scripts}
-  cp ${pkgs.writeText "nixlab-default-settings.json" (builtins.toJSON (import ../site-defaults.nix))} "$out/default-settings.json"
+  cp ${pkgs.writeText "nixus-default-settings.json" (builtins.toJSON (import ../site-defaults.nix))} "$out/default-settings.json"
 ''

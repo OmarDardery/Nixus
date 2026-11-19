@@ -23,18 +23,18 @@ The prompt always identifies the user and host, highlights root, and shows Git/N
 context without remote lookups. Existing account shells and personal shell files
 are preserved; native NixOS program options remain overridable.
 
-Interactive login runs `nixlab-fetch`, using upstream's minimal Fastfetch build
+Interactive login runs `nixus-fetch`, using upstream's minimal Fastfetch build
 without desktop/audio/image integrations. It shows hardware/resource information plus
-NixLab's observed management address and enabled service URLs, service states,
-backup-service result and test-activation/kernel notices. `nixlab-status` prints
+Nixus's observed management address and enabled service URLs, service states,
+backup-service result and test-activation/kernel notices. `nixus-status` prints
 only the operational summary. These are bounded local observations, not endpoint
 health or successful restore evidence. They do not authenticate, contact registries
 or request sudo. Missing observations stay unknown.
 
-`nixlab-update` runs the normal guarded main update and forwards its options;
+`nixus-update` runs the normal guarded main update and forwards its options;
 `failed` lists failed services.
 Noninteractive shells print no welcome screen. `.hushlogin` or an inherited
-`NIXLAB_NO_FETCH=1` disables the login summary. Personal Starship configuration is
+`NIXUS_NO_FETCH=1` disables the login summary. Personal Starship configuration is
 respected. The banner uses ordinary characters, so a special terminal font is not
 required. Bash history ignores space-prefixed commands; avoid entering credentials
 on a command line.
@@ -43,7 +43,7 @@ on a command line.
 
 If status reports **Worker state unavailable**, retry after checking systemd on
 the host console. This means the observation failed, not that the transaction
-failed. NixLab preserves the job record and recovery intent rather than allowing a
+failed. Nixus preserves the job record and recovery intent rather than allowing a
 competing operation based on that unknown result. The rollback guard remains
 independent. Do not delete job or pending-state files to clear this error.
 
@@ -55,8 +55,8 @@ For maintenance, inspect system generations with `sudo nix-env --list-generation
 --profile /nix/var/nix/profiles/system` and GC roots with `nix-store --gc --print-roots`.
 After reviewing boot and recovery needs, `sudo nix-collect-garbage --delete-older-than 30d`
 removes old profile generations and unreferenced store paths; it changes boot-menu
-history. Active system and Nixlab's explicit recovery roots remain protected.
-`sudo nixlab-admin prune-jobs` previews old terminal configuration jobs beyond the
+history. Active system and Nixus's explicit recovery roots remain protected.
+`sudo nixus-admin prune-jobs` previews old terminal configuration jobs beyond the
 newest 20; add `--apply` to remove them, or `--keep N` to choose the retained count.
 Active, pending and last-confirmed jobs are protected. Guest-operation history and
 export archives are separate and are not pruned by this command.
@@ -78,9 +78,9 @@ required profiles/projects/custom volumes before
 starting a guest. Register a recovered Incus instance archive locally:
 
 ```sh
-sudo nixlab-admin guests register-export --file /root/restored/instance-export.tar.gz --project lab --name original-name
-sudo nixlab-admin guests status
-sudo nixlab-admin guests restore --name original-name --archive EXPORT_ID --target restore-test --acknowledge
+sudo nixus-admin guests register-export --file /root/restored/instance-export.tar.gz --project lab --name original-name
+sudo nixus-admin guests status
+sudo nixus-admin guests restore --name original-name --archive EXPORT_ID --target restore-test --acknowledge
 ```
 
 Registration copies and hashes the file into managed staging; it does not import or
@@ -98,7 +98,7 @@ the only good copy to make a name available.
 
 ## File configuration and recipes
 
-For a new data disk, `sudo nixlab-admin disk prepare` provides a local/SSH console
+For a new data disk, `sudo nixus-admin disk prepare` provides a local/SSH console
 workflow: choose an inactive, unmounted disk, review its identity, type the erase
 phrase, and prepare one ext4 data filesystem. It writes a UUID-based Nix proposal
 and prints the guarded review command. It does not activate a mount or pool. Active
@@ -134,17 +134,17 @@ revision, reauthenticate and acknowledge its privileged code, then build, review
 activate and confirm access. Selection resolves main to one fixed SHA; it does
 not silently follow later commits or bypass the existing impact/rollback gates.
 
-For an existing NixLab server, run this in its interactive terminal:
+For an existing Nixus server, run this in its interactive terminal:
 
 ```sh
-nix run --refresh github:OmarDardery/nixlab#update
+nix run --refresh github:OmarDardery/Nixus#update
 ```
 
 For a broken existing Ethernet/bridge management connection, run **at the host's
 local console**:
 
 ```sh
-nix run --refresh github:OmarDardery/nixlab#update -- --repair-network
+nix run --refresh github:OmarDardery/Nixus#update -- --repair-network
 ```
 
 It follows the saved port/controller relationship, previews the exact existing
@@ -153,7 +153,7 @@ selects their observed address within your existing trusted networks. If discove
 is ambiguous, add `--interface YOUR_BRIDGE`. It creates no bridge/profile, assigns
 no new address and preserves gateway, DNS, addressing mode and ownership. Managed
 static networking, missing hardware, guest networks and ambiguous profiles require
-review rather than guesses. The launcher needs network access to fetch NixLab.
+review rather than guesses. The launcher needs network access to fetch Nixus.
 
 A temporary systemd identity selection validates the observed address and generates
 the usual TLS identity so the existing Incus daemon can start. It changes no
@@ -167,11 +167,11 @@ The temporary identity selection is removed, the native identity service restart
 and autoconnect checked before health/access confirmation. The normal activation
 and rollback guard remain authoritative. Failed/cancelled preflight restores the
 previous autoconnect flags; the existing connection may remain active. Interrupted
-work retains `/var/lib/nixlab-admin/network-repair.json`; rerun the same command.
+work retains `/var/lib/nixus-admin/network-repair.json`; rerun the same command.
 Reboot persistence still requires an actual reboot check after confirmation.
 If an interrupted repair rebooted without connectivity, its pinned launcher can
 run the same preflight without downloading first:
-`sudo /var/lib/nixlab-admin/worker-runtime/bin/nixlab-update --repair-network`.
+`sudo /var/lib/nixus-admin/worker-runtime/bin/nixus-update --repair-network`.
 
 When Incus is already available and only the selected management interface needs
 correction, `#update -- --interface YOUR_INTERFACE` reviews the observed address
@@ -183,7 +183,7 @@ builds through the existing transaction engine. It displays the build/impact
 review and asks before activation. After local health checks it prints the
 service URLs and **transaction ID**, then exits **without confirming**.
 Open a **new** SSH/Cockpit terminal after activation, verify real access and
-workloads, and run `sudo nixlab-admin config confirm TRANSACTION_ID` there.
+workloads, and run `sudo nixus-admin config confirm TRANSACTION_ID` there.
 Alternatively, reconnect to the HTTPS portal from a non-loopback client, sign
 in **again after activation**, and confirm in Changes. A pre-activation session
 or a local health probe cannot confirm. Use `config rollback TRANSACTION_ID`
@@ -201,17 +201,17 @@ main, so the candidate stays fixed even if main advances while it builds.
 
 The Review page accepts a full upstream Git commit SHA. Reauthenticate and acknowledge
 its privileged code, then build. The worker fetches exactly that commit from the
-Nixlab repository in isolation, preserves machine settings/modules/hardware, records
+Nixus repository in isolation, preserves machine settings/modules/hardware, records
 changed file hashes and builds an immutable closure. Pinned-input changes and a
 kernel-reboot indicator are displayed with the existing dry-activation output.
 Review the linked commit's code before activating.
 
 ```sh
-sudo nixlab-admin config review --revision FULL_40_CHARACTER_COMMIT_SHA
-sudo nixlab-admin config status
-sudo nixlab-admin config apply TRANSACTION_ID
+sudo nixus-admin config review --revision FULL_40_CHARACTER_COMMIT_SHA
+sudo nixus-admin config status
+sudo nixus-admin config apply TRANSACTION_ID
 # Verify access and services before confirming:
-sudo nixlab-admin config confirm TRANSACTION_ID
+sudo nixus-admin config confirm TRANSACTION_ID
 ```
 
 Publication records old and new platform paths before writing, so interrupted updates
@@ -256,9 +256,9 @@ it excludes runtime private keys/password files. Inline secrets manually written
 Nix source remain source and cannot be automatically sanitized.
 
 ```sh
-sudo nixlab-admin recovery export /root/nixlab-kit --include-secrets --recipient age1YOUR_PUBLIC_RECIPIENT
-sudo nixlab-admin recovery inspect /root/nixlab-kit/nixlab-config.tar.gz
-sudo nixlab-admin recovery stage /root/nixlab-kit/nixlab-config.tar.gz /root/recovery-review
+sudo nixus-admin recovery export /root/nixus-kit --include-secrets --recipient age1YOUR_PUBLIC_RECIPIENT
+sudo nixus-admin recovery inspect /root/nixus-kit/nixus-config.tar.gz
+sudo nixus-admin recovery stage /root/nixus-kit/nixus-config.tar.gz /root/recovery-review
 ```
 
 Staging validates member types, paths, limits and hashes before extracting into a new
@@ -273,7 +273,7 @@ On replacement hardware, install/bootstrap normally first. Keep its newly genera
 hardware/boot modules. Review recovered settings and module files against the new
 NICs, disk UUIDs and storage before submitting them through the guarded transaction.
 Restore selected runtime credentials with root-only permissions; the portal password
-record needs group `nixlab-ui` and mode 0640. Preserve CA identity only when intended.
+record needs group `nixus-ui` and mode 0640. Preserve CA identity only when intended.
 Guest/application data comes from its independent backups, not this kit.
 
 Scheduled backups create root-only configuration and secret archives inside each complete generation, then
@@ -287,9 +287,9 @@ not depend on the implementation branch remaining available.
 
 ## Optional failure notifications
 
-Upload a module setting `nixlab.notifications.enable = true`. Store an HTTPS webhook
-URL in the root-owned runtime file `/var/lib/nixlab-secrets/notification-url` (mode 0600),
-or select another runtime file through `nixlab.notifications.webhookFile`. Failed KVM,
+Upload a module setting `nixus.notifications.enable = true`. Store an HTTPS webhook
+URL in the root-owned runtime file `/var/lib/nixus-secrets/notification-url` (mode 0600),
+or select another runtime file through `nixus.notifications.webhookFile`. Failed KVM,
 instance, backup and rollback units trigger bounded notification jobs. The payload
 contains service identity and failure state; URLs, responses, journals and secrets
 are withheld. Redirects are refused. No resident notification daemon is added.
@@ -307,14 +307,14 @@ consumers, including projects sharing the default volume namespace. Additional
 `backup.groups` contain lists of `project/guest` names. Host writers/external data
 still need their own consistency procedures.
 
-`backup.exclude` and Incus `user.nixlab.backup=manual` protect whole consistency
+`backup.exclude` and Incus `user.nixus.backup=manual` protect whole consistency
 groups from automatic shutdown. Explicit exclusion names must match existing
 guests; a typo refuses shutdown. The generation and portal record exclusions and
 selected coverage. Off-host upload can succeed for that selection, but the global
 full-host freshness indicator is not advanced. Investigate missing coverage.
 
 Run an independent repository check from the portal or
-`sudo nixlab-admin guests backup-check`. `sudo systemctl stop restic-backups-nixlab`
+`sudo nixus-admin guests backup-check`. `sudo systemctl stop restic-backups-nixus`
 cancels a scheduled backup; signal handling and the cleanup/recovery unit restore
 original guest running states. Inspect pending restart intent before retrying.
 The portal tracks the actual service through export, off-host transfer and retention,

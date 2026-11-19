@@ -1,1 +1,1 @@
-{ ... }: { nixlab.project.secrets.file = "../key"; }
+{ ... }: { nixus.project.secrets.file = "../key"; }

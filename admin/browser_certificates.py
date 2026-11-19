@@ -16,7 +16,7 @@ import diagnostics
 from model import command
 import runtime as rt
 
-RUNTIME = Path('/run/nixlab-browser')
+RUNTIME = Path('/run/nixus-browser')
 VALID_DAYS = 90
 PRIVATE_LIFETIME = 300
 
@@ -29,7 +29,7 @@ def registry(state):
         for identity, record in value['certificates'].items():
             fingerprint(identity)
             if (record['fingerprint'] != identity or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,31}', record['device'])
-                    or not re.fullmatch('nixlab-browser-' + re.escape(record['device']) + '-[0-9a-f]{12}', record['name'])
+                    or not re.fullmatch('nixus-browser-' + re.escape(record['device']) + '-[0-9a-f]{12}', record['name'])
                     or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', record['owner'])
                     or type(record['restricted']) is not bool
                     or record['projects'] != (['lab'] if record['restricted'] else [])
@@ -126,7 +126,7 @@ def issue(state, device, passphrase, owner='root', full_admin=False, renew=None)
             old = records['certificates'].get(fingerprint(renew))
             if not old or old['device'] != device:
                 raise ValueError('Renew only an owned identity for the selected device')
-        name = 'nixlab-browser-' + device + '-' + rt.secrets.token_hex(6)
+        name = 'nixus-browser-' + device + '-' + rt.secrets.token_hex(6)
         try:
             private_runtime()
             cleanup_private()
@@ -171,7 +171,7 @@ def revoke(state, identity, owner='root'):
         records = registry(state)
         record = records['certificates'].get(identity)
         if not record:
-            raise ValueError('Only NixLab-owned browser identities can be revoked here')
+            raise ValueError('Only Nixus-owned browser identities can be revoked here')
         if identity in trusted():
             command(['incus', '--force-local', 'config', 'trust', 'remove', identity])
         record['status'] = 'revoked'

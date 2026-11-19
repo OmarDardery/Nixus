@@ -1,7 +1,7 @@
 name: demo
 services:
   web:
-    image: nixlab-demo:1
+    image: nixus-demo:1
     pull_policy: never
     restart: unless-stopped
     ports:
@@ -52,4 +52,4 @@ volumes:
   postgres-data:
 secrets:
   db_password:
-    file: /var/lib/nixlab-secrets/demo-db-password
+    file: /var/lib/nixus-secrets/demo-db-password

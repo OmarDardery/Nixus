@@ -6,10 +6,10 @@ when installing from the physical console.
 
 ```sh
 sudo nix --extra-experimental-features 'nix-command flakes' \
-  run github:OmarDardery/nixlab#install
+  run github:OmarDardery/Nixus#install
 ```
 
-The flake reference is `github:OmarDardery/nixlab#install`, with no `.com`.
+The flake reference is `github:OmarDardery/Nixus#install`, with no `.com`.
 The packaged installer carries its own platform source and tools. It stages and
 evaluates the preserved configuration before publishing installation state,
 checks keys/network/Wi-Fi/KVM, builds the full stack and uses the durable
@@ -18,7 +18,7 @@ activation/rollback transaction. Existing filesystems are never formatted.
 It retains the installed users, bootloader, mounts and current addressing.
 Retaining DHCP does **not** assign `192.168.1.240`; reserve that address at the
 router or explicitly configure static addressing afterward. Console output,
-the homepage and `sudo nixlab doctor` use the detected assigned address.
+the homepage and `sudo nixus doctor` use the detected assigned address.
 
 ## Normal choices
 
@@ -41,12 +41,12 @@ or a file-owned setting explicitly selects key-only access. A console installati
 can proceed with no key and enroll one later:
 
 ```sh
-sudo nixlab enroll-key /path/to/laptop.pub
+sudo nixus enroll-key /path/to/laptop.pub
 ```
 
 Key enrollment leaves the rollback guard armed. Open a new SSH session using
 the enrolled key, verify access, then run the printed
-`sudo nixlab-admin config confirm TRANSACTION_ID` command from that session.
+`sudo nixus-admin config confirm TRANSACTION_ID` command from that session.
 The portal can also confirm the pending transaction. If access fails, leave it
 unconfirmed so the deadline restores the previous generation.
 
@@ -72,11 +72,11 @@ The install, retry, resume and update commands report status, service URLs,
 fingerprints and recovery steps. They do not return or print generated credentials.
 On a host explicitly installed with `--wizard --web-enrollment`, open the HTTPS
 portal, verify the CA, approve the displayed browser code with
-`sudo nixlab-admin approve-enrollment`, then choose the portal password in that
+`sudo nixus-admin approve-enrollment`, then choose the portal password in that
 browser. Existing portal accounts keep their current login.
 
 For the default legacy path or forgotten portal access, an authorized administrator
-can run `sudo nixlab-admin reset-password` from a private local/SSH/Cockpit terminal
+can run `sudo nixus-admin reset-password` from a private local/SSH/Cockpit terminal
 and choose a new password. This is rotation, not retrieval. The command refuses
 non-terminal input or an echoing password prompt. A successful verifier commit
 retires the old setup plaintext, and old sessions are rejected. Arcane and
@@ -84,12 +84,12 @@ Linux passwords remain independent.
 
 Private legacy service files are preserved while secure enrollment/recovery
 release gates are completed. Do not delete them simply to remove output. Default
-web-first enrollment and browser recovery remain gated on #63/#64/#67; transient
-Arcane bootstrap and supplied-password reset remain #65/#66 work.
+web-first enrollment and browser recovery remain gated on OmarDardery/nixlab#63/OmarDardery/nixlab#64/#28; transient
+Arcane bootstrap and supplied-password reset remain OmarDardery/nixlab#65/OmarDardery/nixlab#66 work.
 
 ## Retry and source updates
 
-For a completed installation, use `nix run --refresh github:OmarDardery/nixlab#update`
+For a completed installation, use `nix run --refresh github:OmarDardery/Nixus#update`
 for the [guarded, one-command update](operations.md#reviewed-upgrades).
 
 Rerun the same command after failure or disconnection. `--resume` remains an
@@ -98,7 +98,7 @@ activation is reattached; it is not duplicated. A completed, unchanged
 installation is health-checked without creating another configuration job.
 
 Platform updates are staged from the command's source, with a checkpoint under
-`/var/lib/nixlab-admin/source-before-install-*`. Machine settings, modules and
+`/var/lib/nixus-admin/source-before-install-*`. Machine settings, modules and
 the preserved installed configuration remain separate. If tracked platform files
 were edited locally, the update is skipped and their paths are printed; those
 edits are retained. Review/move overrides into `machine/modules/` before updating.
@@ -117,18 +117,18 @@ run recovery; a bootstrap file is never asserted to be the current password.
 The installer inventories projects, instances, profiles, networks, pools and
 volumes. Interactive installation asks before adopting; unattended installation
 requires `--adopt-incus`. It exports existing guests and custom volumes and saves
-metadata under `/var/lib/nixlab-admin/incus-adoption/<attempt>/` before activation.
+metadata under `/var/lib/nixus-admin/incus-adoption/<attempt>/` before activation.
 A failed export prevents conversion. Running-guest exports are crash-consistent;
 quiesce databases or stop guests for an application-consistent maintenance backup.
 Ensure free local space for these exports and keep independent off-host copies.
 
-Nixlab chooses a separate unused bridge/pool, a non-overlapping subnet, and the
+Nixus chooses a separate unused bridge/pool, a non-overlapping subnet, and the
 `lab` project. Existing native guests, their disks, profiles, networks and pools
 remain Incus-owned. Their bridge forwarding and DNS/DHCP are retained at the
 NixOS firewall boundary; native Incus ACLs remain in force.
 
 Clustered Incus and a pre-existing unrelated `lab` project require an explicit
-migration plan and are refused before conversion. Hosts with a Nixlab checkout
+migration plan and are refused before conversion. Hosts with a Nixus checkout
 use automatic resume instead of adoption. Pool, bridge or subnet changes to an
 already managed installation remain migrations, not installer retry operations.
 NixOS rollback restores host configuration, not Incus schema or guest data.
@@ -136,24 +136,24 @@ NixOS rollback restores host configuration, not Incus schema or guest data.
 ## Health and recovery
 
 ```sh
-sudo nixlab doctor
+sudo nixus doctor
 ```
 
-Installation confirms only after checking the Incus API/UI, Nixlab portal,
+Installation confirms only after checking the Incus API/UI, Nixus portal,
 Cockpit and enabled Arcane proxy/status/administrator initialization over TLS.
 Tests of local endpoints cannot prove connectivity from every LAN/VPN client.
 The startup identity service uses the assigned management address before TLS
 services start. Cockpit socket activation listens independently of DHCP readiness
 and restarts a failed worker automatically. The firewall restricts management access.
-`nixlab-management-health.service` checks all enabled interfaces after each boot,
+`nixus-management-health.service` checks all enabled interfaces after each boot,
 waits for readiness and retries on failure; inspect its journal if commissioning fails.
 The server disables display-manager/X11 startup and suspend/hibernation. Wi-Fi
 power saving is off when Wi-Fi provides connectivity; Bluetooth, monitoring history
 and demo applications remain optional.
 
 `doctor` returns a nonzero status on failed endpoint checks and saves a bounded
-report at `/var/lib/nixlab-admin/last-health.json`, without tokens or passwords.
-Transaction logs stay under `/var/lib/nixlab-admin/jobs/<id>/build.log`.
+report at `/var/lib/nixus-admin/last-health.json`, without tokens or passwords.
+Transaction logs stay under `/var/lib/nixus-admin/jobs/<id>/build.log`.
 The installer prints a fixed failure message and saves a non-secret
 `installation-failure.json`; transaction and rollback status remain separate. Recovery skips absent services and
 NetworkManager connections that no longer exist.
@@ -161,7 +161,7 @@ NetworkManager connections that no longer exist.
 Arcane recovery uses its installed upstream `admin reset-password` command in a private interactive guest terminal. It asks for a supplied password, leaves Docker workloads and persistent application data in place, and prints no generated credential. Back up `/srv/arcane` (including its independent encryption key) before recovery.
 
 ```sh
-sudo nixlab-admin arcane reset-password
+sudo nixus-admin arcane reset-password
 ```
 
 ## Installation regression checklist

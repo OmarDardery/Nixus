@@ -10,7 +10,7 @@ let
   useNM = nmWired || (site.radios.wifi.enable && m.interface == site.radios.wifi.interface);
 in {
   imports = [ ./management.nix ];
-  nixlab.managementPolicy.enforceFirewall = true;
+  nixus.managementPolicy.enforceFirewall = true;
   networking.nftables = { enable = true; flushRuleset = false; };
   networking.firewall = {
     enable = true;
@@ -64,8 +64,8 @@ in {
   networking.defaultGateway = lib.mkIf (m.configure && !useNM) (lib.mkForce m.gateway);
   networking.nameservers = lib.mkIf (m.configure && !useNM) (lib.mkForce m.dns);
   networking.networkmanager.ensureProfiles.profiles = lib.mkIf (m.configure && nmWired) {
-    nixlab-management = {
-      connection = { id = "nixlab-management"; type = if isBridge then "bridge" else if vlan != null then "vlan" else "ethernet";
+    nixus-management = {
+      connection = { id = "nixus-management"; type = if isBridge then "bridge" else if vlan != null then "vlan" else "ethernet";
         interface-name = m.interface; autoconnect = true; autoconnect-priority = 200; };
       ipv4 = { method = "manual"; address1 = "${m.address}/${toString m.prefixLength},${m.gateway}"; dns = lib.concatStringsSep ";" m.dns; };
       ipv6.method = "auto";

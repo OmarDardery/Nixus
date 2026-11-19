@@ -17,7 +17,7 @@
   environment.systemPackages = [
     (import ./scripts/homelab.nix { inherit pkgs; }) pkgs.jq pkgs.git pkgs.curl
   ];
-  environment.etc."nixlab/client.json".text = builtins.toJSON {
+  environment.etc."nixus/client.json".text = builtins.toJSON {
     remote = "local"; project = "lab";
     exportDirectory = site.backup.stagingDirectory;
   };

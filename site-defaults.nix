@@ -4,7 +4,7 @@
   schemaVersion = 1;
   ready = false;
   system = "x86_64-linux";
-  hostName = "nixlab";
+  hostName = "nixus";
   cpuVendor = ""; # intel or amd
   adminKeys = [ ];
   access.sshPasswordLogin = true; # Normal Linux passwords work for non-root server administration.
@@ -34,7 +34,7 @@
   # Additional instances: { name; project = "lab"; image = "images:<fingerprint>";
   # type = "container"; profiles = [ "base" ]; config = {}; devices = {}; }
   instances = [ ];
-  mounts = [ ]; # existing UUID filesystems only, managed under /srv/nixlab
+  mounts = [ ]; # existing UUID filesystems only, managed under /srv/nixus
   connectivity = {
     preservedIncusBridges = [ ]; # Native Incus bridges retained during adoption.
     bridges = [ ]; # { name = "br-lan"; interfaces = [ "enp2s0" ]; }
@@ -61,19 +61,19 @@
   tunnel = {
     enable = false;
     uuid = "";
-    credentialsFile = "/var/lib/nixlab-secrets/cloudflared.json";
+    credentialsFile = "/var/lib/nixus-secrets/cloudflared.json";
     ingress = { }; # "app.example.com" = "http://<guest address>:8080";
   };
   backup = {
     enable = false;
-    repository = ""; # independent storage, e.g. sftp:backup@server:/backups/nixlab
-    passwordFile = "/var/lib/nixlab-secrets/restic-password";
-    environmentFile = "/var/lib/nixlab-secrets/restic-environment";
-    stagingDirectory = "/var/lib/nixlab/exports";
+    repository = ""; # independent storage, e.g. sftp:backup@server:/backups/nixus
+    passwordFile = "/var/lib/nixus-secrets/restic-password";
+    environmentFile = "/var/lib/nixus-secrets/restic-environment";
+    stagingDirectory = "/var/lib/nixus/exports";
     initialize = false; # explicitly opt in after verifying the remote repository
     schedule = "*-*-* 03:00:00";
     groups = [ ]; # Lists of project/guest identities that must stop together.
-    exclude = [ ]; # Explicit maintenance exclusions; also honors user.nixlab.backup=manual.
+    exclude = [ ]; # Explicit maintenance exclusions; also honors user.nixus.backup=manual.
     reserveMiB = 1024;
   };
 }

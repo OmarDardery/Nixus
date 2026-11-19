@@ -63,7 +63,7 @@ class BrowserCertificateTests(unittest.TestCase):
         self.assertFalse(elevated['restricted']); self.assertEqual(elevated['projects'], [])
         self.assertEqual(first['projects'], ['lab']); self.assertTrue(first['restricted'])
         self.assertIn('f' * 64, self.live)
-        with self.assertRaisesRegex(ValueError, 'Only NixLab-owned'):
+        with self.assertRaisesRegex(ValueError, 'Only Nixus-owned'):
             certs.revoke(self.root, 'f' * 64)
         certs.revoke(self.root, first['fingerprint'])
         certs.revoke(self.root, first['fingerprint'])  # Retry after already removed.
@@ -154,7 +154,7 @@ class CertificateDownloadTests(unittest.TestCase):
     def setUp(self):
         self.auth = Auth(); self.session = {}
         self.auth.sessions['session'] = self.session
-        self.result = {'name': 'nixlab-browser-fixture-000000000000', 'device': 'fixture',
+        self.result = {'name': 'nixus-browser-fixture-000000000000', 'device': 'fixture',
                        'fingerprint': 'a' * 64, 'owner': 'admin', 'issuedAt': 1000,
                        'expiresAt': 'future', 'restricted': True, 'projects': ['lab'],
                        'status': 'active', 'validDays': 90,

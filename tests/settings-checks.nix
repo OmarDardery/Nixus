@@ -22,6 +22,6 @@ in {
   unknownSettingRejected = rejects { inventedOption = true; };
   wrongBooleanRejected = rejects { cockpit.enable = "yes"; };
   invalidIngressRejected = rejects { tunnel.ingress."example.invalid" = 10; };
-  invalidMountRejected = rejects { mounts = [ { name = "bad"; uuid = "abcd"; path = "/srv/nixlab/bad"; fsType = "invented"; role = "data"; required = true; readOnly = false; } ]; };
+  invalidMountRejected = rejects { mounts = [ { name = "bad"; uuid = "abcd"; path = "/srv/nixus/bad"; fsType = "invented"; role = "data"; required = true; readOnly = false; } ]; };
   optionalStartIsAbsent = !((builtins.head (check { instances = [ { name = "example"; image = "images:fixture"; } ]; }).instances) ? start);
 }

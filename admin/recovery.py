@@ -13,10 +13,10 @@ import time
 import runtime as rt
 import upgrades
 
-UNITS = ['incus.service', 'incus-preseed.service', 'nixlab-kvm-check.service', 'nixlab-instances.service',
+UNITS = ['incus.service', 'incus-preseed.service', 'nixus-kvm-check.service', 'nixus-instances.service',
          'cockpit.socket', 'cockpit.service', 'nginx.service',
-         'nixlab-admin-backend.service', 'nixlab-ui.service',
-         'restic-backups-nixlab.service', 'nixlab-storage.target', 'nixlab-rollback-guard.service', 'smartd.service']
+         'nixus-admin-backend.service', 'nixus-ui.service',
+         'restic-backups-nixus.service', 'nixus-storage.target', 'nixus-rollback-guard.service', 'smartd.service']
 
 
 def health():
@@ -34,11 +34,11 @@ def health():
         end = subprocess.run(['openssl', 'x509', '-in', str(path), '-noout', '-enddate'], capture_output=True, text=True, timeout=10)
         soon = subprocess.run(['openssl', 'x509', '-in', str(path), '-noout', '-checkend', '2592000'], capture_output=True, timeout=10)
         result['certificates'][filename] = {'present': True, 'expires': end.stdout.strip(), 'expiresWithin30Days': bool(soon.returncode)}
-    success = Path('/var/lib/nixlab/last-backup-success')
+    success = Path('/var/lib/nixus/last-backup-success')
     if success.is_file():
         value = success.read_text().strip()
         if value.isdigit(): result['lastBackupSuccess'] = int(value)
-    pending = rt.read_json(Path('/var/lib/nixlab/restart-pending.json'), [])
+    pending = rt.read_json(Path('/var/lib/nixus/restart-pending.json'), [])
     result['guestsAwaitingRestart'] = len(pending)
     try:
         filesystem = os.statvfs('/')
@@ -46,10 +46,10 @@ def health():
                                  'availableBytes': filesystem.f_bavail * filesystem.f_frsize}
     except OSError:
         result['rootStorage'] = None
-    status = rt.read_json(Path('/var/lib/nixlab/backup-status.json'), {})
+    status = rt.read_json(Path('/var/lib/nixus/backup-status.json'), {})
     result['backup'] = {key: status[key] for key in ('phase', 'updated', 'generation', 'group', 'groups', 'members', 'excluded', 'coverage', 'capacity', 'restore') if key in status}
     import backup_health
-    settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings'), {}))
+    settings = rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings'), {}))
     result['backup']['health'] = backup_health.status(settings.get('backup', {}).get('enable', False))
     import backup_verification
     result['backup']['verification'] = backup_verification.status(settings.get('backup', {}).get('enable', False),
@@ -60,7 +60,7 @@ def health():
 
 
 def settings():
-    return rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings'), {}))
+    return rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings'), {}))
 
 
 def secret_source(path):
@@ -118,13 +118,13 @@ def secret_files():
     for section, key in (('backup', 'passwordFile'), ('backup', 'environmentFile'), ('tunnel', 'credentialsFile')):
         value = configured.get(section, {}).get(key)
         if value: files['runtime/' + section + '-' + key] = Path(value)
-    notification = rt.read_json(Path('/etc/nixlab/notification-settings.json'), {})
+    notification = rt.read_json(Path('/etc/nixus/notification-settings.json'), {})
     if notification.get('webhookFile'): files['runtime/notification-url'] = Path(notification['webhookFile'])
     key = Path(configured.get('secrets', {}).get('ageKeyFile', '/var/lib/sops-nix/key.txt'))
     if key.is_file(): files['sops/age-key.txt'] = key
-    for path in Path('/var/lib/nixlab-secrets').rglob('*'):
+    for path in Path('/var/lib/nixus-secrets').rglob('*'):
         if path.is_file() and not any(p.is_symlink() for p in (path, *path.parents)):
-            files['runtime-files/' + str(path.relative_to('/var/lib/nixlab-secrets'))] = path
+            files['runtime-files/' + str(path.relative_to('/var/lib/nixus-secrets'))] = path
     for parent in (Path('/etc/NetworkManager/system-connections'), Path('/run/NetworkManager/system-connections')):
         for path in parent.glob('*.nmconnection'):
             files['network/' + path.name] = path
@@ -159,13 +159,13 @@ def export(directory, recipient=None, include_secrets=False):
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if directory.stat().st_uid != os.geteuid() or directory.stat().st_mode & 0o022:
         raise ValueError('Recovery destination must be owned by root and not writable by other users')
-    config = directory / 'nixlab-config.tar.gz'
-    files = {'config/' + n: p for n, p in rt.source_files(rt.ROOT) if n != '.nixlab-files.json'}
+    config = directory / 'nixus-config.tar.gz'
+    files = {'config/' + n: p for n, p in rt.source_files(rt.ROOT) if n != '.nixus-files.json'}
     stream = io.BytesIO(); write_archive(stream, files, 'configuration')
     rt.atomic(config, stream.getvalue())
     result = {'configuration': str(config), 'sha256': hashlib.sha256(config.read_bytes()).hexdigest()}
     if include_secrets:
-        output = directory / 'nixlab-secrets.tar.gz.age'
+        output = directory / 'nixus-secrets.tar.gz.age'
         output.unlink(missing_ok=True)
         process = subprocess.Popen(['age', '--encrypt', '--recipient', recipient, '--output', str(output)], stdin=subprocess.PIPE,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -189,9 +189,9 @@ def backup(directory):
     """Called under the backup prepare lock. Restic encrypts these root-only files off-host."""
     directory = Path(directory)
     if not coverage()['complete']:
-        raise ValueError('Required recovery credentials are missing or unsafe; run nixlab-admin recovery coverage')
+        raise ValueError('Required recovery credentials are missing or unsafe; run nixus-admin recovery coverage')
     result = export(directory)
-    secrets = directory / 'nixlab-secrets.tar.gz'
+    secrets = directory / 'nixus-secrets.tar.gz'
     stream = io.BytesIO(); write_archive(stream, secret_files(), 'secrets')
     rt.atomic(secrets, stream.getvalue())
     return result
@@ -242,7 +242,7 @@ def download(recipient=None):
                     body = base64.b64decode(encoded)
                     item = tarfile.TarInfo(name); item.size = len(body); item.mode = 0o600
                     archive.addfile(item, io.BytesIO(body))
-            files = {'nixlab-recovery-kit.tar': base64.b64encode(envelope.getvalue()).decode()}
+            files = {'nixus-recovery-kit.tar': base64.b64encode(envelope.getvalue()).decode()}
         return {'files': files}
 
 
@@ -251,7 +251,7 @@ def cli(argv):
         import replacement
         return replacement.cli(argv)
     import argparse
-    parser = argparse.ArgumentParser(prog='nixlab-admin recovery')
+    parser = argparse.ArgumentParser(prog='nixus-admin recovery')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('coverage')
     create = commands.add_parser('export'); create.add_argument('directory', type=Path)

@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: nixlab-beta-publication
+  group: nixus-beta-publication
   cancel-in-progress: false
 jobs:
   qualify:
@@ -82,7 +82,7 @@ jobs:
           # Existing releases are never edited or overwritten. Upload into a
           # draft first; a failed upload leaves an unpublished recoverable draft.
           gh release create "$RELEASE_TAG" beta-assets/* --repo "$GH_REPO" \
-            --verify-tag --draft --prerelease --title "NixLab $RELEASE_TAG" \
+            --verify-tag --draft --prerelease --title "Nixus $RELEASE_TAG" \
             --notes-file beta-assets/LIMITATIONS.md
           test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$revision"
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false

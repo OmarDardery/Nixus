@@ -33,7 +33,7 @@ assert.equal(vm.runInContext('stagedCount()',context), 2);
 assert.ok(vm.runInContext('stagedBanner()',context).includes('2 staged changes'));
 const guest = vm.runInContext("state.page='guests';renderPage()",context);
 assert.ok(guest.includes('Guests & addresses'));
-assert.ok(!guest.includes('data-guest-action'), 'Guest mutations belong in Incus, not the NixLab portal.');
+assert.ok(!guest.includes('data-guest-action'), 'Guest mutations belong in Incus, not the Nixus portal.');
 const storage = vm.runInContext("state.page='storage';renderPage()",context);
 assert.ok(storage.includes('Detected drives') && storage.includes('Declared mounts'));
 const access = vm.runInContext("state.page='security';security()",context);
@@ -50,7 +50,7 @@ assert.ok(confirmed.includes('Deploy guests') && confirmed.includes('complete'))
 const ops = vm.runInContext("state.page='operations';operationView.users=[];operationsPage()",context);
 assert.ok(!ops.includes('Portal accounts'), 'Accounts are not part of backup recovery.');
 assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/setup.md"'));
-assert.ok(source.includes('browser enrollment enabled') && source.includes('sudo nixlab-admin reset-password') && !source.includes('setup password printed by the installer'));
+assert.ok(source.includes('browser enrollment enabled') && source.includes('sudo nixus-admin reset-password') && !source.includes('setup password printed by the installer'));
 console.log('Redesigned console checks passed: routing, drafts, safe delegation, permissions and deployment stages.');
 
 vm.runInContext("state.status.release={revision:'a'.repeat(40)};state.draft=copy(fixture);state.platformRevision='a'.repeat(40)", context);

@@ -1,6 +1,6 @@
 { pkgs }:
 let
-  source = pkgs.runCommand "nixlab-admin-source" { } ''
+  source = pkgs.runCommand "nixus-admin-source" { } ''
     cp -r ${import ./source.nix { inherit pkgs; }} $out
     chmod -R u+w $out
     cp -r ${../docs} $out/docs
@@ -9,13 +9,13 @@ let
     cp ${../VERSION} $out/VERSION
   '';
 in pkgs.writeShellApplication {
-  name = "nixlab-admin";
+  name = "nixus-admin";
   runtimeInputs = with pkgs; [ (python3.withPackages (ps: [ ps.markdown ps.cryptography ])) nix nixos-rebuild git iproute2 util-linux openssl openssh shadow coreutils systemd networkmanager incus-lts.client age sops parted e2fsprogs pamtester ];
   text = ''
-    NIXLAB_WORKER_RUNTIME="$(dirname "$(dirname "$(readlink -f "$0")")")"
-    export NIXLAB_WORKER_RUNTIME
-    export NIXLAB_PROJECT_EVAL_LIB=${../lib/project-workspace.nix}
-    export NIXLAB_PROJECT_NIXPKGS_LIB=${pkgs.path}/lib
+    NIXUS_WORKER_RUNTIME="$(dirname "$(dirname "$(readlink -f "$0")")")"
+    export NIXUS_WORKER_RUNTIME
+    export NIXUS_PROJECT_EVAL_LIB=${../lib/project-workspace.nix}
+    export NIXUS_PROJECT_NIXPKGS_LIB=${pkgs.path}/lib
     exec python3 ${source}/main.py "$@"
   '';
 }

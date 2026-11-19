@@ -88,9 +88,9 @@ class PlatformUpgradeTests(unittest.TestCase):
             rt.atomic(candidate / 'flake.nix', 'new')
             (candidate / 'obsolete.nix').unlink()
             rt.atomic(candidate / 'new-feature.nix', '{}')
-            names = rt.read_json(candidate / '.nixlab-files.json')
+            names = rt.read_json(candidate / '.nixus-files.json')
             names = [n for n in names if n != 'obsolete.nix'] + ['new-feature.nix']
-            rt.write_json(candidate / '.nixlab-files.json', names)
+            rt.write_json(candidate / '.nixus-files.json', names)
             upgrades.publish(candidate, root)
             self.assertEqual((root / 'flake.nix').read_text(), 'new')
             self.assertFalse((root / 'obsolete.nix').exists())
@@ -108,7 +108,7 @@ class PlatformUpgradeTests(unittest.TestCase):
             rt.atomic(root / 'flake.nix', 'old'); subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
             rt.snapshot(old, root); rt.snapshot(candidate, root)
             rt.atomic(candidate / 'a-new.nix', '{}'); rt.atomic(candidate / 'z-new.nix', '{}')
-            rt.write_json(candidate / '.nixlab-files.json', ['flake.nix', 'a-new.nix', 'z-new.nix'])
+            rt.write_json(candidate / '.nixus-files.json', ['flake.nix', 'a-new.nix', 'z-new.nix'])
             atomic = rt.atomic
             def fail(path, *args, **kwargs):
                 if path == root / 'z-new.nix': raise OSError('power interrupted')
@@ -152,7 +152,7 @@ class IdentityTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.state = Path(self.temp.name)
         self.patch = patch.object(rt, 'STATE', self.state); self.patch.start(); self.addCleanup(self.patch.stop)
-        self.env = patch.dict(os.environ, {'NIXLAB_TEST': '1'}); self.env.start(); self.addCleanup(self.env.stop)
+        self.env = patch.dict(os.environ, {'NIXUS_TEST': '1'}); self.env.start(); self.addCleanup(self.env.stop)
         rt.write_json(self.state / 'auth.json', rt.password_record('administrator-test-password'))
 
     def test_role_matrix_rejects_code_restore_and_cross_project_operator_actions(self):
@@ -166,12 +166,12 @@ class IdentityTests(unittest.TestCase):
     def test_deleted_or_downgraded_account_revokes_existing_sessions(self):
         accounts.update('helper', 'operator', 'operator-test-password')
         auth = Auth(); token, _ = auth.login('operator-test-password', '127.0.0.1', 'helper')
-        self.assertEqual(auth.get('nixlab_session=' + token)['role'], 'operator')
+        self.assertEqual(auth.get('nixus_session=' + token)['role'], 'operator')
         accounts.update('helper', 'viewer')
-        self.assertIsNone(auth.get('nixlab_session=' + token))
+        self.assertIsNone(auth.get('nixus_session=' + token))
         token, _ = auth.login('operator-test-password', '127.0.0.1', 'helper')
         accounts.update('helper', delete=True)
-        self.assertIsNone(auth.get('nixlab_session=' + token))
+        self.assertIsNone(auth.get('nixus_session=' + token))
 
     def test_recovery_administrator_cannot_be_deleted_and_passwords_are_not_listed(self):
         with self.assertRaises(ValueError): accounts.update('admin', delete=True)
@@ -298,7 +298,7 @@ class GuestOperationTests(unittest.TestCase):
     def test_restored_guests_cannot_start_before_release(self):
         with tempfile.TemporaryDirectory() as folder:
             ops = operations.Operations(Path(folder) / 'root', Path(folder) / 'state')
-            current = {'config': {'user.nixlab.restore-review': 'required'}}
+            current = {'config': {'user.nixus.restore-review': 'required'}}
             with patch.object(operations, 'instance', return_value=current), patch.object(operations, 'incus') as incus:
                 with self.assertRaisesRegex(ValueError, 'Review restored'):
                     ops.perform({'action': 'start', 'project': 'lab', 'name': 'restored'})
@@ -316,7 +316,7 @@ class GuestOperationTests(unittest.TestCase):
                 self.assertTrue(result['requiresReview'])
                 args = incus.call_args.args
                 self.assertIn('boot.autostart=false', args)
-                self.assertIn('user.nixlab.restore-review=required', args)
+                self.assertIn('user.nixus.restore-review=required', args)
                 self.assertNotIn('--refresh', args)
 
     def test_restore_release_refuses_duplicate_static_address(self):

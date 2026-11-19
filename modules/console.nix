@@ -1,23 +1,23 @@
 { lib, pkgs, ... }:
 let
   status = pkgs.writeShellApplication {
-    name = "nixlab-status";
+    name = "nixus-status";
     runtimeInputs = [ pkgs.python3 pkgs.iproute2 pkgs.systemd ];
     text = ''exec python3 ${../scripts/console_status.py} "$@"'';
   };
-  fetchConfig = pkgs.writeText "nixlab-fastfetch.json" (builtins.toJSON {
-    logo = { type = "data"; source = "NIXLAB\nNixOS + Incus"; padding.right = 4; };
+  fetchConfig = pkgs.writeText "nixus-fastfetch.json" (builtins.toJSON {
+    logo = { type = "data"; source = "NIXUS\nNixOS + Incus"; padding.right = 4; };
     modules = [
       "title" "separator"
-      { type = "custom"; key = "NixLab"; format = lib.removeSuffix "\n" (builtins.readFile ../VERSION); }
+      { type = "custom"; key = "Nixus"; format = lib.removeSuffix "\n" (builtins.readFile ../VERSION); }
       "os" "kernel" "uptime" "cpu" "memory"
       { type = "disk"; folders = "/"; }
       "break"
-      { type = "command"; key = ""; text = "${status}/bin/nixlab-status"; timeout = 2500; }
+      { type = "command"; key = ""; text = "${status}/bin/nixus-status"; timeout = 2500; }
     ];
   });
   fetch = pkgs.writeShellApplication {
-    name = "nixlab-fetch";
+    name = "nixus-fetch";
     runtimeInputs = [ pkgs.fastfetch.minimal ];
     text = ''exec fastfetch --config ${fetchConfig} "$@"'';
   };
@@ -46,7 +46,7 @@ in {
     # Override the upstream default; ordinary user definitions still win.
     ll = lib.mkOverride 900 "ls -lah --group-directories-first --color=auto";
     failed = lib.mkDefault "systemctl --failed --no-pager";
-    nixlab-update = lib.mkDefault "nix run --refresh github:OmarDardery/nixlab#update --";
+    nixus-update = lib.mkDefault "nix run --refresh github:OmarDardery/Nixus#update --";
   };
   programs.bash.interactiveShellInit = lib.mkMerge [
     # Pinned ble.sh requires the XDG cache directory to exist before sourcing.
@@ -63,8 +63,8 @@ in {
     bind 'set show-all-if-ambiguous on'
   '' ];
   programs.bash.loginShellInit = ''
-    if [[ $- == *i* && -t 1 && "$TERM" != dumb && ! -e "$HOME/.hushlogin" && -z "''${NIXLAB_NO_FETCH:-}" ]]; then
-      ${fetch}/bin/nixlab-fetch
+    if [[ $- == *i* && -t 1 && "$TERM" != dumb && ! -e "$HOME/.hushlogin" && -z "''${NIXUS_NO_FETCH:-}" ]]; then
+      ${fetch}/bin/nixus-fetch
     fi
   '';
 }

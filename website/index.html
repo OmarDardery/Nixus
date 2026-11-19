@@ -4,22 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0e1116">
-  <meta name="description" content="Nixlab turns an installed NixOS server into an Incus, Cockpit and Arcane homelab. One command, preserved guests, and actual troubleshooting docs.">
-  <meta property="og:title" content="Nixlab — A NixOS hypervisor for homelabs.">
+  <meta name="description" content="Nixus turns an installed NixOS server into an Incus, Cockpit and Arcane homelab. One command, preserved guests, and actual troubleshooting docs.">
+  <meta property="og:title" content="Nixus — A NixOS hypervisor for homelabs.">
   <meta property="og:description" content="Incus, Cockpit and Arcane on plain NixOS. Native management tools with reviewed host configuration and recovery guidance.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://nixlab.dardery.work/">
-  <link rel="canonical" href="https://nixlab.dardery.work/">
+  <meta property="og:url" content="https://nixus.dardery.work/">
+  <link rel="canonical" href="https://nixus.dardery.work/">
   <link rel="icon" href="@@BASE@@/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="@@BASE@@/assets/brand.css"><link rel="stylesheet" href="@@BASE@@/assets/style.css">
   <script defer src="@@BASE@@/assets/site.js"></script>
-  <title>Nixlab — A NixOS hypervisor for homelabs.</title>
+  <title>Nixus — A NixOS hypervisor for homelabs.</title>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header"><div class="header-inner">
-    <a class="brand" href="@@BASE@@/" aria-label="Nixlab home"><span class="brand-mark" aria-hidden="true">[n]</span>nixlab<span class="brand-cursor" aria-hidden="true">_</span></a>
-    <nav aria-label="Main navigation"><a class="hide-small" href="#why">Why NixLab</a><a class="hide-small" href="#stack">The stack</a><a class="hide-small" href="#install">Install</a><a href="@@BASE@@/docs/" aria-label="Documentation">Docs</a><a class="github-link" href="https://github.com/OmarDardery/nixlab">GitHub <span aria-hidden="true">↗</span></a></nav>
+    <a class="brand" href="@@BASE@@/" aria-label="Nixus home"><span class="brand-mark" aria-hidden="true">[n]</span>nixus<span class="brand-cursor" aria-hidden="true">_</span></a>
+    <nav aria-label="Main navigation"><a class="hide-small" href="#why">Why Nixus</a><a class="hide-small" href="#stack">The stack</a><a class="hide-small" href="#install">Install</a><a href="@@BASE@@/docs/" aria-label="Documentation">Docs</a><a class="github-link" href="https://github.com/OmarDardery/Nixus">GitHub <span aria-hidden="true">↗</span></a></nav>
   </div></header>
   <main id="main">
     <section class="hero section-wrap">
@@ -36,7 +36,7 @@
         <div class="host-box">
           <div class="host-heading"><span class="server-glyph" aria-hidden="true">▤</span><div><strong>THE HOST</strong><span>NixOS · bare metal · no desktop</span></div><span class="small-tag">YOUR NIXOS SERVER</span></div>
           <div class="service-row"><div class="service-symbol" aria-hidden="true">i_</div><div><strong>Incus</strong><span>Containers &amp; virtual machines</span></div><code>:8443</code></div>
-          <div class="service-row"><div class="service-symbol" aria-hidden="true">&gt;_</div><div><strong>Cockpit</strong><span>Host terminal, services &amp; logs</span></div><code>:9090</code></div><div class="service-row"><div class="service-symbol" aria-hidden="true">[n]</div><div><strong>NixLab console</strong><span>Reviewed host changes &amp; recovery</span></div><code>:9440</code></div>
+          <div class="service-row"><div class="service-symbol" aria-hidden="true">&gt;_</div><div><strong>Cockpit</strong><span>Host terminal, services &amp; logs</span></div><code>:9090</code></div><div class="service-row"><div class="service-symbol" aria-hidden="true">[n]</div><div><strong>Nixus console</strong><span>Reviewed host changes &amp; recovery</span></div><code>:9440</code></div>
           <div class="vm-connector"><span aria-hidden="true">└</span><span>apps · NixOS virtual machine</span><span class="vm-isolation">SEPARATE KERNEL</span></div>
           <div class="vm-box"><div class="service-row"><div class="service-symbol" aria-hidden="true">▱</div><div><strong>Arcane + Docker</strong><span>Compose stacks live here</span></div><code>:9443*</code></div><p>* HTTPS through the host proxy. Docker stays in the VM.</p></div>
           <div class="host-bottom"><span><span class="small-square" aria-hidden="true"></span> NIX-OWNED HOST</span><span>INCUS-OWNED GUEST DATA</span></div>
@@ -45,12 +45,12 @@
       </div>
     </section>
     <div class="spec-strip"><div class="section-wrap"><span><b>01</b> Plain NixOS</span><span><b>02</b> Incus-first guests</span><span><b>03</b> Guarded changes</span><span><b>04</b> Independent backups</span></div></div>
-    <section id="why" class="why-section section-wrap"><p class="eyebrow">WHY NIXLAB</p><div class="why-grid"><div><h2>Clear ownership.<br><span>Less fragile infrastructure.</span></h2></div><p>NixOS owns reproducible host configuration. Incus owns guests, networks and their data. NixLab coordinates reviews, safe activation and recovery—not a duplicate guest-management stack.</p></div></section><section id="install" class="install-section section-wrap">
-      <div class="section-heading"><p class="eyebrow">01 / GET IT RUNNING</p><h2>One command.<br><span>On your existing NixOS host.</span></h2><p>Run on an installed Intel/AMD x86_64 NixOS system with Internet access and hardware virtualization enabled. Start with a minimal NixOS installation; Nixlab configures the stack on top.</p></div>
+    <section id="why" class="why-section section-wrap"><p class="eyebrow">WHY NIXUS</p><div class="why-grid"><div><h2>Clear ownership.<br><span>Less fragile infrastructure.</span></h2></div><p>NixOS owns reproducible host configuration. Incus owns guests, networks and their data. Nixus coordinates reviews, safe activation and recovery—not a duplicate guest-management stack.</p></div></section><section id="install" class="install-section section-wrap">
+      <div class="section-heading"><p class="eyebrow">01 / GET IT RUNNING</p><h2>One command.<br><span>On your existing NixOS host.</span></h2><p>Run on an installed Intel/AMD x86_64 NixOS system with Internet access and hardware virtualization enabled. Start with a minimal NixOS installation; Nixus configures the stack on top.</p></div>
       <div class="install-panel">
         <div class="terminal-bar"><span><span class="terminal-dot" aria-hidden="true"></span> host / terminal</span><button class="copy-button" type="button" data-copy="install-command" aria-label="Copy install command">Copy command <span aria-hidden="true">⧉</span></button></div>
         <pre><code id="install-command">sudo nix --extra-experimental-features 'nix-command flakes' \
-  run github:OmarDardery/nixlab#install</code></pre>
+  run github:OmarDardery/Nixus#install</code></pre>
         <div class="terminal-note"><span aria-hidden="true">↳</span> Interrupted? Run the same command again to resume.</div>
       </div>
       <div class="install-notes"><p><strong>Your system stays your system.</strong> Installed users, boot configuration, mounts and addressing are preserved. Password SSH works for non-root Linux accounts; the installer provisions a stable operator password if needed.</p><p><strong>Already running Incus?</strong> Review the adoption inventory and backups before proceeding. Existing guests require explicit adoption. <a href="@@BASE@@/docs/plain-nixos/#adopt-an-existing-incus-host">Adoption details →</a></p></div>
@@ -63,7 +63,7 @@
         <article><span class="row-index">02</span><div><h3>Cockpit <span>:9090</span></h3><p>Get a host terminal. Inspect services and the journal. Use your Linux account.</p></div><span class="row-role">THE HOST</span></article>
         <article><span class="row-index">03</span><div><h3>Arcane <span>:9443</span></h3><p>Deploy Docker Compose stacks in the apps VM. Separate Linux and Arcane logins.</p></div><span class="row-role">THE APPS</span></article>
       </div>
-      <p class="section-caption">The Nixlab configuration and recovery portal is on <code>:9440</code>. Use the actual address printed by installation. Reported guest IPs and reservations are shown separately. <a href="@@BASE@@/docs/networking/">Networking guide</a> · <a href="@@BASE@@/docs/projects/">Upstream projects &amp; credits</a>.</p>
+      <p class="section-caption">The Nixus configuration and recovery portal is on <code>:9440</code>. Use the actual address printed by installation. Reported guest IPs and reservations are shown separately. <a href="@@BASE@@/docs/networking/">Networking guide</a> · <a href="@@BASE@@/docs/projects/">Upstream projects &amp; credits</a>.</p>
     </section>
     <section class="docs-section section-wrap">
       <div class="section-heading"><p class="eyebrow">03 / GUIDES</p><h2>Documentation.<br><span>Install, operate and recover.</span></h2></div>
@@ -77,6 +77,6 @@
     </div></section>
     <section class="last-call section-wrap"><p class="eyebrow">NIXOS · INCUS · COCKPIT · OPTIONAL ARCANE</p><h2>Start small.<br><span>Validate your host.</span></h2><a class="button button-primary" href="@@BASE@@/docs/plain-nixos/">Start with the installation guide <span aria-hidden="true">↗</span></a></section>
   </main>
-  <footer class="site-footer section-wrap"><a class="brand" href="@@BASE@@/">nixlab<span class="brand-cursor" aria-hidden="true">_</span></a><p>Built on maintained <a href="@@BASE@@/docs/projects/">upstream projects</a>.</p><a href="https://github.com/OmarDardery/nixlab">Source &amp; issues ↗</a></footer>
+  <footer class="site-footer section-wrap"><a class="brand" href="@@BASE@@/">nixus<span class="brand-cursor" aria-hidden="true">_</span></a><p>Built on maintained <a href="@@BASE@@/docs/projects/">upstream projects</a>.</p><a href="https://github.com/OmarDardery/Nixus">Source &amp; issues ↗</a></footer>
   <p class="sr-only" id="announcer" role="status" aria-live="polite"></p>
 </body></html>

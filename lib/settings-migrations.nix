@@ -7,8 +7,8 @@ let
     else stored;
   current = if version == 0 then legacy else stored;
 in
-if !builtins.isAttrs stored then throw "NixLab settings must be an object"
+if !builtins.isAttrs stored then throw "Nixus settings must be an object"
 else if !builtins.isInt version || version < 0 || version > 1 then
-  throw "Unsupported NixLab settings schema version"
+  throw "Unsupported Nixus settings schema version"
 else if version == 0 then current // { schemaVersion = 1; }
 else current

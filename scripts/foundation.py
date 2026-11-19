@@ -64,7 +64,7 @@ def validate(site, host=None):
     guests = c.get('guestInterfaces', ['incusbr0'])
     if (not isinstance(guests, list) or len(guests) > 64 or any(not interface(name) for name in guests)
             or len(set(guests)) != len(guests) or site.get('guests', {}).get('bridge', 'incusbr0') not in guests):
-        raise ValueError('Register distinct private guest bridges, including the Nixlab bridge')
+        raise ValueError('Register distinct private guest bridges, including the Nixus bridge')
     if any(not interface(name) or name == m['interface'] or name in names or name in ports for name in guests):
         raise ValueError('Guest firewall interfaces must be separate from host Ethernet/LAN interfaces')
     if host is not None and any(physical.get(name, {}).get('kind') not in (None, 'bridge') for name in guests):

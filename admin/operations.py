@@ -15,10 +15,10 @@ import runtime as rt
 from locking import open_lock
 import incus_client
 
-OWNER = 'user.nixlab.managed'
-LAST = 'user.nixlab.last-applied'
+OWNER = 'user.nixus.managed'
+LAST = 'user.nixus.last-applied'
 ACTIONS = {'start', 'stop', 'restart', 'snapshot', 'snapshot-copy', 'export', 'restore', 'backup', 'backup-check', 'release-restore'}
-INCUS_LOCK = Path('/run/lock/nixlab-incus.lock')
+INCUS_LOCK = Path('/run/lock/nixus-incus.lock')
 
 
 def name(value):
@@ -42,7 +42,7 @@ def guests(project='lab'):
         drift = ''
         if guest.get('config', {}).get(OWNER) == 'true':
             try:
-                declared = rt.read_json(Path('/etc/nixlab/desired-instances.json'), [])
+                declared = rt.read_json(Path('/etc/nixus/desired-instances.json'), [])
                 spec = next((d for d in declared if d['project'] == project and d['name'] == guest['name']), None)
                 if spec:
                     import reconcile
@@ -51,7 +51,7 @@ def guests(project='lab'):
                 drift = str(exc)
         result.append({'name': guest['name'], 'project': project, 'type': guest['type'], 'status': guest['status'],
                        'addresses': addresses, 'managed': config.get(OWNER) == 'true',
-                       'restoreReview': config.get('user.nixlab.restore-review') == 'required',
+                       'restoreReview': config.get('user.nixus.restore-review') == 'required',
                        'cpu': config.get('limits.cpu', ''), 'memory': config.get('limits.memory', ''), 'drift': drift,
                        'snapshots': [s['name'].rsplit('/', 1)[-1] for s in guest.get('snapshots', [])]})
     return result
@@ -103,7 +103,7 @@ class Operations:
             if directory.is_symlink() or not directory.is_dir() or not re.fullmatch(r'[0-9a-f]{32}', directory.name): continue
             record = rt.read_job_record(directory / 'job.json', {})
             if record.get('status') in ('queued', 'running') and time.time() - record.get('created', 0) > 30:
-                if not rt.worker_active('nixlab-operation-' + directory.name):
+                if not rt.worker_active('nixus-operation-' + directory.name):
                     record.update(status='failed', error='Worker interrupted. Inspect guest state and recovery intent before retrying')
                     rt.write_json(directory / 'job.json', record)
             records.append(record)
@@ -172,7 +172,7 @@ class Operations:
         return parent / (job['id'] + '.tar.gz')
 
     def archive_settings(self):
-        settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(self.root, 'settings'), {}))
+        settings = rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(self.root, 'settings'), {}))
         staging = settings['backup']['stagingDirectory']
         mount = next((m for m in settings.get('mounts', []) if m['role'] == 'backup'), None)
         return {'archiveRoot': str(Path(staging) / 'on-demand'), 'archiveMount': mount}
@@ -184,7 +184,7 @@ class Operations:
         if action not in ACTIONS: raise ValueError('Unsupported guest operation')
         project = name(request.get('project', 'lab'))
         guest = name(request.get('name', 'all') if action in ('backup', 'backup-check') else request.get('name'))
-        settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(self.root, 'settings'), {}))
+        settings = rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(self.root, 'settings'), {}))
         if not settings.get('ready'): raise ValueError('Complete host setup before managing guests')
         if action in ('backup', 'backup-check') and not settings['backup']['enable']:
             raise ValueError('Configure an independent backup destination first')
@@ -215,9 +215,9 @@ class Operations:
             if action == 'export': record.update(self.archive_settings())
             rt.write_json(directory / 'job.json', record)
             try:
-                subprocess.run(['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixlab-operation-' + job_id,
-                                '--property=RuntimeMaxSec=43200', '--setenv=NIXLAB_ROOT=' + str(self.root),
-                                '--setenv=NIXLAB_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
+                subprocess.run(['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixus-operation-' + job_id,
+                                '--property=RuntimeMaxSec=43200', '--setenv=NIXUS_ROOT=' + str(self.root),
+                                '--setenv=NIXUS_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
                                 sys.executable, str(rt.SOURCE / 'main.py'), 'operation-job', job_id],
                                check=True, capture_output=True, text=True)
             except Exception:
@@ -232,7 +232,7 @@ class Operations:
         require_normal()
         action, project, guest = job['action'], name(job['project']), name(job['name'])
         if action in ('backup', 'backup-check'):
-            unit = 'restic-backups-nixlab.service' if action == 'backup' else 'nixlab-backup-check.service'
+            unit = 'restic-backups-nixus.service' if action == 'backup' else 'nixus-backup-check.service'
             subprocess.run(['systemctl', 'start', unit], check=True, timeout=43200)
             return {}
         if action == 'export':
@@ -240,7 +240,7 @@ class Operations:
             backup.PENDING.parent.mkdir(parents=True, exist_ok=True)
             backup.recover()
         current = {} if action == 'restore' else instance(project, guest)
-        if action in ('start', 'restart') and current.get('config', {}).get('user.nixlab.restore-review') == 'required':
+        if action in ('start', 'restart') and current.get('config', {}).get('user.nixus.restore-review') == 'required':
             raise ValueError('Review restored networking, disks and credentials, then release the restore before starting it')
         if action in ('start', 'stop', 'restart'):
             args = [action, guest, '--project', project]
@@ -253,7 +253,7 @@ class Operations:
             if any(g['name'] == target for g in guests(project)):
                 raise ValueError('Restore target already exists; no instance is overwritten')
             overrides = ['--config', 'boot.autostart=false', '--config', OWNER + '=false',
-                         '--config', LAST + '=', '--config', 'user.nixlab.restore-review=required']
+                         '--config', LAST + '=', '--config', 'user.nixus.restore-review=required']
             if action == 'snapshot-copy':
                 incus('copy', guest + '/' + name(job['snapshot']), target, '--project', project, '--stateless', *overrides, timeout=43200)
             else:
@@ -280,7 +280,7 @@ class Operations:
                            if d.get('type') == 'disk' and d.get('path') != '/' and d.get('source')}
                 if other['name'] != guest and writable & volumes:
                     raise ValueError('A writable restored data volume is shared with another instance; clone or detach it before release')
-            incus('config', 'set', guest, 'user.nixlab.restore-review=complete', '--project', project)
+            incus('config', 'set', guest, 'user.nixus.restore-review=complete', '--project', project)
         elif action == 'export':
             import backup
             directory = self.path(job['id'])

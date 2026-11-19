@@ -44,11 +44,11 @@ class ConsoleTests(unittest.TestCase):
 
     def test_backup_default_success_is_not_a_successful_run_or_restore(self):
         cfg = settings(); cfg['backup']['enable'] = True
-        units = {'restic-backups-nixlab.service': {'LoadState': 'loaded', 'Result': 'success'}}
+        units = {'restic-backups-nixus.service': {'LoadState': 'loaded', 'Result': 'success'}}
         output = '\n'.join(c.lines(cfg, [link()], units))
         self.assertIn('no recorded run available', output)
         self.assertIn('Restore verification: not checked', output)
-        units['restic-backups-nixlab.service'].update(ExecMainExitTimestamp='2026-01-01', Result='exit-code')
+        units['restic-backups-nixus.service'].update(ExecMainExitTimestamp='2026-01-01', Result='exit-code')
         self.assertIn('result=exit-code', '\n'.join(c.lines(cfg, [link()], units)))
 
     def test_test_activation_and_pending_kernel_are_visible(self):

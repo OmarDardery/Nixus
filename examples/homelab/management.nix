@@ -1,5 +1,5 @@
 { ... }: {
-  nixlab.settings = {
+  nixus.settings = {
     cockpit.enable = true;
     maintenance.laptopMode = true;
   };

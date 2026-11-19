@@ -312,7 +312,7 @@ async function nativeRecoveryExport() {
     const result = await api("project-secrets/recovery-export", {passphrase, includeBackup, current});
     if (!result.verified) throw Error("Server did not verify the recovery encryption.");
     const bytes = Uint8Array.from(atob(result.encrypted), c => c.charCodeAt(0));
-    download("nixlab-project-secrets-recovery.json", bytes, "application/json");
+    download("nixus-project-secrets-recovery.json", bytes, "application/json");
     v.message = "Encrypted recovery kit downloaded; store it offline and verify it before trusting backups.";
   } catch (error) {
     v.error = error.message || "Recovery kit export failed.";

@@ -11,9 +11,9 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 from locking import open_lock
 
-OWNER = "user.nixlab.managed"
-INITIALIZING = "user.nixlab.initializing"
-LAST_APPLIED = "user.nixlab.last-applied"
+OWNER = "user.nixus.managed"
+INITIALIZING = "user.nixus.initializing"
+LAST_APPLIED = "user.nixus.last-applied"
 MISSING = object()
 
 def run(*args, data=None):
@@ -25,7 +25,7 @@ def run(*args, data=None):
 def desired_state(spec):
     config = copy.deepcopy(spec.get('config', {}))
     if any(k.startswith('volatile.') or k in (INITIALIZING, LAST_APPLIED) for k in config):
-        raise ValueError('Incus volatile and Nixlab state keys are reserved')
+        raise ValueError('Incus volatile and Nixus state keys are reserved')
     config.pop(OWNER, None)
     return {'version': 1, 'config': config, 'devices': copy.deepcopy(spec.get('devices', {})),
             'profiles': spec.get('profiles', ['base'])}
@@ -54,7 +54,7 @@ def plan(current, spec):
     if current['type'] != spec['type']:
         raise ValueError('Instance type is immutable; migrate explicitly')
     if OWNER in spec.get('config', {}) and spec['config'][OWNER] != 'true':
-        raise ValueError('The Nixlab ownership marker cannot be removed by reconciliation')
+        raise ValueError('The Nixus ownership marker cannot be removed by reconciliation')
     desired = desired_state(spec)
     old = json.loads(current.get('config', {}).get(LAST_APPLIED, '{}'))
     if old and old.get('version') != 1:
@@ -134,9 +134,9 @@ def reconcile(spec):
     require_normal()
     desired_state(spec)
     if INITIALIZING in spec.get("config", {}):
-        raise ValueError("The Nixlab initialization marker is reserved")
+        raise ValueError("The Nixus initialization marker is reserved")
     if OWNER in spec.get("config", {}) and spec["config"][OWNER] != "true":
-        raise ValueError("The Nixlab ownership marker cannot be removed by reconciliation")
+        raise ValueError("The Nixus ownership marker cannot be removed by reconciliation")
     for k in ("name", "project"):
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", spec[k]):
             raise ValueError(f"Invalid {k}")
@@ -183,7 +183,7 @@ def reconcile(spec):
 
 if __name__ == "__main__":
     # Shared with the export job; a rebuild cannot change instance resources mid-export.
-    with open_lock('/run/lock/nixlab-incus.lock') as lock:
+    with open_lock('/run/lock/nixus-incus.lock') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         for spec in json.loads(Path(sys.argv[1]).read_text()):
             reconcile(spec)

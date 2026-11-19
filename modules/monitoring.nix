@@ -17,55 +17,55 @@ let collecting = site.monitoring.collection || site.monitoring.history; in {
     exporters.node = {
       enable = collecting; listenAddress = "127.0.0.1"; openFirewall = false;
       enabledCollectors = [ "systemd" "textfile" ];
-      extraFlags = [ "--collector.textfile.directory=/var/lib/nixlab/metrics" ];
+      extraFlags = [ "--collector.textfile.directory=/var/lib/nixus/metrics" ];
     };
     scrapeConfigs = [
       { job_name = "host-and-incus"; static_configs = [ { targets = [ "127.0.0.1:9100" ]; } ]; }
     ];
     rules = [ ''
       groups:
-        - name: nixlab
+        - name: nixus
           rules:
-            - alert: NixlabGuestMetricsMissing
+            - alert: NixusGuestMetricsMissing
               expr: up == 0
               for: 10m
               labels: { severity: warning }
-            - alert: NixlabDiskAlmostFull
+            - alert: NixusDiskAlmostFull
               expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes < 0.1
               for: 10m
               labels: { severity: critical }
-            - alert: NixlabBackupStale
-              expr: nixlab_backup_enabled == 1 and nixlab_backup_overdue == 1
+            - alert: NixusBackupStale
+              expr: nixus_backup_enabled == 1 and nixus_backup_overdue == 1
               for: 10m
               labels: { severity: critical }
-            - alert: NixlabServiceFailed
+            - alert: NixusServiceFailed
               expr: node_systemd_unit_state{state="failed"} == 1
               for: 5m
               labels: { severity: warning }
     '' ];
   };
-  systemd.tmpfiles.rules = [ "d /var/lib/nixlab/metrics 0755 root root -" ];
-  systemd.services.nixlab-metrics = lib.mkIf collecting {
+  systemd.tmpfiles.rules = [ "d /var/lib/nixus/metrics 0755 root root -" ];
+  systemd.services.nixus-metrics = lib.mkIf collecting {
     description = "Collect Incus API metrics and backup freshness through local sockets";
     after = [ "incus.service" ];
     requires = [ "incus.service" ];
     path = [ pkgs.curl pkgs.coreutils pkgs.systemd ];
     serviceConfig = { Type = "oneshot"; UMask = "0022"; };
     script = ''
-      metrics=/var/lib/nixlab/metrics
+      metrics=/var/lib/nixus/metrics
       curl --fail --silent --show-error --max-time 30 --unix-socket /var/lib/incus/unix.socket \
         http://localhost/1.0/metrics > "$metrics/incus.tmp"
       mv "$metrics/incus.tmp" "$metrics/incus.prom"
       last=0
-      if test -f /var/lib/nixlab/last-backup-success; then
-        read -r last < /var/lib/nixlab/last-backup-success
+      if test -f /var/lib/nixus/last-backup-success; then
+        read -r last < /var/lib/nixus/last-backup-success
       fi
       overdue=$(${pkgs.python3}/bin/python3 ${../scripts/backup_health.py} --overdue)
-      printf 'nixlab_last_backup_success_seconds %s\nnixlab_backup_enabled %s\nnixlab_backup_overdue %s\n' "$last" '${if site.backup.enable then "1" else "0"}' "$overdue" > "$metrics/backup.tmp"
+      printf 'nixus_last_backup_success_seconds %s\nnixus_backup_enabled %s\nnixus_backup_overdue %s\n' "$last" '${if site.backup.enable then "1" else "0"}' "$overdue" > "$metrics/backup.tmp"
       mv "$metrics/backup.tmp" "$metrics/backup.prom"
     '';
   };
-  systemd.timers.nixlab-metrics = lib.mkIf collecting {
+  systemd.timers.nixus-metrics = lib.mkIf collecting {
     wantedBy = [ "timers.target" ];
     timerConfig = { OnBootSec = "2min"; OnUnitActiveSec = "${toString site.monitoring.scrapeSeconds}s"; };
   };

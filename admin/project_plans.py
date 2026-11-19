@@ -20,7 +20,7 @@ NAME = re.compile(r"[a-z][a-z0-9-]{0,62}\Z")
 MEMORY = re.compile(r"[1-9][0-9]*(?:KiB|MiB|GiB)\Z")
 CLAIM = re.compile(r"(instance|volume|network)/([A-Za-z0-9_.-]+)\Z")
 MAX_OUTPUT = 1024 * 1024
-HOST_DESIRED = Path("/etc/nixlab/desired-instances.json")
+HOST_DESIRED = Path("/etc/nixus/desired-instances.json")
 
 
 def digest(value):
@@ -62,7 +62,7 @@ def evaluate(source, identity):
 
     Nix's flake path accessor can CREATE `/nix/store/*-source.lock` even with
     --no-write-lock-file and --offline. A read-only store therefore fails.
-    Instead, interpret NixLab's trusted, pinned project schema with
+    Instead, interpret Nixus's trusted, pinned project schema with
     nix-instantiate --eval in a DynamicUser sandbox, using the immutable
     checked source and a pinned Nixpkgs lib. Never fetch/execute the uploaded
     flake's custom outputs, request builds, or open the host Nix daemon.
@@ -70,9 +70,9 @@ def evaluate(source, identity):
     if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{32}", identity):
         raise ValueError("Invalid reviewed source identity")
     store_path = _cached_source(Path(source))
-    evaluator = os.environ.get("NIXLAB_PROJECT_EVAL_LIB", "")
-    nixpkgs_lib = os.environ.get("NIXLAB_PROJECT_NIXPKGS_LIB", "")
-    # These trusted paths are supplied by the packaged NixLab binary, not
+    evaluator = os.environ.get("NIXUS_PROJECT_EVAL_LIB", "")
+    nixpkgs_lib = os.environ.get("NIXUS_PROJECT_NIXPKGS_LIB", "")
+    # These trusted paths are supplied by the packaged Nixus binary, not
     # by the project's flake.nix. Prevent Nix expression string injection.
     for value in (evaluator, nixpkgs_lib):
         if not re.fullmatch(r"/nix/store/[0-9a-z]{32}-[A-Za-z0-9+._?=-]+(?:/[A-Za-z0-9._-]+)*", value):
@@ -85,7 +85,7 @@ def evaluate(source, identity):
     nix_binary = shutil.which("nix-instantiate") or "/run/current-system/sw/bin/nix-instantiate"
     command = [
         "systemd-run", "--pipe", "--wait", "--collect", "--quiet",
-        "--unit=nixlab-project-eval-" + identity,
+        "--unit=nixus-project-eval-" + identity,
         "--property=Type=exec",
         "--property=DynamicUser=yes",
         "--property=ProtectSystem=strict",
@@ -102,7 +102,7 @@ def evaluate(source, identity):
         "--property=TasksMax=32",
         "--property=RuntimeMaxSec=90",
         "--property=UMask=0077",
-        "--property=InaccessiblePaths=-/var/lib/incus -/var/lib/nixlab-secrets -/var/lib/nixlab-admin -/etc/nixlab -/run/nix -/nix/var/nix/daemon-socket",
+        "--property=InaccessiblePaths=-/var/lib/incus -/var/lib/nixus-secrets -/var/lib/nixus-admin -/etc/nixus -/run/nix -/nix/var/nix/daemon-socket",
         "--setenv=HOME=/tmp",
         "--setenv=NIX_PATH=",
         "--setenv=NIX_REMOTE=local?read-only=true",
@@ -115,9 +115,9 @@ def evaluate(source, identity):
         # In restricted mode only NIX_PATH allowlisted paths are readable.
         # Keep exactly the three previously verified store sources, never
         # /nix/store wholesale or any host configuration directory.
-        "-I", "nixlab-evaluator=" + evaluator,
-        "-I", "nixlab-lib=" + nixpkgs_lib,
-        "-I", "nixlab-source=" + store_path,
+        "-I", "nixus-evaluator=" + evaluator,
+        "-I", "nixus-lib=" + nixpkgs_lib,
+        "-I", "nixus-source=" + store_path,
         "--expr", expression,
     ]
     try:
@@ -204,7 +204,7 @@ def validate_inventory(raw):
 
 def _native_spec(project, name, current):
     if current.get("config", {}).get(reconcile.OWNER) != "true":
-        raise ValueError("Refusing to adopt an Incus instance without NixLab ownership")
+        raise ValueError("Refusing to adopt an Incus instance without Nixus ownership")
     if current.get("type") not in ("container", "virtual-machine"):
         raise ValueError("Unsupported existing Incus instance type")
     try:
@@ -212,7 +212,7 @@ def _native_spec(project, name, current):
     except (ValueError, TypeError):
         raise ValueError("Invalid previous Incus ownership metadata") from None
     if not isinstance(last, dict) or last.get("version") != 1:
-        raise ValueError("Existing instance must have last-applied NixLab ownership")
+        raise ValueError("Existing instance must have last-applied Nixus ownership")
     if not isinstance(last.get("config"), dict) or not isinstance(last.get("devices"), dict) or not isinstance(last.get("profiles"), list):
         raise ValueError("Incomplete Incus ownership record")
     config = dict(last["config"])
@@ -288,7 +288,7 @@ def plan(inventory):
                 "action": item["action"], "before": item["before"],
                 "after": item["after"],
                 "potentialDisruption": item["action"] == "update" and item["observedStatus"] == "Running",
-            } for item in items], "boundary": "Existing NixLab-owned native Incus instances only; volumes/VM images/Compose/data are never replaced"}
+            } for item in items], "boundary": "Existing Nixus-owned native Incus instances only; volumes/VM images/Compose/data are never replaced"}
 
 
 def recheck_and_apply(project, approved, *, verify_only=False):

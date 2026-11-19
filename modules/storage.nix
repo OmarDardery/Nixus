@@ -11,7 +11,7 @@
   boot.supportedFilesystems = lib.mkIf (site.storage.driver == "zfs") [ "zfs" ];
   networking.hostId = lib.mkIf (site.storage.driver == "zfs") site.storage.hostId;
   services.zfs.autoScrub.enable = site.storage.driver == "zfs";
-  systemd.tmpfiles.rules = [ "d /var/lib/nixlab 0711 root root -" "d /var/lib/nixlab/exports 0700 root root -" ];
+  systemd.tmpfiles.rules = [ "d /var/lib/nixus 0711 root root -" "d /var/lib/nixus/exports 0700 root root -" ];
   systemd.services.incus-preseed.preStart = lib.mkIf (site.storage.driver == "zfs") ''
     # Refuse to initialize a missing dataset; do not let Incus create a pool from a disk path.
     ${config.boot.zfs.package}/bin/zfs list ${lib.escapeShellArg site.storage.source}

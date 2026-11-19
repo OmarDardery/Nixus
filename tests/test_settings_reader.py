@@ -39,8 +39,8 @@ class ReaderTests(unittest.TestCase):
 
     def test_future_schema_has_a_safe_actionable_error(self):
         with patch.object(settings_reader.subprocess, 'run', return_value=Mock(returncode=1,
-                   stderr='Unsupported NixLab settings schema version\nSENTINEL-config-context')):
-            with self.assertRaisesRegex(ValueError, 'Unsupported NixLab settings schema version') as caught:
+                   stderr='Unsupported Nixus settings schema version\nSENTINEL-config-context')):
+            with self.assertRaisesRegex(ValueError, 'Unsupported Nixus settings schema version') as caught:
                 settings_reader.read_settings('/fixture')
             self.assertNotIn('SENTINEL', str(caught.exception))
 

@@ -14,7 +14,7 @@ For an existing filesystem, add `machine/modules/disks/archive.nix`:
 
 ```nix
 { ... }: {
-  nixlab.storage.disks.archive = {
+  nixus.storage.disks.archive = {
     uuid = "REPLACE-WITH-DISCOVERED-UUID";
     fsType = "ext4";
     role = "pool";
@@ -22,8 +22,8 @@ For an existing filesystem, add `machine/modules/disks/archive.nix`:
 }
 ```
 
-The default mount point is `/srv/nixlab/archive`; a pool declaration registers
-`disk-archive` with its source at `/srv/nixlab/archive/incus`. Use `role = "data"`
+The default mount point is `/srv/nixus/archive`; a pool declaration registers
+`disk-archive` with its source at `/srv/nixus/archive/incus`. Use `role = "data"`
 for a plain mount. This never formats a device. Select the actual filesystem UUID
 using `lsblk -f`, check that it is not a system disk or already mounted elsewhere,
 and verify the mount point is empty before first activation. Build-time type
@@ -67,10 +67,10 @@ contain secrets, so do not put credentials into uploads or the source review.
 Root can use the same transaction API locally:
 
 ```sh
-sudo nixlab-admin config review --module disks/archive.nix=./archive.nix
-sudo nixlab-admin config status
-sudo nixlab-admin config apply TRANSACTION_ID
-sudo nixlab-admin config confirm TRANSACTION_ID
+sudo nixus-admin config review --module disks/archive.nix=./archive.nix
+sudo nixus-admin config status
+sudo nixus-admin config apply TRANSACTION_ID
+sudo nixus-admin config confirm TRANSACTION_ID
 ```
 
 Use `cancel` for an unapplied candidate, or `rollback` with the transaction ID.
@@ -98,8 +98,8 @@ or discard any pending configuration transaction. Use the **Migrate local config
 with administrator reauthentication, or run:
 
 ```sh
-sudo nixlab-admin config migrate-layout
-sudo nixlab-admin config status
+sudo nixus-admin config migrate-layout
+sudo nixus-admin config status
 ```
 
 The command validates source paths, copies only approved configuration files into
@@ -115,31 +115,31 @@ configuration, its relative hardware imports and stateVersion are preserved unde
 
 ## Typed settings and ownership
 
-All inventory fields are now Nix module options under `nixlab.settings`. Unknown
+All inventory fields are now Nix module options under `nixus.settings`. Unknown
 keys and invalid value types are rejected by Nix. The existing JSON schema/UI
 remains a compatibility authoring interface: per-field defaults preserve its
 values unless an administrator module overrides that field explicitly.
 
 ```nix
 { ... }: {
-  nixlab.settings.radios.bluetooth.enable = false;
-  nixlab.settings.monitoring = { history = true; retentionDays = 7; };
+  nixus.settings.radios.bluetooth.enable = false;
+  nixus.settings.monitoring = { history = true; retentionDays = 7; };
 }
 ```
 
 The UI displays the effective configuration and identifies differing file-owned
 settings; corresponding scalar form controls are disabled. Structured resource
 forms remain JSON-owned. Secrets are runtime references, never credential contents.
-`nix eval --json path:/etc/nixos#nixlabSettings` shows evaluated settings;
-`path:/etc/nixos#nixlabDesiredSettings` shows the JSON/default inventory before file overrides.
-The active projection is materialized in `/etc/nixlab/effective-settings.json`;
+`nix eval --json path:/etc/nixos#nixusSettings` shows evaluated settings;
+`path:/etc/nixos#nixusDesiredSettings` shows the JSON/default inventory before file overrides.
+The active projection is materialized in `/etc/nixus/effective-settings.json`;
 regular status polling does not evaluate Nix.
 
 Declare guests independently using stable names:
 
 ```nix
 { ... }: {
-  nixlab.incus.instances.monitoring = {
+  nixus.incus.instances.monitoring = {
     image = "images:REPLACE-WITH-REVIEWED-FINGERPRINT";
     type = "container";
     config = { "limits.cpu" = "2"; "limits.memory" = "1GiB"; };
@@ -155,7 +155,7 @@ for the same guest. A changed image reference never recreates an existing guest.
 
 ## Reconciliation migration
 
-The first reconciliation of an existing Nixlab-managed guest retains the previous
+The first reconciliation of an existing Nixus-managed guest retains the previous
 additive behavior and records only the declared fields in a versioned last-applied
 marker. It does not claim ownership of unrelated runtime config or volatile keys.
 Subsequent runs compare previous declaration, current runtime values and desired

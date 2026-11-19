@@ -74,10 +74,10 @@ class ModuleUploadTests(SettingsFixture):
             rt.write_json(root/'local/settings.json',settings())
             rt.snapshot(directory/'source',root)
             rt.write_json(directory/'job.json',{'updateInputs':False})
-            disk={'name':'archive','uuid':'aaaa-bbbb','path':'/srv/nixlab/archive','fsType':'ext4','role':'pool','required':True,'readOnly':False}
+            disk={'name':'archive','uuid':'aaaa-bbbb','path':'/srv/nixus/archive','fsType':'ext4','role':'pool','required':True,'readOnly':False}
             projection={'settings':settings(),'disks':{'archive':disk}}
             host=copy.deepcopy(HOST)
-            host['disks'].append({'uuid':'different-uuid','mountpoints':['/srv/nixlab/archive']})
+            host['disks'].append({'uuid':'different-uuid','mountpoints':['/srv/nixus/archive']})
             result=subprocess.CompletedProcess([],0,stdout=json.dumps(projection))
             with patch('worker.run') as run,patch('worker.subprocess.run',return_value=result),patch('model.inventory',return_value=host):
                 with self.assertRaisesRegex(ValueError,'different filesystem'):
@@ -221,14 +221,14 @@ class ModelTests(unittest.TestCase):
 
     def test_existing_filesystem_becomes_pool_with_stable_source(self):
         current=settings(); proposed=copy.deepcopy(current)
-        proposed['mounts']=[{'name':'guests','uuid':'aaaa-bbbb','path':'/srv/nixlab/guests','fsType':'ext4','role':'guests','required':True,'readOnly':False}]
+        proposed['mounts']=[{'name':'guests','uuid':'aaaa-bbbb','path':'/srv/nixus/guests','fsType':'ext4','role':'guests','required':True,'readOnly':False}]
         out=model.validate_settings(proposed,current,HOST,require_devices=False)
-        self.assertEqual(out['storage']['source'],'/srv/nixlab/guests/incus')
+        self.assertEqual(out['storage']['source'],'/srv/nixus/guests/incus')
         self.assertTrue(out['ready'])
 
     def test_wrong_filesystem_and_system_disk_rejected(self):
         current=settings(); proposed=copy.deepcopy(current)
-        proposed['mounts']=[{'name':'data','uuid':'aaaa-bbbb','path':'/srv/nixlab/data','fsType':'ext4','role':'data','required':False,'readOnly':False}]
+        proposed['mounts']=[{'name':'data','uuid':'aaaa-bbbb','path':'/srv/nixus/data','fsType':'ext4','role':'data','required':False,'readOnly':False}]
         host=copy.deepcopy(HOST);host['disks'][0]['mountpoints']=['/']
         with self.assertRaisesRegex(ValueError,'already mounted'):
             model.validate_settings(proposed,current,host)
@@ -307,7 +307,7 @@ class SnapshotTests(unittest.TestCase):
             self.assertNotEqual(digest,rt.digest_source(destination))
 
     def test_hardware_import_excludes_non_nix_secrets(self):
-        spec=importlib.util.spec_from_file_location('nixlab_install',BASE/'installer/install.py')
+        spec=importlib.util.spec_from_file_location('nixus_install',BASE/'installer/install.py')
         install=importlib.util.module_from_spec(spec);spec.loader.exec_module(install)
         with tempfile.TemporaryDirectory() as folder:
             source=Path(folder)/'old';source.mkdir();target=Path(folder)/'new'
@@ -364,7 +364,7 @@ class StagedInstallerTransactionTests(SettingsFixture):
         root = directory / 'source'
         staged = directory / 'staged'
         state = directory / 'state'
-        rt.write_json(root / '.nixlab-files.json', [
+        rt.write_json(root / '.nixus-files.json', [
             'flake.nix', 'admin/main.py', 'machine/format.json',
             'machine/settings.json', 'machine/installation.json'])
         rt.atomic(root / 'flake.nix', '{}')
@@ -506,7 +506,7 @@ class RecoveryTests(unittest.TestCase):
             root = Path(folder) / 'repo'
             state = Path(folder) / 'state'
             job = state / 'jobs' / ('a' * 32)
-            rt.write_json(root / '.nixlab-files.json', [
+            rt.write_json(root / '.nixus-files.json', [
                 'flake.nix', 'admin/main.py', 'machine/format.json',
                 'machine/settings.json', 'machine/installation.json'])
             rt.atomic(root / 'flake.nix', '{}')
@@ -614,8 +614,8 @@ class HttpsTests(unittest.TestCase):
         with patch.object(rt,'STATE',cls.state):rt.issue_tls('127.0.0.1','fixture')
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));cls.port=sock.getsockname()[1]
         cls.origin=f'https://localhost:{cls.port}'
-        env=os.environ|{'NIXLAB_ROOT':str(cls.root),'NIXLAB_STATE':str(cls.state),'NIXLAB_SOCKET':str(cls.folder/'broker.sock'),
-                        'NIXLAB_PORT':str(cls.port),'NIXLAB_TEST':'1','PYTHONPATH':str(BASE/'scripts')}
+        env=os.environ|{'NIXUS_ROOT':str(cls.root),'NIXUS_STATE':str(cls.state),'NIXUS_SOCKET':str(cls.folder/'broker.sock'),
+                        'NIXUS_PORT':str(cls.port),'NIXUS_TEST':'1','PYTHONPATH':str(BASE/'scripts')}
         cls.addClassCleanup(cls.temp.cleanup)
         # This workspace denies filesystem UNIX socket connections. Test the exact
         # broker/HTTPS handlers through a loopback-only transport adapter; production
@@ -629,7 +629,7 @@ controller.read_settings=lambda root:runtime.read_json(runtime.machine_path(root
 # Synthetic private broker payload for real HTTPS transport/auth/download tests.
 import base64
 def certificate(self, device=None, password=None, owner='root', full_admin=False, renew=None):
- return {'name':'nixlab-browser-http-000000000000','device':device,'fingerprint':'a'*64,
+ return {'name':'nixus-browser-http-000000000000','device':device,'fingerprint':'a'*64,
          'owner':owner,'issuedAt':1000,'expiresAt':'fixture-expiry','restricted':not full_admin,
          'projects':[] if full_admin else ['lab'],'status':'active','validDays':90,
          'pkcs12':base64.b64encode(b'encrypted-transport-fixture').decode()}
@@ -685,7 +685,7 @@ main.web()""")
     def request(cls,path,body=None,origin=None,auth=True,csrf=True,host=None,extra=None):
         headers={}
         if auth and hasattr(cls,'cookie'):headers['Cookie']=cls.cookie
-        if csrf and hasattr(cls,'csrf'):headers['X-Nixlab-CSRF']=cls.csrf
+        if csrf and hasattr(cls,'csrf'):headers['X-Nixus-CSRF']=cls.csrf
         if origin:headers['Origin']=origin
         if host:headers['Host']=host
         if extra:headers.update(extra)
@@ -711,14 +711,14 @@ main.web()""")
             self.assertEqual(code, 200)
             self.assertNotIn('token', first)
             cookie = headers['Set-Cookie'].split(';')[0]
-            for flag in ('__Host-nixlab_bootstrap=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/'):
+            for flag in ('__Host-nixus_bootstrap=', 'HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/'):
                 self.assertIn(flag, headers['Set-Cookie'])
             second, headers, code = self.request('/api/bootstrap', auth=False, csrf=False)
             other_cookie = headers['Set-Cookie'].split(';')[0]
-            good = {'Cookie': cookie, 'X-Nixlab-CSRF': first['csrf']}
+            good = {'Cookie': cookie, 'X-Nixus-CSRF': first['csrf']}
             host = {'hostUsername': 'fixture-admin', 'hostPassword': 'http-host-admin-test-password'}
             for extra, origin in (({}, self.origin), ({'Cookie': cookie}, self.origin),
-                    ({'Cookie': other_cookie, 'X-Nixlab-CSRF': first['csrf']}, self.origin),
+                    ({'Cookie': other_cookie, 'X-Nixus-CSRF': first['csrf']}, self.origin),
                     (good, 'https://attacker.invalid')):
                 _, _, code = self.request('/api/bootstrap/verify', host, origin=origin, auth=False, csrf=False, extra=extra)
                 self.assertIn(code, (400, 401))
@@ -730,14 +730,14 @@ main.web()""")
             _, _, code = self.request('/api/enrollment', claim | {'code': first['approvalCode']}, origin=self.origin, auth=False, csrf=False)
             self.assertEqual(code, 401)  # copied code cannot bypass the browser cookie
             _, _, code = self.request('/api/bootstrap/claim', claim, origin=self.origin, auth=False, csrf=False,
-                extra={'Cookie': other_cookie, 'X-Nixlab-CSRF': second['csrf']})
+                extra={'Cookie': other_cookie, 'X-Nixus-CSRF': second['csrf']})
             self.assertEqual(code, 400)
             result, headers, code = self.request('/api/bootstrap/claim', claim, origin=self.origin, auth=False, csrf=False, extra=good)
             self.assertEqual(code, 200)
             self.assertEqual(result['username'], 'firstowner'); self.assertEqual(result['role'], 'admin')
             cookies = headers.get_all('Set-Cookie')
-            self.assertTrue(any('__Host-nixlab_bootstrap=' in item and 'Max-Age=0' in item for item in cookies))
-            ordinary = next(item.split(';')[0] for item in cookies if item.startswith('nixlab_session='))
+            self.assertTrue(any('__Host-nixus_bootstrap=' in item and 'Max-Age=0' in item for item in cookies))
+            ordinary = next(item.split(';')[0] for item in cookies if item.startswith('nixus_session='))
             _, _, code = self.request('/api/session', auth=False, csrf=False, extra={'Cookie': ordinary})
             self.assertEqual(code, 200)
             for endpoint in ('/api/bootstrap/claim', '/api/enrollment'):

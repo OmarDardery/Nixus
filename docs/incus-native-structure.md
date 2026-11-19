@@ -7,7 +7,7 @@ Use existing names initially where they reduce migration risk; consolidate only 
   flake.nix, flake.lock, configuration.nix   # NixOS base host and packages
   installer/                                 # one-command bootstrap and safe upgrades
   modules/                                   # host modules, Incus, auth, network, backup
-  lib/                                       # typed NixLab project and resource definitions
+  lib/                                       # typed Nixus project and resource definitions
   admin/
     main.py                                  # Web UI API entrypoint (nonprivileged)
     controller.py                            # reviewed host and project broker entry
@@ -24,13 +24,13 @@ Use existing names initially where they reduce migration risk; consolidate only 
   docs/                                      # architecture, plans, operations, qualifications
 
 On an installed host:
-  /var/lib/nixlab/config/                   # pinned *platform* source
-  /srv/nixlab/projects/<name>/               # typed Nix project intent (flake-backed)
-  /srv/nixlab/project-sources/<name>/         # immutable original Docker/Compose build contexts outside Nix store
+  /var/lib/nixus/config/                   # pinned *platform* source
+  /srv/nixus/projects/<name>/               # typed Nix project intent (flake-backed)
+  /srv/nixus/project-sources/<name>/         # immutable original Docker/Compose build contexts outside Nix store
     revisions/<source-sha256>/source/         # original files, byte exact, root-owned
     current.json                              # CAS-protected selected source revision
-  /var/lib/nixlab/state/                    # broker journals, audit, plans, generation map
-  /var/lib/nixlab-secrets/                   # private decryption identities and runtime keys
+  /var/lib/nixus/state/                    # broker journals, audit, plans, generation map
+  /var/lib/nixus-secrets/                   # private decryption identities and runtime keys
   Incus storage pools/volumes                # persistent guest data; separately backed up
 ```
 

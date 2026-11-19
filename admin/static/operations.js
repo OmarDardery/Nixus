@@ -77,7 +77,7 @@ function operationsPage() {
     title(
       "OFF-HOST RECOVERY",
       "Backups & recovery",
-      "Incus owns ordinary snapshots and guest controls. Nixlab coordinates independent backups and new-name disaster recovery.",
+      "Incus owns ordinary snapshots and guest controls. Nixus coordinates independent backups and new-name disaster recovery.",
     ) +
     card(
       "Backup status",
@@ -87,14 +87,14 @@ function operationsPage() {
     backupSettings() +
     card(
       "Complete local generations",
-      `<div class="table-wrap"><table><thead><tr><th>Created</th><th>Coverage</th><th>Archives</th></tr></thead><tbody>${operationView.generations.map((g) => `<tr><td>${esc(new Date(g.created * 1000).toLocaleString())}<br><code>${esc(g.id)}</code></td><td>${esc(g.coverage)} · ${esc(g.guests)} guest(s)${g.excluded.length ? `<br>Excluded: ${esc(g.excluded.join(", "))}` : ""}</td><td>${esc(g.archives)}</td></tr>`).join("") || '<tr><td colspan="3">No complete generations recorded.</td></tr>'}</tbody></table></div><p>Incomplete exports never replace a complete generation. Off-host backups are inspected with the restic client; recover their files to an isolated directory and register an instance archive with <code>nixlab-admin guests register-export</code>.</p>`,
+      `<div class="table-wrap"><table><thead><tr><th>Created</th><th>Coverage</th><th>Archives</th></tr></thead><tbody>${operationView.generations.map((g) => `<tr><td>${esc(new Date(g.created * 1000).toLocaleString())}<br><code>${esc(g.id)}</code></td><td>${esc(g.coverage)} · ${esc(g.guests)} guest(s)${g.excluded.length ? `<br>Excluded: ${esc(g.excluded.join(", "))}` : ""}</td><td>${esc(g.archives)}</td></tr>`).join("") || '<tr><td colspan="3">No complete generations recorded.</td></tr>'}</tbody></table></div><p>Incomplete exports never replace a complete generation. Off-host backups are inspected with the restic client; recover their files to an isolated directory and register an instance archive with <code>nixus-admin guests register-export</code>.</p>`,
     ) +
     card(
       "Restore an independent export",
       `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><p>Verify networking, volumes and credentials in Incus before releasing a restored instance with the recovery CLI. Snapshots and ordinary guest operations stay in Incus.</p><a href="/docs/recovery.md">Full off-host recovery procedure</a>`,
     ) +
     card(
-      "Nixlab task history",
+      "Nixus task history",
       `<div class="table-wrap"><table><thead><tr><th>Action</th><th>Target</th><th>Status</th><th>Result</th></tr></thead><tbody>${operationView.jobs
         .filter((j) => ["backup", "backup-check", "restore"].includes(j.action))
         .map(
@@ -265,7 +265,7 @@ function bindOperations() {
       (el) =>
         (el.onclick = () =>
           download(
-            "nixlab-diagnostics.json",
+            "nixus-diagnostics.json",
             JSON.stringify(operationView.health, null, 2),
             "application/json",
           )),

@@ -18,8 +18,8 @@ import tempfile
 import time
 from locking import open_lock
 
-ROOT = Path(os.environ.get('NIXLAB_ROOT', '/var/lib/nixlab/config'))
-STATE = Path(os.environ.get('NIXLAB_STATE', '/var/lib/nixlab-admin'))
+ROOT = Path(os.environ.get('NIXUS_ROOT', '/var/lib/nixus/config'))
+STATE = Path(os.environ.get('NIXUS_STATE', '/var/lib/nixus-admin'))
 SOURCE = Path(__file__).resolve().parent
 
 
@@ -32,11 +32,11 @@ def public_error(error):
 
 
 SECRET_PATHS = {
-    'cockpitPassword': Path('/var/lib/nixlab-secrets/cockpit-operator-password'),
-    'wifiPassword': Path('/var/lib/nixlab-secrets/wifi.env'),
-    'resticPassword': Path('/var/lib/nixlab-secrets/restic-password'),
-    'resticEnvironment': Path('/var/lib/nixlab-secrets/restic-environment'),
-    'tunnelCredentials': Path('/var/lib/nixlab-secrets/cloudflared.json'),
+    'cockpitPassword': Path('/var/lib/nixus-secrets/cockpit-operator-password'),
+    'wifiPassword': Path('/var/lib/nixus-secrets/wifi.env'),
+    'resticPassword': Path('/var/lib/nixus-secrets/restic-password'),
+    'resticEnvironment': Path('/var/lib/nixus-secrets/restic-environment'),
+    'tunnelCredentials': Path('/var/lib/nixus-secrets/cloudflared.json'),
 }
 ENV_KEYS = {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_DEFAULT_REGION',
             'B2_ACCOUNT_ID', 'B2_ACCOUNT_KEY', 'AZURE_ACCOUNT_NAME', 'AZURE_ACCOUNT_KEY',
@@ -49,7 +49,7 @@ def pin_worker_runtime(directory):
     The root belongs to the existing job directory, so normal job retention also
     releases it. Installed admin runtimes use this same harmless lifetime bound.
     """
-    launcher = os.environ.get('NIXLAB_WORKER_RUNTIME')
+    launcher = os.environ.get('NIXUS_WORKER_RUNTIME')
     if launcher and Path(launcher).parent != Path('/nix/store'):
         raise ValueError('Worker runtime must be a Nix store output')
     # A launcher closure also retains its PATH dependencies, not only Python
@@ -76,7 +76,7 @@ def atomic(path, data, mode=0o600, group=None):
                 try:
                     os.chown(temporary, -1, grp.getgrnam(group).gr_gid)
                 except KeyError:
-                    if os.environ.get('NIXLAB_TEST') != '1':
+                    if os.environ.get('NIXUS_TEST') != '1':
                         raise
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -179,8 +179,8 @@ def public_progress(text):
 
 
 def worker_active(unit: str) -> bool:
-    """Observe only NixLab workers; unknown systemd state is not stopped work."""
-    if not isinstance(unit, str) or not re.fullmatch(r'nixlab-(?:build|apply|rollback|operation|deploy|project-deploy)-[0-9a-f]{32}', unit):
+    """Observe only Nixus workers; unknown systemd state is not stopped work."""
+    if not isinstance(unit, str) or not re.fullmatch(r'nixus-(?:build|apply|rollback|operation|deploy|project-deploy)-[0-9a-f]{32}', unit):
         raise ValueError('Invalid worker unit')
     try:
         result = subprocess.run(['systemctl', 'is-active', '--quiet', unit],
@@ -321,7 +321,7 @@ def remove_staged_secrets(directory):
             for name in ['secrets.json', *staged_temporary_names(descriptor)]:
                 unlink_staged(descriptor, name)
     except (OSError, ValueError):
-        raise ValueError('Staged credential cleanup failed; inspect NixLab transaction storage and retry') from None
+        raise ValueError('Staged credential cleanup failed; inspect Nixus transaction storage and retry') from None
 
 
 def cleanup_terminal_secrets(state):
@@ -377,7 +377,7 @@ def cleanup_terminal_secrets(state):
                 if not staged_secrets_expired(job):
                     continue
                 phases = ('build', 'apply', 'rollback') if status == 'failed' else ('build',) if status == 'building' else ()
-                if any(worker_active('nixlab-' + phase + '-' + directory.name) for phase in phases):
+                if any(worker_active('nixus-' + phase + '-' + directory.name) for phase in phases):
                     continue
                 if read_job_record(record) != job:
                     continue
@@ -406,7 +406,7 @@ def prepare_state_access(*, locked=False):
     auth = STATE / 'auth.json'
     if not auth.exists() and not (STATE / 'web-enrollment').exists():
         return
-    gid = grp.getgrnam('nixlab-ui').gr_gid
+    gid = grp.getgrnam('nixus-ui').gr_gid
     os.chown(STATE, -1, gid)
     STATE.chmod(0o710)
     if auth.exists():
@@ -553,9 +553,9 @@ def module_files(root):
 
 
 def source_files(root=ROOT):
-    if (root / '.nixlab-files.json').exists():
-        names = set(read_json(root / '.nixlab-files.json'))
-        names.add('.nixlab-files.json')
+    if (root / '.nixus-files.json').exists():
+        names = set(read_json(root / '.nixus-files.json'))
+        names.add('.nixus-files.json')
     else:
         result = subprocess.run(['git', '-C', str(root), 'ls-files', '-z'], capture_output=True, check=True)
         names = set(n.decode() for n in result.stdout.split(b'\0') if n)
@@ -604,7 +604,7 @@ def snapshot(destination, root=ROOT):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
         target.chmod(path.stat().st_mode & 0o777)
-    write_json(destination / '.nixlab-files.json', [name for name, _ in files])
+    write_json(destination / '.nixus-files.json', [name for name, _ in files])
 
 
 def encode_secrets(values, settings):
@@ -621,7 +621,7 @@ def encode_secrets(values, settings):
         if field == 'wifiPassword':
             if '\n' in value or '\r' in value or not (8 <= len(value) <= 63 or (len(value) == 64 and all(c in '0123456789abcdefABCDEF' for c in value))):
                 raise ValueError('Wi-Fi WPA password must contain 8–63 characters, or 64 hex digits')
-            value = 'NIXLAB_WIFI_PSK=' + shlex.quote(value.replace('\\', '\\\\')) + '\n'
+            value = 'NIXUS_WIFI_PSK=' + shlex.quote(value.replace('\\', '\\\\')) + '\n'
         elif field == 'cockpitPassword':
             # A staged file module may enable Cockpit without changing the JSON
             # overlay. The build worker checks the evaluated enable/ownership flags.
@@ -660,7 +660,7 @@ def issue_tls(address, hostname):
     ca_key, ca_crt = STATE / 'ca.key', STATE / 'ca.crt'
     if not ca_key.exists():
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-sha256', '-days', '3650',
-                        '-subj', '/CN=Nixlab local management CA', '-keyout', str(ca_key), '-out', str(ca_crt),
+                        '-subj', '/CN=Nixus local management CA', '-keyout', str(ca_key), '-out', str(ca_crt),
                         '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         ca_key.chmod(0o600); ca_crt.chmod(0o644)
@@ -683,8 +683,8 @@ def pending_access(job_id, record):
     """Local probes cannot prove that an administrator can reconnect."""
     print('Activation is awaiting access confirmation; automatic rollback remains armed.', flush=True)
     print('Open a NEW SSH/Cockpit login after activation (or use the physical console), verify access, then run:', flush=True)
-    print('sudo nixlab-admin config confirm ' + job_id, flush=True)
-    print('You can also confirm this transaction in the NixLab portal.', flush=True)
+    print('sudo nixus-admin config confirm ' + job_id, flush=True)
+    print('You can also confirm this transaction in the Nixus portal.', flush=True)
     if record.get('deadline'):
         print('Confirmation deadline: ' + time.strftime('%Y-%m-%d %H:%M:%S UTC',
               time.gmtime(record['deadline'])), flush=True)

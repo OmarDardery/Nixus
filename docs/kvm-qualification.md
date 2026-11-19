@@ -1,7 +1,7 @@
 # Dedicated KVM qualification
 
 The real apps tests require a **disposable physical x86_64 Linux runner**, labelled
-`nixlab-kvm`, with working KVM nesting. The topology is physical runner → NixOS
+`nixus-kvm`, with working KVM nesting. The topology is physical runner → NixOS
 test host → Incus apps VM. This removes the unreliable hosted hypervisor layer;
 it does not turn a NixOS test VM into physical installation evidence.
 
@@ -32,7 +32,7 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null || \
 Nesting must report `Y` or `1`. The account must have KVM access. Device presence
 and nesting are prerequisites, not proof that an Incus VM boots.
 
-Create the GitHub environment `nixlab-qualification` with required maintainer
+Create the GitHub environment `nixus-qualification` with required maintainer
 review and no production secrets. Permit only reviewed branches/tags. Do not
 approve a workflow dispatch until its exact source SHA and workflow are reviewed.
 These workflows have no `pull_request` trigger. Do not add one for self-hosted
@@ -43,9 +43,9 @@ the extracted runner directory, with a maintainer authenticated to `gh`:
 
 ```sh
 ./config.sh --unattended --ephemeral \
-  --url https://github.com/OmarDardery/nixlab \
-  --token "$(gh api --method POST repos/OmarDardery/nixlab/actions/runners/registration-token --jq .token)" \
-  --labels nixlab-kvm --name nixlab-kvm-disposable
+  --url https://github.com/OmarDardery/Nixus \
+  --token "$(gh api --method POST repos/OmarDardery/Nixus/actions/runners/registration-token --jq .token)" \
+  --labels nixus-kvm --name nixus-kvm-disposable
 ./run.sh
 ```
 
@@ -58,10 +58,10 @@ installation prerequisites; prepare these only on the disposable runner.
 ## Run and assess the candidate
 
 ```sh
-gh workflow run guest-deployments.yml --repo OmarDardery/nixlab --ref REVIEWED_BRANCH_OR_TAG
-gh run list --repo OmarDardery/nixlab --workflow guest-deployments.yml --limit 5
-gh run view RUN_ID --repo OmarDardery/nixlab --log-failed
-gh run download RUN_ID --repo OmarDardery/nixlab --name apps-rollout-evidence
+gh workflow run guest-deployments.yml --repo OmarDardery/Nixus --ref REVIEWED_BRANCH_OR_TAG
+gh run list --repo OmarDardery/Nixus --workflow guest-deployments.yml --limit 5
+gh run view RUN_ID --repo OmarDardery/Nixus --log-failed
+gh run download RUN_ID --repo OmarDardery/Nixus --name apps-rollout-evidence
 ```
 
 The deployment job runs three independent test derivations, stopping at the first
@@ -82,7 +82,7 @@ deadlines apply. OS rollback does not promise database/schema rollback.
 Register a fresh ephemeral runner, then run host-reboot commissioning:
 
 ```sh
-gh workflow run commissioning.yml --repo OmarDardery/nixlab --ref REVIEWED_BRANCH_OR_TAG
+gh workflow run commissioning.yml --repo OmarDardery/Nixus --ref REVIEWED_BRANCH_OR_TAG
 ```
 
 Its report remains `nested-integration` and unqualified for physical installation.
@@ -95,7 +95,7 @@ even when a later image or boot phase fails.
 The two workflows share a concurrency group to avoid resource contention. Record
 tested Intel/AMD hardware separately: one successful CPU does not qualify another.
 Before beta publication, repeat both workflows on the resulting release revision
-and attach successful run/artifact links to #24 and the qualification matrix.
+and attach successful run/artifact links to #14 and the qualification matrix.
 
 ## Failure and rollback
 
@@ -105,5 +105,5 @@ timeouts, skip authentication, or replace the real apps OS with a fixture servic
 If the runner is unavailable the job stays queued/unverified, never passed.
 
 These changes affect disposable tests only. Reverting the workflow/fixture commit
-restores the previous test topology; it does not modify an installed NixLab host.
+restores the previous test topology; it does not modify an installed Nixus host.
 No dedicated runner or physical target has yet been qualified by this document.

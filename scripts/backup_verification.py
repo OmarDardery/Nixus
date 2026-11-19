@@ -12,8 +12,8 @@ import backup_health
 import diagnostics
 import runtime as rt
 
-POLICY = Path('/etc/nixlab/backup-verification.json')
-STATE = Path('/var/lib/nixlab/backup-verification.json')
+POLICY = Path('/etc/nixus/backup-verification.json')
+STATE = Path('/var/lib/nixus/backup-verification.json')
 MODES = ('metadata', 'full')
 
 
@@ -109,7 +109,7 @@ def status(backup_enabled, policy=None, state=None, *, repository=None):
         return {'state': 'unknown'}
     result = {'state': 'unknown', 'scheduled': policy['enable'],
               'mode': policy['mode'], 'schedule': policy['schedule']}
-    unit = backup_health.properties('nixlab-backup-check.service', ['LoadState', 'ActiveState', 'Result'])
+    unit = backup_health.properties('nixus-backup-check.service', ['LoadState', 'ActiveState', 'Result'])
     if (unit.get('LoadState') != 'loaded' or not isinstance(unit.get('Result'), str)
             or unit.get('ActiveState') not in ('active', 'activating', 'deactivating', 'inactive', 'failed')):
         return result
@@ -143,7 +143,7 @@ def status(backup_enabled, policy=None, state=None, *, repository=None):
     if unit.get('Result') not in ('', 'success') and result['state'] not in ('running', 'interrupted'):
         result['state'] = 'failed'
     if policy['enable']:
-        timer = backup_health.properties('nixlab-backup-check.timer', ['LoadState', 'ActiveState', 'LastTriggerUSec'])
+        timer = backup_health.properties('nixus-backup-check.timer', ['LoadState', 'ActiveState', 'LastTriggerUSec'])
         if timer.get('LoadState') != 'loaded' or timer.get('ActiveState') != 'active' or 'LastTriggerUSec' not in timer:
             if result['state'] not in ('running', 'failed', 'interrupted'):
                 result['state'] = 'unknown'

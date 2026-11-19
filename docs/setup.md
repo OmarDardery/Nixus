@@ -6,7 +6,7 @@ For a plain installed NixOS server, run:
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' \
-  run github:OmarDardery/nixlab#install
+  run github:OmarDardery/Nixus#install
 ```
 
 The default now installs the full stack. Retries resume automatically; local
@@ -18,12 +18,12 @@ workflow, selected explicitly with `--wizard`.
 `--wizard` is only for initial onboarding. It refuses an already configured host
 before staging source or building the bootstrap system, whose role does not
 include hypervisor services. Use the installed portal or `#update` for an existing
-host; use `sudo nixlab-admin reset-password` from an authorized local/sudo session
+host; use `sudo nixus-admin reset-password` from an authorized local/sudo session
 for portal account recovery. Pending transaction recovery remains authoritative.
 
 ## Portal-first installation
 
-Nixlab now includes a bootstrap installer and a self-hosted first-run/settings portal.
+Nixus now includes a bootstrap installer and a self-hosted first-run/settings portal.
 The supported starting point is a **fresh conventional Intel/AMD x86_64 NixOS installation**
 with working IPv4 networking, `/etc/nixos/configuration.nix` and `hardware-configuration.nix`.
 NixOS runs directly on the hardware; Incus uses the Linux KVM subsystem. Installing the
@@ -38,7 +38,7 @@ It does not promise to convert every arbitrary existing NixOS desktop/flake auto
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' \
-  run github:OmarDardery/nixlab#install -- --wizard
+  run github:OmarDardery/Nixus#install -- --wizard
 ```
 
 The packaged installer provides its own runtime tools. Run it on the target
@@ -48,7 +48,7 @@ Optional network selection flags:
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' \
-  run github:OmarDardery/nixlab#install -- --wizard --interface enp2s0 --address CURRENT_ASSIGNED_IP --trusted-cidr YOUR_ADMIN_SUBNET
+  run github:OmarDardery/Nixus#install -- --wizard --interface enp2s0 --address CURRENT_ASSIGNED_IP --trusted-cidr YOUR_ADMIN_SUBNET
 ```
 
 Without these flags the installer selects the existing default-route interface, its actual
@@ -61,8 +61,8 @@ Keep console access for the first activation.
 ## What the first switch preserves
 
 1. Saves a root-only complete copy of the original `/etc/nixos` under
-   `/var/lib/nixlab-admin/original-config` and pins the original OS generation for recovery.
-2. Clones the chosen repository/ref into `/var/lib/nixlab/config`.
+   `/var/lib/nixus-admin/original-config` and pins the original OS generation for recovery.
+2. Clones the chosen repository/ref into `/var/lib/nixus/config`.
 3. Copies the actual `hardware-configuration.nix` and imports a preserved local Nix module tree
    under `installed-system/`. Keeping only the hardware file would lose bootloader settings,
    existing accounts, `system.stateVersion`, and often the management network.
@@ -76,7 +76,7 @@ Keep console access for the first activation.
    transaction as full installation. It adds setup/recovery services and the KVM
    module while retaining the installed base. Activation switches the exact
    reviewed closure and arms the independent rollback guard.
-7. Renames the original directory to `/etc/nixos.pre-nixlab` and points `/etc/nixos` at the managed
+7. Renames the original directory to `/etc/nixos.pre-nixus` and points `/etc/nixos` at the managed
    clone. The preserved backup remains root-only. Builds use explicit flake targets.
 
 No disks are partitioned or formatted. No VM or guest bridge is initialized by bootstrap.
@@ -86,7 +86,7 @@ connection, or explicitly acknowledge it at the host console, before completing
 setup. Rerun with `--wizard` to resume the same initial transaction after a
 disconnect; `--resume` is optional. An existing
 checkout/configuration is never blindly overwritten. Lost portal passwords can be reset locally
-with `sudo nixlab-admin reset-password` from a private host terminal. Existing
+with `sudo nixus-admin reset-password` from a private host terminal. Existing
 sessions are rejected after the replacement verifier commits; no UI restart is needed.
 The installer does not overwrite a pre-existing Incus database.
 
@@ -143,7 +143,7 @@ or guest address space requires a deliberate migration rather than editing the w
 
 | Role | Declarative result |
 |---|---|
-| General data | UUID-backed `fileSystems` entry at `/srv/nixlab/NAME`; optional read-only mount |
+| General data | UUID-backed `fileSystems` entry at `/srv/nixus/NAME`; optional read-only mount |
 | Primary guest storage | Same mount plus the `guests` directory pool at `MOUNT/incus` |
 | Additional Incus pool | Same mount plus a `disk-NAME` pool visible in the Incus UI/CLI |
 | Backup staging | Same mount plus offline export staging at `MOUNT/exports` |
@@ -198,7 +198,7 @@ backup. The setup UI does not claim otherwise.
 ## Ongoing use and security boundary
 
 The ordinary forms edit `machine/settings.json` (or legacy `local/settings.json`).
-The inventory is checked as typed Nix options under `nixlab.settings`; file modules
+The inventory is checked as typed Nix options under `nixus.settings`; file modules
 can override individual options. The portal displays effective values and identifies
 file-owned overrides. It does not parse or rewrite arbitrary Nix functions.
 
@@ -209,7 +209,7 @@ code, not a sandboxed plugin mechanism. Path/type/size limits and staging protec
 the workflow; they cannot make malicious NixOS modules safe. There is no general
 shell-command endpoint or arbitrary destination path. See [file modules](file-modules.md).
 
-The HTTPS process runs as an unprivileged `nixlab-ui` user. Its root broker accepts only defined
+The HTTPS process runs as an unprivileged `nixus-ui` user. Its root broker accepts only defined
 operations over a mode-0660 local UNIX socket. The portal has TLS, a salted PBKDF2 password hash,
 rate-limited login, secure HttpOnly/SameSite cookies, idle/hard session expiration, CSRF tokens,
 same-origin checks and management hostname/source checks. It supports administrator, operator and viewer portal accounts; configuration and
@@ -218,7 +218,7 @@ It is not a multi-tenant isolation or SSO system. Keep it off public tunnels.
 
 Build/apply run in independent systemd units, so restarting the web process does not abandon the
 activation or its recovery guard. Logs are visible in the UI and journal; important operations are
-recorded in root-only `/var/lib/nixlab-admin/audit.jsonl`. Runtime credential inputs are excluded from the Nix snapshot and job metadata.
+recorded in root-only `/var/lib/nixus-admin/audit.jsonl`. Runtime credential inputs are excluded from the Nix snapshot and job metadata.
 Administrator-uploaded source is shown in review and must not contain credentials. Discarded/superseded candidates release their build GC roots and staged
 credentials. One-step confirmed recovery remains pinned; obsolete recovery secret copies and older
 transaction roots are released after the next successful confirmation. The original installation
@@ -238,15 +238,15 @@ the root-owned runtime secret files through the wizard without creating an age i
 For diagnostics:
 
 ```console
-journalctl -u nixlab-admin-backend -u nixlab-ui -u nixlab-rollback-guard
-journalctl -u nixlab-apps-onboarding -u nginx
+journalctl -u nixus-admin-backend -u nixus-ui -u nixus-rollback-guard
+journalctl -u nixus-apps-onboarding -u nginx
 systemctl --failed
 nixos-rebuild switch --flake /etc/nixos#hypervisor
 ```
 
-For original-system recovery from a console, inspect `/var/lib/nixlab-admin/original-system`,
+For original-system recovery from a console, inspect `/var/lib/nixus-admin/original-system`,
 restore that profile and activate its `bin/switch-to-configuration switch`, then restore
-`/etc/nixos.pre-nixlab` to `/etc/nixos` after removing only the managed symlink. Guest data is
+`/etc/nixos.pre-nixus` to `/etc/nixos` after removing only the managed symlink. Guest data is
 retained separately. If a console/manual rollback leaves a radio blocked, `rfkill unblock wifi`
 restores it; the portal's managed rollback restores its recorded radio state automatically.
 
@@ -300,7 +300,7 @@ Disabled tools link to their configuration page. Management URLs use the current
 not an unsaved edit. Only configured non-wildcard tunnel hostnames become public application links;
 this does not test their availability. Prometheus stays private on loopback.
 
-Helper links open upstream documentation; they do not execute installers or establish Nixlab
+Helper links open upstream documentation; they do not execute installers or establish Nixus
 compatibility. See the [quality-of-life roadmap](roadmap.md) for the proposed curated integration.
 
 For guest jobs, account roles, recipes, reviewed platform updates,
@@ -328,7 +328,7 @@ share the same Manager/worker review, exact built closure and rollback guard.
 After local health checks pass, activation remains **unconfirmed**. Open a new
 SSH or Cockpit terminal **after** the new system is ready, or use the physical
 host console; verify management access and then run
-`sudo nixlab-admin config confirm TRANSACTION_ID` in that new session. A
+`sudo nixus-admin config confirm TRANSACTION_ID` in that new session. A
 `/dev/pts` session that predates activation cannot confirm. Alternatively,
 reconnect to the current HTTPS portal from a non-loopback client, **sign out
 and sign in again after activation**, then click **Confirm access**. A previous
@@ -339,7 +339,7 @@ restores the previous generation. You may request `config rollback` before
 expiry if a new session fails. An existing-host installer retry now snapshots
 source and installation metadata into the *same* guarded transaction; it does
 not publish either during planning. A host generation rollback restores
-matching NixLab platform/settings/inventory, not arbitrary guest or app data.
+matching Nixus platform/settings/inventory, not arbitrary guest or app data.
 
 Bootstrap jobs use the fixed `bootstrap` role and preserve `ready=false`; ordinary
 host jobs use `hypervisor`. Historical jobs without a role remain hypervisor jobs.
@@ -353,9 +353,9 @@ reviewing the complete hypervisor configuration in the portal.
 ### Console-approved first administrator
 
 For a fresh host with a trusted local or SSH administrator terminal, run
-`nix run github:OmarDardery/nixlab#install -- --wizard --web-enrollment`.
+`nix run github:OmarDardery/Nixus#install -- --wizard --web-enrollment`.
 Open the portal and verify the management CA fingerprint before approving the
-browser. In the host terminal, run `sudo nixlab-admin approve-enrollment`
+browser. In the host terminal, run `sudo nixus-admin approve-enrollment`
 and paste the code displayed by that browser into the prompt. Return to the
 same page to set the first portal password, then sign in as `admin`.
 
@@ -364,4 +364,4 @@ a new code. Existing portal or legacy bootstrap credentials keep their
 normal login and recovery flow.
 
 
-With the explicit `--wizard --web-enrollment` option, use **Verify this machine** in the HTTPS portal. An existing local Linux sudo administrator can verify via PAM, or an SSH-key-only administrator can approve the browser code through `sudo nixlab-admin approve-enrollment` at a private terminal. Approval is browser-bound and expires after ten minutes or reboot. Then choose your independent NixLab username/password; successful creation signs that browser in normally. Existing installations keep their current accounts and never reopen anonymous first claiming. See [administrator enrollment](administration.md#verify-this-machine-before-first-admin-creation) for policy, rate limits and recovery details.
+With the explicit `--wizard --web-enrollment` option, use **Verify this machine** in the HTTPS portal. An existing local Linux sudo administrator can verify via PAM, or an SSH-key-only administrator can approve the browser code through `sudo nixus-admin approve-enrollment` at a private terminal. Approval is browser-bound and expires after ten minutes or reboot. Then choose your independent Nixus username/password; successful creation signs that browser in normally. Existing installations keep their current accounts and never reopen anonymous first claiming. See [administrator enrollment](administration.md#verify-this-machine-before-first-admin-creation) for policy, rate limits and recovery details.

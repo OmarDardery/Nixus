@@ -3,9 +3,9 @@
 > **Experimental (Phase 1).** The container guest rollout and recovery suite passed,
 > but the real apps-VM/Arcane end-to-end qualification has **not** passed on
 > hosted nested KVM. This feature is disabled by default. Do not enable
-> `nixlab.deployment.apps.enable` for production workloads until the apps-VM
+> `nixus.deployment.apps.enable` for production workloads until the apps-VM
 > boot, authentication, deployment, and rollback checks are qualified.
-> Track the blocker in [issue #24](https://github.com/OmarDardery/nixlab/issues/24).
+> Track the blocker in [issue #14](https://github.com/OmarDardery/Nixus/issues/14).
 
 Image imports update future creations. A guest deployment updates the OS on an
 existing disk through local authenticated Incus exec; it never recreates the guest.
@@ -21,12 +21,12 @@ reachable through its Incus agent/exec. The target is a built NixOS
 ```nix
 # In your flake, supply workerSystem as a separately evaluated NixOS configuration.
 { workerSystem, ... }: {
-  nixlab.incus.instances.worker = {
+  nixus.incus.instances.worker = {
     image = "local:your-initial-nixos-image";
     start = true;
     config."boot.autostart" = "true";
   };
-  nixlab.deployment.targets.worker = {
+  nixus.deployment.targets.worker = {
     system = workerSystem.config.system.build.toplevel;
     dependsOn = [ ];
     healthUnits = [ "my-service.service" ];
@@ -50,11 +50,11 @@ run inside the guest against explicit IPv4 loopback endpoints, require HTTP 200,
 discard bodies and do not follow redirects. Do not put credentials in URLs or Nix
 source. An active unit does not prove an application login or LAN reachability.
 
-For the built-in apps VM, set `nixlab.deployment.apps.enable = true`. It adds the
+For the built-in apps VM, set `nixus.deployment.apps.enable = true`. It adds the
 `apps` target from the same evaluated guest configuration as the image, checks
 `docker-arcane.service`, and disables the older automatic OS deployment in
 onboarding. Credential/TLS provisioning stays in onboarding. Before opting in, set
-`nixlab.settings.apps.arcaneImage` to an image reference with a verified
+`nixus.settings.apps.arcaneImage` to an image reference with a verified
 `@sha256:` digest (or an immutable local `sha256:` image ID with a declared
 image archive). Mutable tags and the unpinned example demo are refused in this
 mode. Pin images in other Nix-owned guest workloads too. Arcane/helper-owned
@@ -63,15 +63,15 @@ stacks retain their native update tooling.
 ## Review, activate and deploy
 
 ```sh
-sudo nixlab-admin config review --module workloads.nix=/path/to/reviewed-workloads.nix
-sudo nixlab-admin config status
-sudo nixlab-admin config plan
-sudo nixlab-admin deploy status
-sudo nixlab-admin config apply TRANSACTION_ID
+sudo nixus-admin config review --module workloads.nix=/path/to/reviewed-workloads.nix
+sudo nixus-admin config status
+sudo nixus-admin config plan
+sudo nixus-admin deploy status
+sudo nixus-admin config apply TRANSACTION_ID
 # Reconnect and verify the host, then:
-sudo nixlab-admin config confirm TRANSACTION_ID
-sudo nixlab-admin deploy start TRANSACTION_ID
-sudo nixlab-admin deploy status TRANSACTION_ID
+sudo nixus-admin config confirm TRANSACTION_ID
+sudo nixus-admin deploy start TRANSACTION_ID
+sudo nixus-admin deploy status TRANSACTION_ID
 ```
 
 The Changes page shows the same targets, dependency order, current/target closures,
@@ -94,7 +94,7 @@ unbounded switch racing later recovery. Once the worker is confirmed stopped,
 resume it:
 
 ```sh
-sudo nixlab-admin deploy resume TRANSACTION_ID
+sudo nixus-admin deploy resume TRANSACTION_ID
 ```
 
 Imported store paths can be reused. Before mutation, the worker rechecks ownership,
@@ -123,12 +123,12 @@ To release a stopped journal's stale deployment lock without changing guest OS o
 data:
 
 ```sh
-sudo nixlab-admin deploy abandon TRANSACTION_ID
+sudo nixus-admin deploy abandon TRANSACTION_ID
 ```
 
 After abandoning or exhausting retries, inspect the guest and build a new review.
 Journals follow configuration-history retention. Guest GC roots stay until an
 administrator reviews/removes them inside the guest; retain them during recovery.
 
-Native Incus administrators can bypass NixLab locks. Avoid concurrent guest edits
+Native Incus administrators can bypass Nixus locks. Avoid concurrent guest edits
 during rollout; the precondition checks do not create a distributed transaction.

@@ -20,8 +20,8 @@ class CleanupTests(unittest.TestCase):
     def test_doctor_reports_a_failed_cleanup_guard_as_unhealthy(self):
         import diagnostics
         def unit(args, **kwargs):
-            status = ('Id=nixlab-rollback-guard.service\nLoadState=loaded\nActiveState=failed\n'
-                      if 'nixlab-rollback-guard.service' in args else 'LoadState=not-found\n')
+            status = ('Id=nixus-rollback-guard.service\nLoadState=loaded\nActiveState=failed\n'
+                      if 'nixus-rollback-guard.service' in args else 'LoadState=not-found\n')
             return subprocess.CompletedProcess(args, 0, stdout=status)
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
                 patch.object(diagnostics, 'probe', return_value={'ok': True}), \
@@ -29,7 +29,7 @@ class CleanupTests(unittest.TestCase):
                 patch.object(diagnostics.subprocess, 'run', side_effect=unit):
             report = diagnostics.doctor({})
         self.assertFalse(report['ok'])
-        self.assertEqual(report['services'][0]['Id'], 'nixlab-rollback-guard.service')
+        self.assertEqual(report['services'][0]['Id'], 'nixus-rollback-guard.service')
         assert_public_clean(self, report)
 
     def test_directory_sync_is_retried_after_unlink_succeeded(self):
@@ -196,7 +196,7 @@ class CleanupTests(unittest.TestCase):
             self.assertTrue(stage.exists())
             with patch.object(rt, 'worker_active', return_value=False) as worker:
                 rt.cleanup_terminal_secrets(root)
-            worker.assert_called_once_with('nixlab-build-' + directory.name)
+            worker.assert_called_once_with('nixus-build-' + directory.name)
             self.assertFalse(stage.exists())
             self.assertEqual(rt.read_job_record(record)['status'], 'cancelled')
             assert_public_clean(self, record.read_bytes())

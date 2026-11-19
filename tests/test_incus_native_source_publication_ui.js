@@ -9,7 +9,7 @@ const fields = {
   "native-publish-password": {value: "current-admin-password"},
   "native-publish-ack": {checked: false},
   "native-nix-path": {value: "alpha/default.nix"},
-  "native-nix-editor": {value: "{ ... }: { nixlab.project.resources.cpus = 3; }"},
+  "native-nix-editor": {value: "{ ... }: { nixus.project.resources.cpus = 3; }"},
   "native-nix-password": {value: "admin-password"},
   "native-nix-ack": {checked: false},
   "native-nix-linked-source": {value: "alpha"},
@@ -49,7 +49,7 @@ context.api = async (route, payload) => {
       entrypoint: "Dockerfile", buildContextHash: "b".repeat(64),
       buildIdentity: "a".repeat(64), canBuild: false, canDeploy: false,
       blocking: ["isolated-oci-builder-not-qualified"],
-      generatedCompose: 'services:\\n  app:\\n    image: "localhost/nixlab-hello-world:bbbb"\\n',
+      generatedCompose: 'services:\\n  app:\\n    image: "localhost/nixus-hello-world:bbbb"\\n',
       sourceFiles: [{path: "Dockerfile", sha256: "c".repeat(64)}]};
   }
   throw Error("Unexpected API operation: " + route);
@@ -144,7 +144,7 @@ async function main() {
   assert.equal(reviewed.payload.current, "admin-password");
   assert.equal(reviewed.payload.acknowledgePrivilegedNix, true);
   assert.equal(reviewed.payload.changes["alpha/default.nix"],
-    "{ ... }: { nixlab.project.resources.cpus = 3; }");
+    "{ ... }: { nixus.project.resources.cpus = 3; }");
   assert.equal(reviewed.payload.sourceRevisions.alpha, "f".repeat(64),
     "Exact private OCI revision digest must enter the approved project review");
   html = evaluate("nativeProjectPage()");

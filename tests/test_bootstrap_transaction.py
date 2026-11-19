@@ -30,7 +30,7 @@ class BootstrapTransactionTests(unittest.TestCase):
         for name in ('cidr', 'gatewayCIDR', 'dhcpRange'):
             self.settings['guests'][name] = ''
         rt.atomic(self.root / 'flake.nix', '{}')
-        rt.write_json(self.root / '.nixlab-files.json', ['flake.nix'])
+        rt.write_json(self.root / '.nixus-files.json', ['flake.nix'])
         rt.write_json(self.root / 'machine/format.json', {'version': 1})
         rt.write_json(self.root / 'machine/settings.json', self.settings)
         self.manager = Manager(self.root, self.state)
@@ -109,7 +109,7 @@ class BootstrapTransactionTests(unittest.TestCase):
             worker.apply(directory)
         commands = [call.args[0] for call in run.call_args_list]
         self.assertTrue(any('switch-to-configuration' in cmd[0] and cmd[-1] == 'switch' for cmd in commands))
-        self.assertFalse(any('incus.service' in cmd or 'nixlab-instances.service' in cmd for cmd in commands))
+        self.assertFalse(any('incus.service' in cmd or 'nixus-instances.service' in cmd for cmd in commands))
         health.assert_called_once_with(self.settings)
         job = rt.read_json(directory / 'job.json')
         self.assertEqual(job['status'], 'awaiting-confirmation')
@@ -156,7 +156,7 @@ class BootstrapTransactionTests(unittest.TestCase):
                 patch('diagnostics.http_entry', return_value=(308, True)):
             report = diagnostics.probe(self.settings)
         self.assertTrue(report['ok'])
-        self.assertEqual([check['name'] for check in report['checks']], ['Nixlab', 'Nixlab HTTP entry'])
+        self.assertEqual([check['name'] for check in report['checks']], ['Nixus', 'Nixus HTTP entry'])
         request.assert_called_once_with('192.0.2.10', self.settings['setup']['port'], '/')
 
     def test_bootstrap_validation_preserves_access_and_rejects_optional_activation(self):

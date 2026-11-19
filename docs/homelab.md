@@ -29,7 +29,7 @@ The steps below enable the optional tools from the host console.
    | Incus | `https://HOST_IP:8443` | Enrolled Incus browser certificate |
    | Cockpit | `https://HOST_IP:9090` | Linux `operator` account or existing non-root local account |
    | Arcane | `https://HOST_IP:9443` | Arcane account |
-   | Nixlab configuration/recovery | `https://HOST_IP:9440` | Nixlab portal account |
+   | Nixus configuration/recovery | `https://HOST_IP:9440` | Nixus portal account |
 
 Existing settings retain their Arcane port, including **9441**, until explicitly changed. Management ports are configurable and collision-checked.
 Homepage links use the observed management address, falling back to active settings. Arcane's
@@ -42,7 +42,7 @@ For file configuration, upload the following as `homelab/management.nix` or copy
 
 ```nix
 { ... }: {
-  nixlab.settings = {
+  nixus.settings = {
     cockpit.enable = true;
     apps = { enable = true; arcanePort = 9443; };
     maintenance.laptopMode = true;
@@ -75,7 +75,7 @@ password, or run `sudo passwd operator` from the console/SSH. Manual password
 changes are outside the portal transaction. On immutable-user setups, declare the
 local account/password through the preserved NixOS configuration.
 
-Cockpit uses the local management CA while the Nixlab setup service is enabled;
+Cockpit uses the local management CA while the Nixus setup service is enabled;
 verify its fingerprint from the host console. A manual setup without the portal
 uses Cockpit's own certificate. Reach management only over trusted LAN/private
 VPN. Cloudflare ingress rejects management ports, including customized Cockpit

@@ -223,11 +223,11 @@ class WorkflowTests(unittest.TestCase):
         ups = [command[-1] for command in commands if 'up' in command]
         self.assertEqual(ups, [BRIDGE['uuid'], PORT['uuid']])
         self.assertIn(['nmcli', '--wait', '0', 'connection', 'up', 'uuid', BRIDGE['uuid']], commands)
-        self.assertIn(['systemctl', 'start', 'nixlab-management-identity.service'], commands)
+        self.assertIn(['systemctl', 'start', 'nixus-management-identity.service'], commands)
         self.assertEqual(self.identity.call_args.args[0]['management']['interface'], 'br0')
         self.assertEqual(commands[-1], ['systemctl', 'start', 'incus.service', 'incus-startup.service'])
         resets = [command for command in commands if 'reset-failed' in command]
-        self.assertEqual(resets, [['systemctl', 'reset-failed', 'nixlab-management-identity.service'],
+        self.assertEqual(resets, [['systemctl', 'reset-failed', 'nixus-management-identity.service'],
                                   ['systemctl', 'reset-failed', 'incus.service', 'incus-startup.service']])
         self.assertEqual(self.repair.record['phase'], 'reviewing')
         self.assertTrue(repair.DROPIN.is_file())
@@ -303,10 +303,10 @@ class WorkflowTests(unittest.TestCase):
         self.observe.return_value = [dict(p, auto='yes') for p in (BRIDGE, PORT)]
         self.commands.side_effect = lambda args, **kwargs: Mock(stdout='loaded' if '--value' in args else (
             'Id=incus.service\nActiveState=active\n\n'
-            'Id=nixlab-ui.service\nActiveState=active\n\n'
+            'Id=nixus-ui.service\nActiveState=active\n\n'
             'Id=nginx.service\nActiveState=inactive\n'))
         self.repair.native_identity()
-        self.assertTrue(any(call.args[0] == ['systemctl', 'start', 'incus.service', 'nixlab-ui.service']
+        self.assertTrue(any(call.args[0] == ['systemctl', 'start', 'incus.service', 'nixus-ui.service']
                             for call in self.commands.call_args_list))
 
     def test_missing_dependency_observation_keeps_bootstrap_identity_for_inspection(self):

@@ -8,7 +8,7 @@ import websocket
 import sys
 
 origin = sys.argv[1] if len(sys.argv) > 1 else 'https://127.0.0.1:9090'
-ca = '/var/lib/nixlab-admin/ca.crt'
+ca = '/var/lib/nixus-admin/ca.crt'
 context = ssl.create_default_context(cafile=ca)
 token = base64.b64encode(b'operator:vm-cockpit-password').decode()
 request = urllib.request.Request(origin + '/cockpit/login', headers={'Authorization': 'Basic ' + token, 'Origin': origin})
@@ -24,7 +24,7 @@ try:
     assert json.loads(initial.split('\n', 1)[1])['command'] == 'init', initial
     ws.send('\n' + json.dumps({'command': 'init', 'version': 1}))
     ws.send('\n' + json.dumps({'command': 'open', 'channel': 'terminal-test', 'payload': 'stream',
-                              'spawn': ['/bin/sh', '-c', 'test "$(id -un)" = operator && printf NIXLAB_COCKPIT_TERMINAL_OK'],
+                              'spawn': ['/bin/sh', '-c', 'test "$(id -un)" = operator && printf NIXUS_COCKPIT_TERMINAL_OK'],
                               'pty': True}))
     output = ''
     for _ in range(100):
@@ -38,7 +38,7 @@ try:
                 assert not control.get('problem'), control
                 assert control.get('exit-status', 0) == 0, control
                 break
-    assert 'NIXLAB_COCKPIT_TERMINAL_OK' in output, output
+    assert 'NIXUS_COCKPIT_TERMINAL_OK' in output, output
 finally:
     ws.close()
 try:

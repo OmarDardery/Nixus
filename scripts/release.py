@@ -99,8 +99,8 @@ def prepare(args):
     output = args.output
     if output.exists(): raise ValueError('Release output must not already exist')
     output.mkdir(mode=0o700, parents=True)
-    archive = output / ('nixlab-' + release_version + '.tar.gz')
-    subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=nixlab-' + release_version + '/',
+    archive = output / ('nixus-' + release_version + '.tar.gz')
+    subprocess.run(['git', 'archive', '--format=tar.gz', '--prefix=nixus-' + release_version + '/',
                     '--output=' + str(archive), revision], check=True)
     manifest = {'format': 1, 'version': release_version, 'revision': revision, 'inputsDigest': inputs,
                 'created': int(time.time()), 'qualification': evidence, 'ci': links,
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--tag', required=True)
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--runs', required=True)
-    parser.add_argument('--repository', default='OmarDardery/nixlab')
+    parser.add_argument('--repository', default='OmarDardery/Nixus')
     parser.add_argument('--output', type=Path, required=True)
     try:
         prepare(parser.parse_args())

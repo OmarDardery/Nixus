@@ -14,14 +14,14 @@ from operations import Operations
 import runtime as rt
 
 ID = 'a' * 32
-UNIT = 'nixlab-build-' + ID
+UNIT = 'nixus-build-' + ID
 SENTINEL = 'private-systemd-error-sentinel'
 
 
 class WorkerObservationTests(unittest.TestCase):
     def test_every_transaction_worker_phase_can_be_observed(self):
         for phase in ('build', 'apply', 'rollback'):
-            unit = 'nixlab-' + phase + '-' + ID
+            unit = 'nixus-' + phase + '-' + ID
             with self.subTest(phase=phase), patch.object(rt.subprocess, 'run', return_value=Mock(returncode=3)) as run:
                 self.assertFalse(rt.worker_active(unit))
                 self.assertEqual(run.call_args.args[0], ['systemctl', 'is-active', '--quiet', unit])
@@ -47,8 +47,8 @@ class WorkerObservationTests(unittest.TestCase):
 
     def test_unit_names_are_restricted_before_systemctl(self):
         with patch.object(rt.subprocess, 'run') as run:
-            for unit in (None, '--all', 'incus', 'nixlab-build-../etc', UNIT + '.service',
-                         'nixlab-build-' + 'A' * 32, 'nixlab-guard-' + ID):
+            for unit in (None, '--all', 'incus', 'nixus-build-../etc', UNIT + '.service',
+                         'nixus-build-' + 'A' * 32, 'nixus-guard-' + ID):
                 with self.subTest(unit=unit), self.assertRaises(ValueError):
                     rt.worker_active(unit)
             run.assert_not_called()

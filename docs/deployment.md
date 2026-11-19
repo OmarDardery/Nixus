@@ -10,7 +10,7 @@ full installation. It adds only onboarding/recovery and retains the installed
 network and boot configuration. Confirm fresh management access from a newly authenticated remote session or the physical console before starting
 the full configuration review; rerunning `--wizard` resumes its pending job. It
 refuses already configured hosts. Direct `nixos-rebuild` commands in the advanced
-workflow below bypass NixLab's access-confirmation guard.
+workflow below bypass Nixus's access-confirmation guard.
 
 ## Collect real inventory first
 
@@ -103,7 +103,7 @@ Expected encrypted YAML keys:
 | VM | Arcane initial password | Supplied through authenticated onboarding into transient runtime input; not managed as a recurring SOPS secret |
 | VM | `demo-db-password` | Strong database password; only required when demo enabled |
 
-Without sops-nix, provision the same root-owned files under `/var/lib/nixlab-secrets` using
+Without sops-nix, provision the same root-owned files under `/var/lib/nixus-secrets` using
 your existing secret deployment system. Parent directory mode is 0700, ordinary files 0600.
 The demo password file must be 0444 inside that protected directory so the unprivileged
 web/PG containers can read its bind-mounted secret. File-based Compose secrets are mounts,
@@ -152,7 +152,7 @@ real reachable addresses:
 tunnel = {
   enable = true;
   uuid = "YOUR-EXISTING-TUNNEL-UUID";
-  credentialsFile = "/var/lib/nixlab-secrets/cloudflared.json";
+  credentialsFile = "/var/lib/nixus-secrets/cloudflared.json";
   ingress = {
     "photos.example.com" = "http://APPS_IP:2283";
     "git.example.com" = "http://APPS_IP:3000";

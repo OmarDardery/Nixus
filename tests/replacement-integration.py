@@ -23,12 +23,12 @@ if sys.argv[1] == 'material':
     guest = next(item for item in inventory['guests'] if (item['project'], item['name']) == ('lab', 'native'))
     current = replacement.api(replacement.guest_path('lab', 'native'))
     assert guest['config']['volatile.uuid'] == current['config']['volatile.uuid']
-    # The source fixture has no installed NixLab config/accounts. Supply explicit
+    # The source fixture has no installed Nixus config/accounts. Supply explicit
     # synthetic recovery kits; the real guest/volume archives remain unmodified.
     payload = Path('/tmp/recovery-fixture-payload'); payload.write_text(secrets.token_hex(24)); payload.chmod(0o600)
     for name, kind, member in (('config', 'configuration', 'config/fixture.nix'), ('secrets', 'secrets', 'runtime/fixture-key')):
         stream = io.BytesIO(); recovery.write_archive(stream, {member: payload}, kind)
-        archive = directory / ('nixlab-' + name + '.tar.gz'); archive.write_bytes(stream.getvalue())
+        archive = directory / ('nixus-' + name + '.tar.gz'); archive.write_bytes(stream.getvalue())
         inventory['archiveSHA256'][archive.name] = operations.file_hash(archive)
     rt.write_json(directory / 'inventory.json', inventory)
 elif sys.argv[1] == 'restore':

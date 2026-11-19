@@ -7,7 +7,7 @@ let
     connectivity = base.connectivity // { trustedLANAccess = true; };
   };
   init = pkgs.pkgsStatic.stdenv.mkDerivation {
-    name = "nixlab-fixture-init";
+    name = "nixus-fixture-init";
     dontUnpack = true;
     buildPhase = ''
       cat > init.c <<'EOF'
@@ -25,7 +25,7 @@ let
     '';
     installPhase = "mkdir -p $out; cp init $out/init";
   };
-  image = pkgs.runCommand "nixlab-fixture-container" { nativeBuildInputs = [ pkgs.gnutar pkgs.xz ]; } ''
+  image = pkgs.runCommand "nixus-fixture-container" { nativeBuildInputs = [ pkgs.gnutar pkgs.xz ]; } ''
     mkdir -p rootfs/{bin,sbin,etc,proc,sys,dev,tmp,run,var/lib/test,root} $out
     cp ${pkgs.pkgsStatic.busybox}/bin/busybox rootfs/bin/busybox
     for name in sh ip cat mkdir sleep nc httpd test; do ln -s busybox rootfs/bin/$name; done
@@ -35,13 +35,13 @@ let
     architecture: x86_64
     creation_date: 1
     properties:
-      description: Nixlab disposable integration fixture
+      description: Nixus disposable integration fixture
       os: fixture
     EOF
     tar --owner=0 --group=0 --numeric-owner -cJf $out/image.tar.xz metadata.yaml rootfs
   '';
 in pkgs.testers.runNixOSTest {
-  name = "nixlab-host-foundation";
+  name = "nixus-host-foundation";
   globalTimeout = 900;
   node.specialArgs = { inherit site; appImage = null; installedNetworking.networkManager = false; };
   nodes.host = { config, ... }: {
@@ -50,33 +50,33 @@ in pkgs.testers.runNixOSTest {
     networking.hostName = "foundation-test";
     services.openssh = { enable = true; openFirewall = false; };
     # This fixture exercises real containers; it makes no KVM/VM-guest claim.
-    systemd.services.nixlab-kvm-check = { serviceConfig.Type = "oneshot"; script = "true"; };
+    systemd.services.nixus-kvm-check = { serviceConfig.Type = "oneshot"; script = "true"; };
     environment.systemPackages = [ pkgs.python3 pkgs.nix pkgs.incus-lts.client pkgs.util-linux pkgs.git pkgs.networkmanager pkgs.openssl ];
-    environment.variables.NIXLAB_PROJECT_EVAL_LIB = "${../lib/project-workspace.nix}";
-    environment.variables.NIXLAB_PROJECT_NIXPKGS_LIB = "${pkgs.path}/lib";
+    environment.variables.NIXUS_PROJECT_EVAL_LIB = "${../lib/project-workspace.nix}";
+    environment.variables.NIXUS_PROJECT_NIXPKGS_LIB = "${pkgs.path}/lib";
     # Only this isolated Ethernet fixture belongs to NetworkManager.
     networking.networkmanager = {
       enable = true;
       settings.main.no-auto-default = "*";
       # NetworkManager's udev defaults exclude veth. This veth simulates the
       # physical Ethernet port under test, so explicitly assign only it to NM.
-      settings.device-nixlab-test-port = {
+      settings.device-nixus-test-port = {
         match-device = "interface-name:repair-port";
         managed = true;
       };
       unmanaged = [ "*" "except:interface-name:repair-port" "except:interface-name:repair-peer" "except:interface-name:br-repair" ];
     };
-    systemd.services.nixlab-test-port = {
+    systemd.services.nixus-test-port = {
       wantedBy = [ "multi-user.target" ]; before = [ "NetworkManager.service" ];
       path = [ pkgs.iproute2 ];
       serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
       script = "ip link add repair-port type veth peer name repair-peer; ip link set repair-peer up";
     };
-    environment.etc."nixlab-repair-base.json".text = builtins.toJSON (site // {
+    environment.etc."nixus-repair-base.json".text = builtins.toJSON (site // {
       management = site.management // { configure = false; };
       cockpit = site.cockpit // { enable = false; };
     });
-    systemd.services.nixlab-management-identity = {
+    systemd.services.nixus-management-identity = {
       # Raw fixture directories are separate Nix store inputs; production
       # launchers bundle installer/admin siblings instead. Preserve these
       # imports for both the native command and its temporary ExecStart.
@@ -84,16 +84,16 @@ in pkgs.testers.runNixOSTest {
       path = [ pkgs.iproute2 pkgs.openssl ];
       wants = [ "network-online.target" ]; after = [ "network-online.target" ];
       serviceConfig = { Type = "oneshot"; RemainAfterExit = true; Restart = "on-failure"; RestartSec = "3s"; TimeoutStartSec = "120s"; };
-      preStart = "test -e /var/lib/nixlab-test-identity.json || cp /etc/nixlab-repair-base.json /var/lib/nixlab-test-identity.json";
+      preStart = "test -e /var/lib/nixus-test-identity.json || cp /etc/nixus-repair-base.json /var/lib/nixus-test-identity.json";
       script = ''
-        ${pkgs.python3}/bin/python -c 'import json,diagnostics; diagnostics.identity(json.load(open("/var/lib/nixlab-test-identity.json")))'
+        ${pkgs.python3}/bin/python -c 'import json,diagnostics; diagnostics.identity(json.load(open("/var/lib/nixus-test-identity.json")))'
       '';
     };
     systemd.services.incus = {
-      requires = [ "nixlab-management-identity.service" ];
-      after = [ "nixlab-management-identity.service" ];
+      requires = [ "nixus-management-identity.service" ];
+      after = [ "nixus-management-identity.service" ];
     };
-    environment.etc."nixlab-impact-fixture.json".text = builtins.toJSON {
+    environment.etc."nixus-impact-fixture.json".text = builtins.toJSON {
       settings = site; disks = { }; instances = [ ];
       preseed = config.virtualisation.incus.preseed;
     };
@@ -105,7 +105,7 @@ in pkgs.testers.runNixOSTest {
   };
   nodes.replacement = { ... }: {
     imports = [ ../modules/recovery-mode.nix ];
-    nixlab.recovery.enable = true;
+    nixus.recovery.enable = true;
     virtualisation = { memorySize = 1536; diskSize = 4096; };
     virtualisation.incus.enable = true;
     networking.nftables.enable = true;
@@ -117,7 +117,7 @@ in pkgs.testers.runNixOSTest {
     client.start()
     replacement.start(allow_reboot=True)
     host.wait_for_unit("incus-preseed.service")
-    host.wait_for_unit("nixlab-instances.service")
+    host.wait_for_unit("nixus-instances.service")
     client.wait_for_unit("network.target")
     host.succeed("incus image import ${image}/image.tar.xz --alias fixture")
     host.succeed("incus init fixture native --project lab --profile base --config limits.cpu=1")
@@ -135,7 +135,7 @@ in pkgs.testers.runNixOSTest {
     # Incus-owned instances/profiles remain mutable across platform reconciliation.
     host.succeed("incus profile create native-profile --project lab")
     host.succeed("incus profile set native-profile user.example=native --project lab")
-    host.succeed("systemctl restart incus-preseed.service nixlab-instances.service")
+    host.succeed("systemctl restart incus-preseed.service nixus-instances.service")
     assert host.succeed("incus config get native limits.cpu --project lab").strip() == "1"
     assert host.succeed("incus profile get native-profile user.example --project lab").strip() == "native"
 
@@ -156,10 +156,10 @@ in pkgs.testers.runNixOSTest {
 
     # Synthetic mknod does not produce a USB uevent. Exercise explicit Incus
     # attachment/removal across restarts; physical hotplug is a hardware trial.
-    host.succeed("mkdir -p /dev/nixlab")
-    host.succeed("mknod /dev/nixlab/example c 1 3")
+    host.succeed("mkdir -p /dev/nixus")
+    host.succeed("mknod /dev/nixus/example c 1 3")
     host.succeed("timeout --kill-after=5s 180 incus stop native --project lab --timeout 120", timeout=200)
-    host.succeed("timeout --kill-after=5s 30 incus config device add native serial unix-char source=/dev/nixlab/example path=/dev/example required=false gid=20 mode=0660 --project lab", timeout=45)
+    host.succeed("timeout --kill-after=5s 30 incus config device add native serial unix-char source=/dev/nixus/example path=/dev/example required=false gid=20 mode=0660 --project lab", timeout=45)
     host.succeed("timeout --kill-after=5s 120 incus start native --project lab", timeout=140)
     host.succeed("timeout --kill-after=5s 30 incus exec native --project lab --disable-stdin -- /bin/test -c /dev/example", timeout=45)
     host.succeed("timeout --kill-after=5s 30 incus exec native --project lab --disable-stdin --user 1000 --group 20 -- /bin/sh -c 'echo allowed >/dev/example'", timeout=45)
@@ -168,14 +168,14 @@ in pkgs.testers.runNixOSTest {
     host.succeed("timeout --kill-after=5s 120 incus start native --project lab", timeout=140)
     host.succeed("sh -c 'timeout --kill-after=5s 30 incus exec native --project lab --disable-stdin -- /bin/test -c /dev/example; code=$?; test \"$code\" -eq 1'", timeout=45)
     host.succeed("timeout --kill-after=5s 180 incus stop native --project lab --timeout 120", timeout=200)
-    host.succeed("timeout --kill-after=5s 30 incus config device add native serial unix-char source=/dev/nixlab/example path=/dev/example required=false gid=20 mode=0660 --project lab", timeout=45)
+    host.succeed("timeout --kill-after=5s 30 incus config device add native serial unix-char source=/dev/nixus/example path=/dev/example required=false gid=20 mode=0660 --project lab", timeout=45)
     host.succeed("timeout --kill-after=5s 120 incus start native --project lab", timeout=140)
     host.succeed("timeout --kill-after=5s 30 incus exec native --project lab --disable-stdin -- /bin/test -c /dev/example", timeout=45)
 
-    host.succeed("PYTHONPATH=${../scripts} NIXLAB_EXPORT_DIRECTORY=/var/lib/nixlab/test-exports python3 ${../scripts/backup.py}", timeout=300)
+    host.succeed("PYTHONPATH=${../scripts} NIXUS_EXPORT_DIRECTORY=/var/lib/nixus/test-exports python3 ${../scripts/backup.py}", timeout=300)
     assert json.loads(host.succeed("incus query '/1.0/instances/native/state?project=lab'"))["status"] == "Running"
-    latest = json.loads(host.succeed("cat /var/lib/nixlab/test-exports/latest.json"))["generation"]
-    directory = "/var/lib/nixlab/test-exports/generations/" + latest
+    latest = json.loads(host.succeed("cat /var/lib/nixus/test-exports/latest.json"))["generation"]
+    directory = "/var/lib/nixus/test-exports/generations/" + latest
     manifest = json.loads(host.succeed("cat " + directory + "/inventory.json"))
     archive = directory + "/" + manifest["guests"][0]["archive"]
     host.succeed("incus import " + archive + " restored --project lab --config boot.autostart=false")
@@ -205,7 +205,7 @@ in pkgs.testers.runNixOSTest {
     host.wait_for_unit("incus.service")
     assert host.succeed("incus config get native volatile.uuid --project lab").strip() == native_uuid
     host.wait_until_succeeds("incus exec native --project lab --disable-stdin -- /bin/cat /var/lib/test/index.html | grep -x preserved", timeout=60)
-    host.succeed("test ! -e /run/systemd/system/nixlab-management-identity.service.d/90-nixlab-network-repair.conf")
+    host.succeed("test ! -e /run/systemd/system/nixus-management-identity.service.d/90-nixus-network-repair.conf")
 
     # Recover actual archives on an independent Incus daemon/storage node. This
     # fixture is automated VM evidence, never physical replacement qualification.
@@ -215,16 +215,16 @@ in pkgs.testers.runNixOSTest {
     host.succeed("incus config device add native recovery-data disk pool=guests source=recoverdata path=/recoverdata --project lab")
     host.succeed("incus start native --project lab")
     host.succeed("incus exec native --project lab -- /bin/sh -c 'echo attached-data > /recoverdata/record'")
-    host.succeed("PYTHONPATH=${../scripts} NIXLAB_EXPORT_DIRECTORY=/var/lib/nixlab/test-exports python3 ${../scripts/backup.py}", timeout=300)
-    generation = json.loads(host.succeed("cat /var/lib/nixlab/test-exports/latest.json"))["generation"]
-    source = "/var/lib/nixlab/test-exports/generations/" + generation
+    host.succeed("PYTHONPATH=${../scripts} NIXUS_EXPORT_DIRECTORY=/var/lib/nixus/test-exports python3 ${../scripts/backup.py}", timeout=300)
+    generation = json.loads(host.succeed("cat /var/lib/nixus/test-exports/latest.json"))["generation"]
+    source = "/var/lib/nixus/test-exports/generations/" + generation
     host.succeed("PYTHONPATH=${../admin}:${../scripts} python3 ${./replacement-integration.py} material " + source)
     host.succeed("tar -czf /tmp/shared/replacement-generation.tar.gz -C " + source + " .")
     replacement.wait_for_unit("incus.service")
     # Unprivileged LXC must traverse the custom pool root to mount its
     # instance credentials; data/secret staging remains root-only.
-    replacement.succeed("mkdir -m 0711 /var/lib/nixlab-replacement-pool")
-    replacement.succeed("incus storage create replacement dir source=/var/lib/nixlab-replacement-pool")
+    replacement.succeed("mkdir -m 0711 /var/lib/nixus-replacement-pool")
+    replacement.succeed("incus storage create replacement dir source=/var/lib/nixus-replacement-pool")
     replacement.succeed("mkdir -m 0700 /root/offhost-generation")
     replacement.succeed("tar -xzf /tmp/shared/replacement-generation.tar.gz -C /root/offhost-generation")
     run = "PYTHONPATH=${../admin}:${../scripts} python3 ${./replacement-integration.py}"

@@ -15,5 +15,5 @@
       restic-environment = { path = site.backup.environmentFile; };
     });
   };
-  systemd.tmpfiles.rules = [ "d /var/lib/nixlab-secrets 0700 root root -" ];
+  systemd.tmpfiles.rules = [ "d /var/lib/nixus-secrets 0700 root root -" ];
 }

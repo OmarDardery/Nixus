@@ -60,7 +60,7 @@ class IntentTests(unittest.TestCase):
 
     def test_public_apps_never_automatically_expose_management(self):
         p = intent.plan({"access": "public"}, host(), settings())
-        self.assertTrue(any("never SSH/Incus/Cockpit/NixLab" in x for x in p["pending"]))
+        self.assertTrue(any("never SSH/Incus/Cockpit/Nixus" in x for x in p["pending"]))
 
     def test_insufficient_ram_and_network_collision_fail_before_apply(self):
         # Incus Compose workloads provision no heavyweight VM, so low RAM is not rejected.

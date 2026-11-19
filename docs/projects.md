@@ -1,6 +1,6 @@
 # Upstream projects & credits
 
-NixLab integrates maintained upstream software. Its job is a small NixOS control
+Nixus integrates maintained upstream software. Its job is a small NixOS control
 page, safe host configuration and updates, and backup/recovery coordination.
 Guest lifecycle, consoles, networking and storage remain native Incus operations.
 
@@ -25,7 +25,7 @@ Guest lifecycle, consoles, networking and storage remain native Incus operations
 NixOS also supplies OpenSSH, systemd, NetworkManager, [dhcpcd](https://github.com/NetworkConfiguration/dhcpcd)
 and nftables. Their manuals
 and optional VPN references are available under **Help → Upstream projects**.
-Upstream components retain their own licenses and authorship. NixLab does not
+Upstream components retain their own licenses and authorship. Nixus does not
 claim their implementation or imply upstream endorsement. Included fonts retain
 their OFL notices under `admin/static/fonts/`.
 

@@ -24,7 +24,7 @@ files and prints JSON; it does not evaluate Nix, inspect the live host, download
 dependencies, modify the checkout, or delete anything:
 
 ```sh
-python3 scripts/artifact_audit.py > /tmp/nixlab-artifact-baseline.json
+python3 scripts/artifact_audit.py > /tmp/nixus-artifact-baseline.json
 python3 -m unittest discover -s tests -p 'test_artifact_audit.py' -v
 ```
 

@@ -37,8 +37,8 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         }))
         project = self.workspace / "alpha"
         (project / "modules").mkdir(parents=True, mode=0o700)
-        (project / "default.nix").write_text('{ ... }: { nixlab.project.name = "alpha"; }')
-        (project / "modules" / "network.nix").write_text("{ ... }: { nixlab.project.enable = true; }")
+        (project / "default.nix").write_text('{ ... }: { nixus.project.name = "alpha"; }')
+        (project / "modules" / "network.nix").write_text("{ ... }: { nixus.project.enable = true; }")
         (project / "secrets.enc.yaml").write_text("sops: ciphertext-test-fixture")
         self.before = tx.validate_workspace(self.workspace)["sourceHash"]
         self.state_patch = patch.object(rt, "STATE", self.state)
@@ -68,7 +68,7 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         return self.manager.review(patches, principal="admin")
 
     def review(self):
-        return self.edit(**{"alpha/modules/network.nix": "{ ... }: { nixlab.project.enable = false; }"})
+        return self.edit(**{"alpha/modules/network.nix": "{ ... }: { nixus.project.enable = false; }"})
 
     def test_review_does_not_touch_live_source_or_execute_host_commands(self):
         with patch.object(tx.subprocess, "run", side_effect=AssertionError("No host commands during review")):
@@ -105,7 +105,7 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         self.assertEqual(self.manager.rollback(published["id"], published["planHash"])["status"], "rolled-back")
 
     def test_creation_and_deletion_require_reviews_and_preserve_entrypoints(self):
-        proposed = self.edit(**{"beta/default.nix": '{ ... }: { nixlab.project.name = "beta"; }'})
+        proposed = self.edit(**{"beta/default.nix": '{ ... }: { nixus.project.name = "beta"; }'})
         self.manager.publish(proposed["id"], proposed["planHash"])
         self.assertTrue((self.workspace / "beta/default.nix").exists())
         with self.assertRaisesRegex(ValueError, "entrypoints"):
@@ -118,7 +118,7 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
 
     def test_conflicting_editor_source_change_refuses_publish(self):
         reviewed = self.review()
-        (self.workspace / "alpha/default.nix").write_text('{ ... }: { nixlab.project.name = "changed"; }')
+        (self.workspace / "alpha/default.nix").write_text('{ ... }: { nixus.project.name = "changed"; }')
         with self.assertRaisesRegex(ValueError, "changed"):
             self.manager.publish(reviewed["id"], reviewed["planHash"])
         self.assertTrue((self.workspace / "alpha/modules/network.nix").read_text().endswith("true; }"))
@@ -309,7 +309,7 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         self.assertEqual(self.manager.status()["deployment"], "not-implemented")
         with self.assertRaisesRegex(ValueError, "already exists"):
             self.manager.initialize(flake, lock, principal="admin")
-        self.assertFalse(list(self.workspace.parent.glob(".nixlab-initialize-*")))
+        self.assertFalse(list(self.workspace.parent.glob(".nixus-initialize-*")))
 
     def test_bad_or_symlinked_initial_workspace_is_never_overwritten(self):
         self.workspace.rename(self.base / "old-workspace")
@@ -343,9 +343,9 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
 
     def test_byte_exact_uploaded_source_is_attested_but_never_executed(self):
         root, revision, content = self._published_source()
-        with patch.dict(os.environ, {"NIXLAB_PROJECT_SOURCES": str(root)}):
+        with patch.dict(os.environ, {"NIXUS_PROJECT_SOURCES": str(root)}):
             reviewed = self.manager.review(
-                {"alpha/modules/network.nix": "{ ... }: { nixlab.project.enable = false; }"},
+                {"alpha/modules/network.nix": "{ ... }: { nixus.project.enable = false; }"},
                 principal="admin", source_revisions={"alpha": revision})
             self.assertEqual(reviewed["sourceRefs"]["alpha"]["revision"], revision)
             self.assertEqual(reviewed["sourceRefs"]["alpha"]["fileCount"], 1)
@@ -370,12 +370,12 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
 
     def test_source_revision_tamper_and_unreferenced_project_fail_closed(self):
         root, revision, content = self._published_source()
-        with patch.dict(os.environ, {"NIXLAB_PROJECT_SOURCES": str(root)}):
+        with patch.dict(os.environ, {"NIXUS_PROJECT_SOURCES": str(root)}):
             with self.assertRaisesRegex(ValueError, "enabled declarative project"):
                 self.manager.review({"alpha/modules/network.nix": "{ ... }: {}"},
                                     source_revisions={"unknown": revision})
             reviewed = self.manager.review(
-                {"alpha/modules/network.nix": "{ ... }: { nixlab.project.enable = false; }"},
+                {"alpha/modules/network.nix": "{ ... }: { nixus.project.enable = false; }"},
                 source_revisions={"alpha": revision})
             path = root / "alpha" / "revisions" / revision / "source" / "Dockerfile"
             path.chmod(0o600)
@@ -389,7 +389,7 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         reviewed = self.review()
         data = json.dumps(self.manager.status(reviewed["id"]))
         self.assertNotIn("sops: ciphertext-test-fixture", data)
-        self.assertNotIn("nixlab.project.enable = false", data)
+        self.assertNotIn("nixus.project.enable = false", data)
         self.assertNotIn("currentPassword", data)
         self.assertTrue(reviewed["planHash"])
 

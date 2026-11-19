@@ -66,7 +66,7 @@ class SourceTests(unittest.TestCase):
                      patch.object(installer, 'choose_network') as network, \
                      patch.object(installer, 'run') as command, \
                      patch.object(installer, 'ensure_portal_account') as credentials, \
-                     patch.object(sys, 'argv', ['nixlab-install', '--wizard']), \
+                     patch.object(sys, 'argv', ['nixus-install', '--wizard']), \
                      contextlib.redirect_stderr(io.StringIO()) as error:
                     with self.assertRaises(SystemExit) as caught:
                         installer.main()
@@ -112,7 +112,7 @@ class SourceTests(unittest.TestCase):
             path_type = Path
             def paths(value, *extra):
                 if str(value) == '/etc/NIXOS': return flag
-                if str(value) in ('/etc/nixos.pre-nixlab', '/var/lib/incus/database'):
+                if str(value) in ('/etc/nixos.pre-nixus', '/var/lib/incus/database'):
                     return root / ('missing-' + path_type(value).name)
                 if str(value) in ('/root', '/home'): return root / 'homes'
                 return path_type(value, *extra)
@@ -121,8 +121,8 @@ class SourceTests(unittest.TestCase):
                 if args[0] == 'git': return real_run(args, check=True, **kwargs)
                 return subprocess.CompletedProcess(args, 0, '')
             def evaluate(config, attribute):
-                if attribute == 'nixlabSettings': return rt.read_json(rt.machine_path(config, 'settings'))
-                return copy.deepcopy(initial()) if attribute == 'nixlabDefaults' else {'adminKeys': [], 'wpaProfiles': False}
+                if attribute == 'nixusSettings': return rt.read_json(rt.machine_path(config, 'settings'))
+                return copy.deepcopy(initial()) if attribute == 'nixusDefaults' else {'adminKeys': [], 'wpaProfiles': False}
             def activate(candidate, **kwargs):
                 staged = kwargs.get('staged_source')
                 if staged is not None:
@@ -164,7 +164,7 @@ class SourceTests(unittest.TestCase):
                  patch('controller.read_settings', side_effect=lambda root: rt.read_json(rt.machine_path(root, 'settings'), {})),
                  patch('direct.activate', side_effect=activate), patch('builtins.print'),
                  patch('bootstrap.activate', side_effect=lambda **kw: activate(rt.read_json(rt.machine_path(target, 'settings')), **kw)),
-                 patch.object(sys, 'argv', ['nixlab-install', '--checkout', str(source)] + (['--wizard'] if wizard else []))
+                 patch.object(sys, 'argv', ['nixus-install', '--checkout', str(source)] + (['--wizard'] if wizard else []))
             ]
             with contextlib.ExitStack() as stack:
                 for mocked in patches: stack.enter_context(mocked)
@@ -211,7 +211,7 @@ class SourceTests(unittest.TestCase):
                 root.mkdir()
                 rt.atomic(root / 'flake.nix', '{}')
                 rt.atomic(root / 'admin/main.py', name)
-                rt.write_json(root / '.nixlab-files.json', ['flake.nix', 'admin/main.py'])
+                rt.write_json(root / '.nixus-files.json', ['flake.nix', 'admin/main.py'])
             live = base / 'live'
             rt.write_json(live / 'machine/format.json', {'version': 1})
             rt.write_json(live / 'machine/settings.json', {'hostName': 'my-host'})
@@ -232,11 +232,11 @@ class SourceTests(unittest.TestCase):
 
     def test_adoption_does_not_reuse_native_network_or_pool(self):
         data = {'projects': [{'name': 'default'}],
-                'networks': [{'name': 'incusbr0', 'type': 'bridge', 'managed': True}, {'name': 'nixlabbr'}],
-                'pools': [{'name': 'guests'}, {'name': 'nixlab-guests'}]}
+                'networks': [{'name': 'incusbr0', 'type': 'bridge', 'managed': True}, {'name': 'nixusbr'}],
+                'pools': [{'name': 'guests'}, {'name': 'nixus-guests'}]}
         cfg = workflow.adoption_settings(initial(), data)
-        self.assertEqual(cfg['guests']['bridge'], 'nixlabbr1')
-        self.assertEqual(cfg['storage']['pool'], 'nixlab-guests1')
+        self.assertEqual(cfg['guests']['bridge'], 'nixusbr1')
+        self.assertEqual(cfg['storage']['pool'], 'nixus-guests1')
         self.assertEqual(cfg['connectivity']['preservedIncusBridges'], ['incusbr0'])
         data['projects'].append({'name': 'lab'})
         with self.assertRaisesRegex(ValueError, 'conflicts'):

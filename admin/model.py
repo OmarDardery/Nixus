@@ -56,7 +56,7 @@ def serial_inventory(root=Path('/sys/class/tty'), dev=Path('/dev')):
             if usb is None: continue
             def read(name): return (usb / name).read_text().strip() if (usb / name).is_file() else ''
             path = dev / entry.name
-            stable = [str(p) for folder in ('serial/by-id', 'nixlab') for p in (dev / folder).glob('*') if p.resolve() == path.resolve()]
+            stable = [str(p) for folder in ('serial/by-id', 'nixus') for p in (dev / folder).glob('*') if p.resolve() == path.resolve()]
             result.append({'path': str(path), 'vendorId': read('idVendor'), 'productId': read('idProduct'),
                            'serial': read('serial'), 'product': read('product'), 'stablePaths': stable,
                            'driver': next((str((p / 'driver').resolve().name) for p in chain if (p / 'driver').exists()), '')})
@@ -196,8 +196,8 @@ def validate_settings(candidate, current, host, require_devices=True):
             raise ValueError('Mount names use lowercase letters, numbers and hyphens')
         if not re.fullmatch(r'[A-Za-z0-9-]{4,80}', mount['uuid']):
             raise ValueError('Select a stable filesystem UUID')
-        if mount['path'] != '/srv/nixlab/' + mount['name']:
-            raise ValueError('Managed disks mount only at /srv/nixlab/<name>')
+        if mount['path'] != '/srv/nixus/' + mount['name']:
+            raise ValueError('Managed disks mount only at /srv/nixus/<name>')
         if mount['fsType'] not in FILESYSTEMS or mount['role'] not in ROLES:
             raise ValueError('Unsupported filesystem or storage role')
         if type(mount['required']) is not bool or type(mount['readOnly']) is not bool:
@@ -234,7 +234,7 @@ def validate_settings(candidate, current, host, require_devices=True):
         candidate['storage']['source'] = primary[0]['path'] + '/incus'
     elif candidate['storage']['driver'] == 'dir':
         candidate['storage']['source'] = '/var/lib/incus/storage-pools/' + candidate['storage'].get('pool', 'guests')
-    candidate['backup']['stagingDirectory'] = stages[0]['path'] + '/exports' if stages else '/var/lib/nixlab/exports'
+    candidate['backup']['stagingDirectory'] = stages[0]['path'] + '/exports' if stages else '/var/lib/nixus/exports'
     if candidate['backup']['enable']:
         if not candidate['backup']['repository'] or '\n' in candidate['backup']['repository']:
             raise ValueError('Provide an independent restic repository')

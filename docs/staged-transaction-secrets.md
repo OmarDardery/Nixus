@@ -7,7 +7,7 @@ must hold `runtime.locked()` when staging, deleting or sweeping credentials.
 ## Admission and expiry
 
 `runtime.stage_secrets` publishes encoded credentials once into
-`/var/lib/nixlab-admin/jobs/ID/secrets.json`. It validates every directory component
+`/var/lib/nixus-admin/jobs/ID/secrets.json`. It validates every directory component
 with no-follow descriptor lookups, accepts only trusted privileged ownership and
 no untrusted directory writers, and creates a mode-0600 file. A root-owned sticky
 temporary-directory ancestor is permitted for local tooling/tests. Readers reject
@@ -64,7 +64,7 @@ Expiry commits the terminal job state **before** unlink. If that write fails the
 secret remains. If unlink or directory sync fails, the next guard retries from
 the persisted terminal state. Permission, corruption, worker-observation and
 deletion failures return fixed actionable errors and fail
-`nixlab-rollback-guard.service`, which the existing doctor/health service inventory
+`nixus-rollback-guard.service`, which the existing doctor/health service inventory
 reports. The sweep still processes other independent jobs. A staging finding does
 not prevent the existing guest-operation restart recovery from running.
 

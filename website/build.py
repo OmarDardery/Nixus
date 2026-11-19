@@ -14,10 +14,10 @@ import markdown
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'website'
-DOMAIN = 'https://nixlab.dardery.work'
-REPO = 'https://github.com/OmarDardery/nixlab'
+DOMAIN = 'https://nixus.dardery.work'
+REPO = 'https://github.com/OmarDardery/Nixus'
 GROUPS = [
-    ('GET STARTED', [('index', 'Overview'), ('plain-nixos', 'Install Nixlab'), ('start', 'First steps'), ('home-server-scenario', 'Homelab acceptance'), ('architecture', 'Architecture'), ('target-architecture', 'Target architecture (planned)'), ('homelab', 'Meet the current stack')]),
+    ('GET STARTED', [('index', 'Overview'), ('plain-nixos', 'Install Nixus'), ('start', 'First steps'), ('home-server-scenario', 'Homelab acceptance'), ('architecture', 'Architecture'), ('target-architecture', 'Target architecture (planned)'), ('homelab', 'Meet the current stack')]),
     ('USE YOUR SERVER', [('administration', 'Accounts & access'), ('networking', 'Networking'), ('guest-deployments', 'Guest updates'), ('file-modules', 'File configuration'), ('hardware', 'Hardware & disks'), ('helpers', 'Application helpers'), ('setup', 'Optional web wizard')]),
     ('WHEN THINGS HAPPEN', [('troubleshooting', 'Troubleshooting'), ('recovery', 'Backups & recovery'), ('operations', 'Operations & updates'), ('commissioning', 'Commissioning'), ('trial', 'Trial checklist'), ('validation', 'What is tested')]),
     ('INCUS-NATIVE REBUILD', [('incus-native-architecture', 'Architecture contract'), ('incus-native-structure', 'Repository and host layout'), ('incus-native-plan', 'Execution plan'), ('incus-native-secrets-ui', 'Declarative secrets UI'), ('oci-source-intake', 'OCI source uploads & build safety'), ('incus-native-file-inventory', 'Full source-file inventory')]),
@@ -29,8 +29,8 @@ DESCRIPTIONS = {
     'troubleshooting': 'Symptoms, checks and recovery commands from actual installation failures. Fewer guesses, better logs.',
     'recovery': 'NixOS can roll back code. Your databases would like a separate plan.',
     'commissioning': 'Prove the stack works on your hardware, including the very important second boot.',
-    'website': 'Publish the docs with GitHub Pages and connect nixlab.dardery.work.',
-    'target-architecture': 'Clean-slate NixLab: Incus projects, independent Nix flakes, Compose Web UI and one-time declarative backups. No historical server migration.',
+    'website': 'Publish the docs with GitHub Pages and connect nixus.dardery.work.',
+    'target-architecture': 'Clean-slate Nixus: Incus projects, independent Nix flakes, Compose Web UI and one-time declarative backups. No historical server migration.',
 }
 
 
@@ -82,7 +82,7 @@ def render(source, base):
                 parent.insert(list(parent).index(node), wrapper); parent.remove(node); wrapper.append(node)
             elif node.tag == 'pre' and node.find('code') is not None:
                 counter += 1
-                identifier = 'nixlab-code-' + str(counter)
+                identifier = 'nixus-code-' + str(counter)
                 node.find('code').set('id', identifier)
                 wrapper = ET.Element('div', {'class': 'code-wrap'})
                 parent.insert(list(parent).index(node), wrapper); parent.remove(node)
@@ -138,7 +138,7 @@ def check(output, base):
             if part.fragment and resolved.suffix == '.html' and unquote(part.fragment) not in pages[resolved].ids:
                 failures.append(f'{relative}: missing anchor: {target}')
     home = (output / 'index.html').read_text()
-    if 'github:OmarDardery/nixlab#install' not in home: failures.append('Missing canonical installation command')
+    if 'github:OmarDardery/Nixus#install' not in home: failures.append('Missing canonical installation command')
     index = json.loads((output / 'search-index.json').read_text())
     for item in index:
         if not item['title'] or not item['text']: failures.append('Empty search entry')
@@ -173,14 +173,14 @@ def build(output, base):
         destination = output / 'docs' / slug / 'index.html'; destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(template({'BASE': base, 'TITLE': escape(title), 'DESCRIPTION': escape(description), 'CANONICAL': '/docs/' + slug + '/', 'NAV': navigation(base, slug, pages), 'BODY': body, 'TOC': toc, 'SOURCE': REPO + '/blob/main/docs/' + source.name}))
         search.append({'title': title, 'url': url(base, slug), 'text': plain})
-    cards = ''.join(f'<a href="{url(base, slug)}"><h2>{escape(title)}</h2><p>{escape(DESCRIPTIONS[slug])}</p></a>' for slug, title in [('plain-nixos', 'Install Nixlab ↗'), ('troubleshooting', 'Troubleshoot ↗'), ('recovery', 'Back up & recover ↗'), ('commissioning', 'Verify your hardware ↗')])
+    cards = ''.join(f'<a href="{url(base, slug)}"><h2>{escape(title)}</h2><p>{escape(DESCRIPTIONS[slug])}</p></a>' for slug, title in [('plain-nixos', 'Install Nixus ↗'), ('troubleshooting', 'Troubleshoot ↗'), ('recovery', 'Back up & recover ↗'), ('commissioning', 'Verify your hardware ↗')])
     body = '<p>Start with a plain installed NixOS server. The default installer configures Incus, Cockpit and the Docker/Arcane VM, then verifies the enabled interfaces.</p><div class="docs-intro-grid">' + cards + '</div>'
     for title, items in GROUPS[1:]:
         body += '<h2>' + escape(title.title()) + '</h2><ul>' + ''.join(f'<li><a href="{url(base, slug)}">{escape(label)}</a></li>' for slug, label in items) + '</ul>'
     home = output / 'docs' / 'index.html'
     home.write_text(template({'BASE': base, 'TITLE': 'Read this before improvising.', 'DESCRIPTION': DESCRIPTIONS['index'], 'CANONICAL': '/docs/', 'NAV': navigation(base, 'index', pages), 'BODY': body, 'TOC': '<a href="' + url(base, 'plain-nixos') + '">Start with installation →</a>', 'SOURCE': REPO + '/tree/main/docs'}))
     (output / 'search-index.json').write_text(json.dumps(search, ensure_ascii=False))
-    not_found = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>404 · Nixlab</title><link rel="stylesheet" href="{base}/assets/brand.css"><link rel="stylesheet" href="{base}/assets/style.css"></head><body><main class="not-found section-wrap"><p class="eyebrow">404 / UNDECLARED RESOURCE</p><h1>This page failed to evaluate.</h1><p>Or the link moved. Either way, a rebuild of your server will not help.</p><a class="button button-primary" href="{url(base)}">Back to the docs →</a></main></body></html>'
+    not_found = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>404 · Nixus</title><link rel="stylesheet" href="{base}/assets/brand.css"><link rel="stylesheet" href="{base}/assets/style.css"></head><body><main class="not-found section-wrap"><p class="eyebrow">404 / UNDECLARED RESOURCE</p><h1>This page failed to evaluate.</h1><p>Or the link moved. Either way, a rebuild of your server will not help.</p><a class="button button-primary" href="{url(base)}">Back to the docs →</a></main></body></html>'
     (output / '404.html').write_text(not_found)
     urls = [DOMAIN + '/'] + [DOMAIN + '/docs/'] + [DOMAIN + '/docs/' + p.stem + '/' for p in sources]
     (output / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + ''.join('<url><loc>' + escape(link) + '</loc></url>' for link in urls) + '</urlset>')

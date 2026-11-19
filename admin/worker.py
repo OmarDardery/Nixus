@@ -112,10 +112,10 @@ def build(directory):
     # no Incus infrastructure, mounts or guest deployment declarations.
     resources = ('disks = {}; preseed = {}; instances = []; deployments = {};'
                  if role == 'bootstrap' else
-                 'disks = c.nixlab.storage.disks; preseed = c.virtualisation.incus.preseed; instances = c.nixlab.incus.desiredInstances; deployments = c.nixlab.deployment.manifest;')
+                 'disks = c.nixus.storage.disks; preseed = c.virtualisation.incus.preseed; instances = c.nixus.incus.desiredInstances; deployments = c.nixus.deployment.manifest;')
     result = subprocess.run(['nix', '--extra-experimental-features', 'nix-command flakes', 'eval', '--json',
         'path:' + str(source) + '#nixosConfigurations.' + role + '.config', '--apply',
-        'c: { settings = c.nixlab.settings; desiredSettings = c.nixlab.desiredSettings or null; ' + resources + ' }'],
+        'c: { settings = c.nixus.settings; desiredSettings = c.nixus.desiredSettings or null; ' + resources + ' }'],
         check=True, capture_output=True, text=True, timeout=120)
     projection = json.loads(result.stdout)
     effective, disks = projection['settings'], projection['disks']
@@ -189,7 +189,7 @@ def save_recovery(directory):
         if path.exists():
             rt.atomic(recovery / name, path.read_bytes())
     nm = Path('/run/NetworkManager/system-connections')
-    for path in nm.glob('nixlab-*.nmconnection') if nm.exists() else []:
+    for path in nm.glob('nixus-*.nmconnection') if nm.exists() else []:
         rt.atomic(recovery / path.name, path.read_bytes())
     try:
         active = subprocess.run(['nmcli', '--get-values', 'GENERAL.CON-UUID', 'device', 'show'], capture_output=True, text=True, timeout=10)
@@ -233,9 +233,9 @@ def restore_files(directory):
         else:
             target.unlink(missing_ok=True)
     nm = Path('/run/NetworkManager/system-connections')
-    for path in nm.glob('nixlab-*.nmconnection') if nm.exists() else []:
+    for path in nm.glob('nixus-*.nmconnection') if nm.exists() else []:
         path.unlink()
-    for path in recovery.glob('nixlab-*.nmconnection'):
+    for path in recovery.glob('nixus-*.nmconnection'):
         rt.atomic(nm / path.name, path.read_bytes())
     return manifest
 
@@ -265,7 +265,7 @@ def rollback(directory, reason='requested'):
                     run(['nmcli', '--wait', '30', 'connection', 'up', 'uuid', uuid], log, timeout=40, check=False)
                 else:
                     log.write('Skipped connection no longer present\n')
-        restart_loaded(['nixlab-admin-backend.service', 'nixlab-ui.service', 'nginx.service', 'cockpit.service'], log)
+        restart_loaded(['nixus-admin-backend.service', 'nixus-ui.service', 'nginx.service', 'cockpit.service'], log)
     update(directory, status='rolled-back', rolledBackAt=time.time())
     pending = rt.read_json(rt.STATE / 'pending.json')
     if pending and pending['id'] == directory.name:
@@ -303,7 +303,7 @@ def apply(directory):
     if job['baseDigest'] != rt.digest_source(rt.ROOT) or job['candidateDigest'] != rt.digest_source(directory / 'source'):
         raise ValueError('Source changed since review')
     impact.recheck(directory)  # repeat after queueing, before saving/publishing anything
-    old_settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings')))
+    old_settings = rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings')))
     effective = job.get('effectiveSettings', job['settings'])
     if role == 'bootstrap' and (effective['ready'] or old_settings['ready']):
         raise ValueError('Bootstrap cannot replace a configured host; build a full host review')
@@ -349,15 +349,15 @@ def apply(directory):
             run([system + '/bin/switch-to-configuration', 'switch'], log, timeout=900)
             rt.prepare_state_access(locked=True)
             if role == 'hypervisor':
-                run(['systemctl', 'is-active', 'incus.service', 'nixlab-instances.service'], log, timeout=30)
+                run(['systemctl', 'is-active', 'incus.service', 'nixus-instances.service'], log, timeout=30)
             if role == 'hypervisor' and effective['cockpit']['enable']:
                 run(['systemctl', 'is-active', 'cockpit.socket'], log, timeout=30)
                 run(['systemctl', 'try-restart', 'cockpit.service'], log, timeout=45)
             if role == 'hypervisor' and (before['address'] != after['address'] or old_settings['hostName'] != effective['hostName']):
                 run(['systemctl', 'try-restart', 'incus.service'], log, timeout=120)
             # Load rotated TLS material/new port. This may require signing in again.
-            run(['systemctl', 'try-restart', 'nixlab-admin-backend.service', 'nixlab-ui.service'], log, timeout=45)
-            run(['systemctl', 'is-active', 'nixlab-admin-backend.service', 'nixlab-ui.service'], log, timeout=30)
+            run(['systemctl', 'try-restart', 'nixus-admin-backend.service', 'nixus-ui.service'], log, timeout=45)
+            run(['systemctl', 'is-active', 'nixus-admin-backend.service', 'nixus-ui.service'], log, timeout=30)
         import diagnostics
         report = diagnostics.wait_ready(effective)
         rt.write_json(directory / 'health.json', report)

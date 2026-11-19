@@ -30,7 +30,7 @@ class BootstrapTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.state = Path(self.temp.name)
         patched = patch.object(rt, 'STATE', self.state); patched.start(); self.addCleanup(patched.stop)
-        patched = patch.dict(os.environ, {'NIXLAB_TEST': '1'}); patched.start(); self.addCleanup(patched.stop)
+        patched = patch.dict(os.environ, {'NIXUS_TEST': '1'}); patched.start(); self.addCleanup(patched.stop)
         accounts.enable_enrollment()
 
     def session(self):

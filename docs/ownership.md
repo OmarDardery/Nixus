@@ -1,13 +1,13 @@
 # One owner for each layer
 
-Nixlab is the NixOS host foundation for Incus, not a second virtualization UI.
+Nixus is the NixOS host foundation for Incus, not a second virtualization UI.
 
 **Target decision (2026-11-17):** [Arcane-free Web UI, Incus, Cockpit and
 declarative project/backup ownership](target-architecture.md) supersedes
 Arcane/Docker assignments below. The following tables document the *current
 legacy implementation*, not a new promise to continue Arcane. Full removal
 and non-destructive preservation are tracked in
-[#126](https://github.com/OmarDardery/nixlab/issues/126).
+[#40](https://github.com/OmarDardery/Nixus/issues/40).
 
 | Layer | Authoritative owner |
 |---|---|
@@ -16,28 +16,28 @@ and non-destructive preservation are tracked in
 | Additional managed guest networks, DHCP, reservations, forwards, ACLs, pools/volumes | Incus |
 | Community Scripts application installation/updates | Upstream Incus wizard/application tooling |
 | Optional Docker stacks and their consoles/logs | Arcane or existing declared Compose source |
-| Independent backup scheduling, coverage and whole-host recovery | Nixlab |
+| Independent backup scheduling, coverage and whole-host recovery | Nixus |
 
 ## Control and data boundaries for maintainers
 
 **Authoritative responsibility stays singular**, even if the portal displays
 read-only status from several systems:
 
-| Question | Change authority | What NixLab may do without duplicating the owner |
+| Question | Change authority | What Nixus may do without duplicating the owner |
 |---|---|---|
 | What host configuration should exist? | Typed Nix settings and locally approved Nix modules, evaluated by Nix | Validate input, review impact and use the existing Manager/worker transaction and rollback guard |
-| Which host endpoints are exposed? | NixOS service listeners and firewall policy | Show evaluated exposure and guard access; one consolidated policy is tracked by #51 |
-| Who may administer the host or specialist UI? | Linux/PAM for Cockpit, NixLab portal accounts, Incus trust, Arcane identity (independent) | Set up/recover each by its documented owner; **no implicit SSO** or plaintext password recovery |
+| Which host endpoints are exposed? | NixOS service listeners and firewall policy | Show evaluated exposure and guard access; one consolidated policy is tracked by #16 |
+| Who may administer the host or specialist UI? | Linux/PAM for Cockpit, Nixus portal accounts, Incus trust, Arcane identity (independent) | Set up/recover each by its documented owner; **no implicit SSO** or plaintext password recovery |
 | What guests and devices exist? | Incus; source owns only explicitly declared resources | Read/preview native changes; reconcile source-owned fields using last-applied/ETags and refuse drift; never delete an undeclared guest |
 | What containers and Compose stacks exist? | Arcane/Docker or the operator's source checkout, within the apps VM | Link to Arcane and provide reviewed handoff templates, not a competing stack editor |
 | Is an application or host recoverable? | Backup staging, restic repository and recorded isolated restore results | Present independently sourced evidence, exclusions and freshness rather than claiming a green backup means a working restore |
-| Which upstream versions and release checks are required? | `flake.lock`, reviewed OCI inputs (planned #58), CI/release checks (planned #56) | Use a single published evidence contract; absence of physical proof cannot be auto-qualified |
+| Which upstream versions and release checks are required? | `flake.lock`, reviewed OCI inputs (planned #23), CI/release checks (planned #21) | Use a single published evidence contract; absence of physical proof cannot be auto-qualified |
 
 ### Preservation and rollback rules
 
 An installed NixOS host may already have custom user accounts, SSH keys,
 network connections, state versions, mounts and other Nix modules. Adoption
-must keep these. Public `#install`/`#update`, `nixlab-admin`, stable portal
+must keep these. Public `#install`/`#update`, `nixus-admin`, stable portal
 API routes, systemd service names, and the old/modern machine settings layouts
 are covered by the versioned
 [compatibility fixture](../tests/fixtures/architecture-contract.json) and
@@ -55,8 +55,8 @@ a recovery route using a previous generation and local console even if the porta
 apps VM or remote link is unavailable.
 
 Retirement of old API aliases, machine layouts and compatibility adapters is
-a **separate, migration-tested** change (#56). Insecure defaults and disclosure
-of generated credentials are defects to fix (#57, #61–#73), not historical
+a **separate, migration-tested** change (#21). Insecure defaults and disclosure
+of generated credentials are defects to fix (#22, #26–#73), not historical
 contracts worth preserving.
 
 The portal links to Incus rather than duplicating guest controls. Its restore
@@ -101,11 +101,11 @@ and never adopts native resources merely because they appear in the inventory.
 The CLI returns the same public JSON as the portal:
 
 ```sh
-sudo nixlab-admin config review --module profiles/base.nix=/path/to/reviewed-module.nix
-sudo nixlab-admin config status
+sudo nixus-admin config review --module profiles/base.nix=/path/to/reviewed-module.nix
+sudo nixus-admin config status
 # After the candidate finishes building:
-sudo nixlab-admin config plan
-sudo nixlab-admin config apply TRANSACTION_ID
+sudo nixus-admin config plan
+sudo nixus-admin config apply TRANSACTION_ID
 ```
 
 Example effects on an observed lab:
@@ -113,7 +113,7 @@ Example effects on an observed lab:
 | Proposed change | Affected resources | Plan result |
 |---|---|---|
 | Source-owned `lab/base` profile changes `limits.cpu` from 2 to 4 | `lab/web`, `lab/dns`, including native guests using that profile | Possible restart/live resource change; both consumers listed |
-| Remap the UUID backing `/srv/nixlab/ssd` | Pool `guests`, its guests, Incus/instance services and enabled backup service | Migration required; activation blocked |
+| Remap the UUID backing `/srv/nixus/ssd` | Pool `guests`, its guests, Incus/instance services and enabled backup service | Migration required; activation blocked |
 | Native Incus edit conflicts with a recorded declared field | Named profile, pool, network or declared guest | Ownership conflict; resolution instructions shown |
 | Remove a guest declaration | Existing guest and disks | Retained; no deletion |
 
@@ -143,7 +143,7 @@ Raw snapshots, ETags and evaluated projections remain in root-only transaction
 files. Public JSON shows identities, field names and fingerprints, not runtime
 configuration values, environment variables or unit contents. It is a snapshot,
 not continuous monitoring or a distributed transaction. Native Incus administrators
-can bypass NixLab locks; avoid concurrent edits during activation. The native
+can bypass Nixus locks; avoid concurrent edits during activation. The native
 preseed drift guard and per-instance ETag writes remain in force. Direct
 `nixos-rebuild switch` bypasses this preview/recheck workflow.
 

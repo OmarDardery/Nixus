@@ -5,8 +5,8 @@ import subprocess
 import sys
 import time
 
-STATUS = Path('/var/lib/nixlab/backup-status.json')
-SUCCESS = Path('/var/lib/nixlab/last-backup-success')
+STATUS = Path('/var/lib/nixus/backup-status.json')
+SUCCESS = Path('/var/lib/nixus/last-backup-success')
 
 
 def evaluate(enabled, phase, active, result, last_trigger, last_success, now):
@@ -29,8 +29,8 @@ def properties(unit, fields):
 
 def status(enabled):
     if not enabled: return 'disabled'
-    unit = properties('restic-backups-nixlab.service', ['ActiveState', 'Result'])
-    timer = properties('restic-backups-nixlab.timer', ['LastTriggerUSec'])
+    unit = properties('restic-backups-nixus.service', ['ActiveState', 'Result'])
+    timer = properties('restic-backups-nixus.timer', ['LastTriggerUSec'])
     if not unit.get('ActiveState') or 'LastTriggerUSec' not in timer: return 'unknown'
     trigger = timer.get('LastTriggerUSec', '').lstrip('@')
     try: trigger = float(trigger)

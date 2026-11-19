@@ -11,7 +11,7 @@ import sys
 import tempfile
 from urllib.parse import quote
 
-STATE = Path('/var/lib/nixlab/infrastructure.json')
+STATE = Path('/var/lib/nixus/infrastructure.json')
 
 
 def query(path, missing_ok=False):

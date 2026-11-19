@@ -64,7 +64,7 @@ class JournalTests(unittest.TestCase):
         self.root.mkdir(); (self.root / 'site.nix').write_text('{}')
         self.directory = self.state / 'jobs' / ID; self.directory.mkdir(parents=True)
         (self.directory / 'source').mkdir(); (self.directory / 'source/site.nix').write_text('{}')
-        rt.write_json(self.directory / 'source/.nixlab-files.json', ['site.nix'])
+        rt.write_json(self.directory / 'source/.nixus-files.json', ['site.nix'])
         self.system = Path(self.temp.name) / 'host'; self.system.mkdir()
         (self.directory / 'system').symlink_to(self.system)
         self.job = {'id': ID, 'status': 'confirmed', 'baseDigest': 'original',
@@ -349,7 +349,7 @@ class ContractTests(unittest.TestCase):
             transport.activate(NEW)
         args = execute.call_args.args
         self.assertEqual(args[:7], ('timeout', '--kill-after=10s', '600', 'flock', '--exclusive', '--timeout', '300'))
-        self.assertIn('/run/lock/nixlab-guest-deployment.lock', args)
+        self.assertIn('/run/lock/nixus-guest-deployment.lock', args)
         self.assertEqual(args[-1], NEW)
         self.assertIn('nix-env', args[-3])
         self.assertIn('switch-to-configuration', args[-3])

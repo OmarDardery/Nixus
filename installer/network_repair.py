@@ -20,9 +20,9 @@ from deployments import check_idle
 import runtime as rt
 import workflow
 
-MODULE = 'nixlab-network-autoconnect.nix'
+MODULE = 'nixus-network-autoconnect.nix'
 DATABASE = Path('/var/lib/incus/database/local.db')
-DROPIN = Path('/run/systemd/system/nixlab-management-identity.service.d/90-nixlab-network-repair.conf')
+DROPIN = Path('/run/systemd/system/nixus-management-identity.service.d/90-nixus-network-repair.conf')
 FIELDS = 'connection.uuid,connection.id,connection.type,connection.interface-name,connection.controller,connection.autoconnect'
 PROJECTION = '''c: builtins.mapAttrs (name: p: {
   id = p.connection.id or name;
@@ -119,7 +119,7 @@ def modules_for(root, selected):
     target = rt.machine_path(root, 'modules') / MODULE
     if target.exists():
         raise ValueError('The autoconnect recovery module already exists; review its overrides before retrying')
-    content = ('# NixLab recovery: autoconnect existing management profiles only.\n'
+    content = ('# Nixus recovery: autoconnect existing management profiles only.\n'
                '{ lib, ... }: {\n  networking.networkmanager.ensureProfiles.profiles = lib.genAttrs\n'
                '    (builtins.fromJSON ' + json.dumps(json.dumps(sorted(names))) + ')\n'
                '    (_: { connection.autoconnect = lib.mkOverride 90 true; });\n}\n')
@@ -278,8 +278,8 @@ class Repair:
             # Starting it is idempotent; restarting it here would stop healthy
             # dependents when resuming an update awaiting confirmation.
             diagnostics.identity(settings)
-            run(['systemctl', 'reset-failed', 'nixlab-management-identity.service'])
-            run(['systemctl', 'start', 'nixlab-management-identity.service'], timeout=150)
+            run(['systemctl', 'reset-failed', 'nixus-management-identity.service'])
+            run(['systemctl', 'start', 'nixus-management-identity.service'], timeout=150)
             start_incus()
             self.save('reviewing')
             return self.record['interface']
@@ -307,8 +307,8 @@ class Repair:
     def native_identity(self):
         # Restarting a required oneshot can stop its dependents. Restore only
         # units that were active, so an optional disabled service stays disabled.
-        names = ['incus.service', 'incus-startup.service', 'incus-preseed.service', 'nixlab-instances.service',
-                 'nixlab-admin-backend.service', 'nixlab-ui.service', 'nginx.service',
+        names = ['incus.service', 'incus-startup.service', 'incus-preseed.service', 'nixus-instances.service',
+                 'nixus-admin-backend.service', 'nixus-ui.service', 'nginx.service',
                  'cockpit.service']
         # Optional units may be absent. Require an Incus observation rather than
         # treating a failed/empty query as an empty set of dependent services.
@@ -326,8 +326,8 @@ class Repair:
                 raise ValueError('Runtime identity override changed; inspect it before continuing')
             rt.durable_unlink(DROPIN)
             run(['systemctl', 'daemon-reload'])
-        run(['systemctl', 'reset-failed', 'nixlab-management-identity.service'])
-        run(['systemctl', 'restart', 'nixlab-management-identity.service'], timeout=150)
+        run(['systemctl', 'reset-failed', 'nixus-management-identity.service'])
+        run(['systemctl', 'restart', 'nixus-management-identity.service'], timeout=150)
         if active: run(['systemctl', 'start', *active], timeout=180)
         start_incus()
         self.validate_live()

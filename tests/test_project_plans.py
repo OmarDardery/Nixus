@@ -31,8 +31,8 @@ def current_owned():
         "limits.cpu": "2", "limits.memory": "2GiB"},
         "devices": {}, "profiles": ["default"]}
     return {"type": "container", "status": "Running",
-            "config": {"user.nixlab.managed": "true",
-                       "user.nixlab.last-applied": json.dumps(applied, sort_keys=True, separators=(",", ":")),
+            "config": {"user.nixus.managed": "true",
+                       "user.nixus.last-applied": json.dumps(applied, sort_keys=True, separators=(",", ":")),
                        "limits.cpu": "2", "limits.memory": "2GiB"},
             "devices": {}, "profiles": ["default"]}
 
@@ -67,8 +67,8 @@ class ProjectInventoryTests(unittest.TestCase):
                 self.assertFalse(any("nixos-rebuild" in part or "incus" == part or "docker" == part for part in arguments))
                 self.assertFalse(any(part.startswith("--property=BindPaths") for part in arguments))
                 return CompletedProcess(arguments, 0, json.dumps(expected).encode(), b"")
-            configured = {"NIXLAB_PROJECT_EVAL_LIB": "/nix/store/" + "b" * 32 + "-evaluator.nix",
-                          "NIXLAB_PROJECT_NIXPKGS_LIB": "/nix/store/" + "c" * 32 + "-nixpkgs/lib"}
+            configured = {"NIXUS_PROJECT_EVAL_LIB": "/nix/store/" + "b" * 32 + "-evaluator.nix",
+                          "NIXUS_PROJECT_NIXPKGS_LIB": "/nix/store/" + "c" * 32 + "-nixpkgs/lib"}
             with patch.dict(pp.os.environ, configured), patch.object(pp, "validate_workspace", return_value={"sourceHash": "same"}), patch.object(pp.subprocess, "run", side_effect=observe):
                 actual = pp.evaluate(base, "a" * 32)
             self.assertEqual(actual, expected)
@@ -82,8 +82,8 @@ class ProjectInventoryTests(unittest.TestCase):
                 if arguments[0] == "nix-store":
                     return CompletedProcess(arguments, 0, (pinned + "\n").encode(), b"")
                 return CompletedProcess(arguments, 1, b"", b"private data")
-            configured = {"NIXLAB_PROJECT_EVAL_LIB": "/nix/store/" + "b" * 32 + "-evaluator.nix",
-                          "NIXLAB_PROJECT_NIXPKGS_LIB": "/nix/store/" + "c" * 32 + "-nixpkgs/lib"}
+            configured = {"NIXUS_PROJECT_EVAL_LIB": "/nix/store/" + "b" * 32 + "-evaluator.nix",
+                          "NIXUS_PROJECT_NIXPKGS_LIB": "/nix/store/" + "c" * 32 + "-nixpkgs/lib"}
             with patch.dict(pp.os.environ, configured), patch.object(pp, "validate_workspace", return_value={"sourceHash": "same"}), patch.object(pp.subprocess, "run", side_effect=fail_rootless) as called:
                 with self.assertRaisesRegex(ValueError, "Restricted project evaluation failed"):
                     pp.evaluate(temp, "b" * 32)
@@ -173,7 +173,7 @@ class OwnedNativeIncusTests(unittest.TestCase):
     def test_owned_instance_identity_and_drift_are_fail_closed(self):
         raw = current_owned()
         bad = dict(raw)
-        bad["config"] = dict(raw["config"], **{"user.nixlab.managed": "false"})
+        bad["config"] = dict(raw["config"], **{"user.nixus.managed": "false"})
         with patch.object(reconcile, "read_instance", return_value=(bad, "etag")):
             with self.assertRaisesRegex(ValueError, "Refusing to adopt"):
                 pp.plan(pp.validate_inventory(inventory(claims=["instance/toolhead"])))

@@ -12,7 +12,7 @@ STATE_FILE = 'bootstrap-state.json'
 PHASES = {'unclaimed', 'host-verified', 'committing', 'account-committed',
           'legacy-provisioning', 'migrated', 'recovery-authorized'}
 def recovery_error():
-    return rt.PublicError('Portal enrollment is locked; use sudo nixlab-admin reset-password from a private host terminal or restore supported account state')
+    return rt.PublicError('Portal enrollment is locked; use sudo nixus-admin reset-password from a private host terminal or restore supported account state')
 
 
 def present(name):
@@ -184,9 +184,9 @@ def claim_locked(digest, password, username='admin'):
     save('committing', proof=proof)
     retire_legacy_capabilities()
     if username == 'admin':
-        rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixlab-ui')
+        rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixus-ui')
     else:
-        rt.write_json(rt.STATE / 'users.json', {username: {'role': 'admin', 'password': verifier}}, mode=0o640, group='nixlab-ui')
+        rt.write_json(rt.STATE / 'users.json', {username: {'role': 'admin', 'password': verifier}}, mode=0o640, group='nixus-ui')
     save('account-committed', claimDigest=digest)
     rt.audit('first-admin-enrolled')
     return {'ok': True}

@@ -29,7 +29,7 @@ def projection():
     return {'settings': cfg, 'disks': {}, 'instances': [], 'preseed': {
         'profiles': [{'name': 'base', 'project': 'lab', 'config': {'limits.cpu': '2'},
                       'devices': {'root': {'type': 'disk', 'pool': 'guests', 'path': '/'}}}],
-        'storage_pools': [{'name': 'guests', 'driver': 'dir', 'config': {'source': '/srv/nixlab/ssd/incus'}}]}}
+        'storage_pools': [{'name': 'guests', 'driver': 'dir', 'config': {'source': '/srv/nixus/ssd/incus'}}]}}
 
 
 def guest(name='one', managed=False):
@@ -91,14 +91,14 @@ class PlanningTests(unittest.TestCase):
         self.assertNotIn('DO-NOT-EXPORT', json.dumps(plan))
 
     def test_backing_mount_change_blocks_dependents(self):
-        for source in ('/srv/nixlab/ssd/incus', '/srv/nixlab/ssd'):
+        for source in ('/srv/nixus/ssd/incus', '/srv/nixus/ssd'):
             with self.subTest(source=source):
                 before, after, runtime = projection(), projection(), snapshot()
                 for value in (before['preseed']['storage_pools'][0], after['preseed']['storage_pools'][0],
                               runtime['objects'][POOL]['value'], runtime['resources'][POOL],
                               runtime['owned']['objects'][POOL], runtime['owned']['declarations'][POOL]):
                     value['config']['source'] = source
-                mount = {'name': 'ssd', 'uuid': 'old-uuid', 'path': '/srv/nixlab/ssd', 'fsType': 'ext4', 'role': 'guests', 'required': True}
+                mount = {'name': 'ssd', 'uuid': 'old-uuid', 'path': '/srv/nixus/ssd', 'fsType': 'ext4', 'role': 'guests', 'required': True}
                 before['settings']['mounts'] = [mount]
                 before['settings']['backup']['enable'] = True
                 after['settings']['mounts'] = [dict(mount, uuid='new-uuid')]
@@ -107,7 +107,7 @@ class PlanningTests(unittest.TestCase):
                 self.assertTrue(row['blocked'])
                 self.assertEqual(row['kind'], 'migration-required')
                 self.assertTrue({POOL, 'lab/one', 'lab/two', 'incus.service', 'incus-preseed.service',
-                                 'nixlab-instances.service', 'restic-backups-nixlab.service', 'nixlab-storage.target'}.issubset(row['affected']))
+                                 'nixus-instances.service', 'restic-backups-nixus.service', 'nixus-storage.target'}.issubset(row['affected']))
                 self.assertNotIn('old-uuid', json.dumps(plan))
 
     def test_backing_pool_or_profile_device_remap_requires_migration(self):

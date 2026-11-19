@@ -18,7 +18,7 @@ assert.ok(html.includes('&lt;script&gt;bad&lt;/script&gt;'));
 assert.ok(!html.includes('<script>bad'));
 assert.ok(html.includes('data-serial-pick'));
 const access=vm.runInContext('security()',context);
-assert.ok(access.includes('Current NixLab password'));
+assert.ok(access.includes('Current Nixus password'));
 assert.ok(access.includes('Default: lab project only'));
 assert.ok(access.includes('data-action="certificate-download"'));
 assert.ok(/id="certificate-full-admin" type="checkbox"/.test(access));

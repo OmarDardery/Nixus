@@ -1,6 +1,6 @@
 # Generic homelab acceptance scenario
 
-NixLab provides a managed NixOS host, Incus guests, an optional isolated
+Nixus provides a managed NixOS host, Incus guests, an optional isolated
 Docker/Arcane applications VM, private management interfaces, change
 reviews and recovery workflows. **There are no built-in application-specific
 workloads.** Choose your own guest images, container services and Compose
@@ -14,7 +14,7 @@ virtualization. A Docker apps VM requires adequate host memory.
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' run \
-  github:OmarDardery/nixlab#install -- --interactive --plan-only
+  github:OmarDardery/Nixus#install -- --interactive --plan-only
 ```
 
 Choose the topology and access model: `containers`, `compose`, or
@@ -40,8 +40,8 @@ Then run:
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' run \
-  github:OmarDardery/nixlab#install -- \
-  --answers /root/nixlab-answers.json --plan-only
+  github:OmarDardery/Nixus#install -- \
+  --answers /root/nixus-answers.json --plan-only
 ```
 
 Remove `--plan-only` when ready to apply. The installed setup preserves
@@ -50,8 +50,8 @@ answer files containing obsolete example-app flags are accepted for
 backward compatibility, but those flags are discarded and never deploy apps.
 
 ```console
-sudo nixlab doctor
-sudo nixlab install-plan
+sudo nixus doctor
+sudo nixus install-plan
 sudo incus list --all-projects
 systemctl --failed
 ```
@@ -69,7 +69,7 @@ local-console recovery path; Wi-Fi must not be treated like Ethernet.
 
 For DNS or other essential LAN services, verify both required protocols,
 stable addressing and a fallback before changing any router or client
-configuration. NixLab does not automatically reconfigure your router.
+configuration. Nixus does not automatically reconfigure your router.
 
 ## 3. Attach physical hardware when needed
 
@@ -91,7 +91,7 @@ Restrict control interfaces to trusted LAN or VPN clients.
 
 ## 4. Deploy any Compose stack
 
-If you enabled the apps VM, access Arcane through the NixLab console
+If you enabled the apps VM, access Arcane through the Nixus console
 (or use Docker Compose inside the isolated guest). Choose an image
 version or digest intentionally, provide secrets outside public source,
 and review published ports and origins. Deploy generic Compose YAML
@@ -105,7 +105,7 @@ sudo incus exec apps --project lab -- docker ps
 Back up each stack's persistent Docker volumes separately. Host
 configuration rollback is not application-data rollback. Only selected
 applications should be published through a reviewed external ingress;
-NixLab, Incus, Cockpit, Arcane and SSH remain private.
+Nixus, Incus, Cockpit, Arcane and SSH remain private.
 
 ## 5. Commission and recover
 

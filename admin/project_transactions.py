@@ -23,8 +23,8 @@ import project_plans
 from locking import open_lock
 from project_workspace import validate_workspace, WorkspaceError
 
-WORKSPACE = Path(os.environ.get("NIXLAB_PROJECTS", "/srv/nixlab/projects"))
-INCUS_LOCK = Path("/run/lock/nixlab-incus.lock")
+WORKSPACE = Path(os.environ.get("NIXUS_PROJECTS", "/srv/nixus/projects"))
+INCUS_LOCK = Path("/run/lock/nixus-incus.lock")
 SOURCE_LIMIT = 128 * 1024
 JOB_LIFETIME = 15 * 60
 NAME = re.compile(r"[a-z][a-z0-9-]{0,62}\Z")
@@ -50,7 +50,7 @@ def _workspace(root):
         raise ValueError("Project workspace parent must be owned and not writable by other users")
     directory = _regular_directory(root)
     if (directory.stat().st_uid != os.geteuid() or directory.stat().st_mode & 0o022):
-        raise ValueError("Project workspace must be controlled by the NixLab broker")
+        raise ValueError("Project workspace must be controlled by the Nixus broker")
     return directory
 
 
@@ -232,7 +232,7 @@ class ProjectTransactions:
                 raise ValueError("Project workspace parent must be broker-owned")
             if self.workspace.exists() or self.workspace.is_symlink():
                 raise ValueError("Project workspace already exists; use reviewed revisions")
-            scratch = Path(tempfile.mkdtemp(dir=parent, prefix=".nixlab-initialize-"))
+            scratch = Path(tempfile.mkdtemp(dir=parent, prefix=".nixus-initialize-"))
             try:
                 rt.atomic(scratch / "flake.nix", flake)
                 rt.atomic(scratch / "flake.lock", lock)
@@ -295,7 +295,7 @@ class ProjectTransactions:
         if deployment.get("status") in ("queued", "applying") and (
             time.time() - deployment.get("updatedAt", deployment.get("createdAt", time.time())) > 30
         ):
-            if not rt.worker_active("nixlab-project-deploy-" + identity):
+            if not rt.worker_active("nixus-project-deploy-" + identity):
                 deployment.update(status="interrupted", errorCode="worker-interrupted",
                                   updatedAt=time.time())
                 rt.write_json(deployment_path, deployment)
@@ -386,9 +386,9 @@ class ProjectTransactions:
 
     def _paths(self, identity):
         prefix = self.workspace.parent
-        return (prefix / (".nixlab-project-staged-" + identity),
-                prefix / (".nixlab-project-before-" + identity),
-                prefix / (".nixlab-project-reverted-" + identity))
+        return (prefix / (".nixus-project-staged-" + identity),
+                prefix / (".nixus-project-before-" + identity),
+                prefix / (".nixus-project-reverted-" + identity))
 
     def publish(self, identity, plan_hash):
         with rt.locked(blocking=False):
@@ -576,10 +576,10 @@ class ProjectTransactions:
                 rt.pin_worker_runtime(directory)
                 subprocess.run([
                     "systemd-run", "--quiet", "--collect", "--no-block",
-                    "--unit=nixlab-project-deploy-" + identity,
+                    "--unit=nixus-project-deploy-" + identity,
                     "--property=RuntimeMaxSec=3600",
-                    "--setenv=NIXLAB_STATE=" + str(self.state),
-                    "--setenv=NIXLAB_PROJECTS=" + str(self.workspace),
+                    "--setenv=NIXUS_STATE=" + str(self.state),
+                    "--setenv=NIXUS_PROJECTS=" + str(self.workspace),
                     "--setenv=PATH=" + os.environ.get("PATH", "/run/current-system/sw/bin"),
                     sys.executable, str(rt.SOURCE / "main.py"),
                     "project-deploy-job", identity
@@ -592,7 +592,7 @@ class ProjectTransactions:
 
     def run_deployment(self, identity):
         """Root-only async worker: updates one guarded resource at a time."""
-        # Same lock order as native guest operations: NixLab mutation first,
+        # Same lock order as native guest operations: Nixus mutation first,
         # then Incus. No concurrent backup/import or guest lifecycle action.
         with rt.locked(), open_lock(INCUS_LOCK) as incus_lock:
             fcntl.flock(incus_lock, fcntl.LOCK_EX)

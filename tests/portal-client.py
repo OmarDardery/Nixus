@@ -13,13 +13,13 @@ import socket
 import warnings
 
 origin = 'https://127.0.0.1:9440'
-context = ssl.create_default_context(cafile='/var/lib/nixlab-admin/ca.crt')
+context = ssl.create_default_context(cafile='/var/lib/nixus-admin/ca.crt')
 
 
 def request(path, body=None, session=None):
     headers = {'Origin': origin}
     if session:
-        headers |= {'Cookie': session['cookie'], 'X-Nixlab-CSRF': session['csrf']}
+        headers |= {'Cookie': session['cookie'], 'X-Nixus-CSRF': session['csrf']}
     if body is not None: headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(origin + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
     try:
@@ -85,7 +85,7 @@ assert request('/api/session', session=admin)[0] == 200
 
 # Disposable legacy input: the authenticated replacement must commit before
 # this private file is removed. Never echo the value through an API/console.
-legacy = Path('/var/lib/nixlab-admin/setup-password')
+legacy = Path('/var/lib/nixus-admin/setup-password')
 descriptor = os.open(legacy, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
 with os.fdopen(descriptor, 'w') as stream:
     os.fchmod(stream.fileno(), 0o600)
@@ -111,15 +111,15 @@ assert status == 200, response
 assert request('/api/status', session=viewer)[0] == 401
 status, response, _ = request('/api/recovery-export', {'current': 'vm-integration-password'}, admin)
 assert status == 200, response
-archive = base64.b64decode(response['files']['nixlab-config.tar.gz'])
+archive = base64.b64decode(response['files']['nixus-config.tar.gz'])
 with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as stream:
     assert all(not name.startswith(('admin/', 'runtime/')) for name in stream.getnames())
     assert 'config/machine/settings.json' in stream.getnames()
 subprocess.run(['age-keygen', '-o', '/tmp/recovery-test.key'], check=True, capture_output=True)
 recipient = subprocess.check_output(['age-keygen', '-y', '/tmp/recovery-test.key'], text=True).strip()
-subprocess.run(['nixlab-admin', 'recovery', 'export', '/tmp/recovery-test', '--include-secrets', '--recipient', recipient], check=True)
+subprocess.run(['nixus-admin', 'recovery', 'export', '/tmp/recovery-test', '--include-secrets', '--recipient', recipient], check=True)
 subprocess.run(['age', '-d', '-i', '/tmp/recovery-test.key', '-o', '/tmp/recovery-test-secrets.tar.gz',
-                '/tmp/recovery-test/nixlab-secrets.tar.gz.age'], check=True)
+                '/tmp/recovery-test/nixus-secrets.tar.gz.age'], check=True)
 with tarfile.open('/tmp/recovery-test-secrets.tar.gz', 'r:gz') as stream:
     assert 'admin/auth.json' in stream.getnames()
     assert 'admin/ca.key' in stream.getnames()

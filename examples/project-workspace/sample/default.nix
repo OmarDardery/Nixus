@@ -1,5 +1,5 @@
 { ... }: {
-  nixlab.project = {
+  nixus.project = {
     name = "sample";
     backend = "incus-native";
     incusProject = "sample";

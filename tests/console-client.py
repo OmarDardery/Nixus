@@ -27,7 +27,7 @@ fzf() {{
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
     env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=home + '/.config', TERM='xterm-256color')
-    env.pop('NIXLAB_NO_FETCH', None)
+    env.pop('NIXUS_NO_FETCH', None)
     command = ('if test "$(type -t ble-attach)" = function && '
                'test "$(type -t __fzf_history__)" = function && '
                'test "$STARSHIP_SHELL" = bash && test "$_ble_attached" = 1; '
@@ -70,10 +70,10 @@ fzf() {{
                         elif token == ord('R') and phase == 'history-widget':
                             os.write(master, b'\n'); phase = 'history-execution'
                         elif token == ord('H') and phase == 'history-execution':
-                            os.write(master, b'printf NIXLAB_CONSOLE_OK; exit 0\n'); phase = 'done'
+                            os.write(master, b'printf NIXUS_CONSOLE_OK; exit 0\n'); phase = 'done'
             if process.poll() is not None: break
         assert process.wait(timeout=2) == 0 and phase == 'done', (phase, output.decode(errors='replace'))
-        assert b'NIXLAB' in output, output.decode(errors='replace')
+        assert b'NIXUS' in output, output.decode(errors='replace')
     finally:
         if process.poll() is None:
             process.kill(); process.wait()

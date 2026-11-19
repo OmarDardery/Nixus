@@ -2,30 +2,30 @@
 
 ## Superseding product direction — 2026-11-17
 
-**Target:** NixLab is a **NixOS/Incus/Cockpit integration with its own Web UI**.
+**Target:** Nixus is a **NixOS/Incus/Cockpit integration with its own Web UI**.
 The Web UI reviews and applies independently stored declarative project files,
 optionally uses **Incus Compose** for OCI stacks, and generates a one-time
 declarative backup policy that automatically covers newly added managed projects.
 **Remove Arcane and the Docker apps VM completely** after a non-destructive
 legacy migration. See [target architecture](target-architecture.md).
 
-**Source of truth:** One independent workspace flake at `/srv/nixlab/projects/flake.nix`
+**Source of truth:** One independent workspace flake at `/srv/nixus/projects/flake.nix`
 discovers `*/default.nix` and sorted recursively imported `*/modules/**/*.nix`,
-exposes typed `nixlabProjects` and stages exact revisions for the existing root
+exposes typed `nixusProjects` and stages exact revisions for the existing root
 broker. Project application does not rebuild the host. SOPS + age encrypts
 per-project secrets; a separate portable encrypted key kit enables disaster
 recovery. `backups.nix` is the one-time, dynamically evaluated backup policy.
 
 **Dependency order:**
-[#127](https://github.com/OmarDardery/nixlab/issues/127) (flake foundation) →
-[#135](https://github.com/OmarDardery/nixlab/issues/135) (independent transactions) →
-[#133](https://github.com/OmarDardery/nixlab/issues/133) (Incus ownership) →
-[#134](https://github.com/OmarDardery/nixlab/issues/134) (SOPS/age + recovery kit) →
-[#128](https://github.com/OmarDardery/nixlab/issues/128) (Compose + Projects Web UI) →
-[#129](https://github.com/OmarDardery/nixlab/issues/129) (declarative backups) →
-[#130](https://github.com/OmarDardery/nixlab/issues/130) (GitHub/Drive destinations) →
-[#126](https://github.com/OmarDardery/nixlab/issues/126) (final Arcane/Docker apps VM retirement, gated by pre-cutover restore proof) →
-[#131](https://github.com/OmarDardery/nixlab/issues/131) (final Arcane-free exact-revision qualification).
+[OmarDardery/nixlab#127](https://github.com/OmarDardery/nixlab/issues/127) (flake foundation) →
+[OmarDardery/nixlab#135](https://github.com/OmarDardery/nixlab/issues/135) (independent transactions) →
+[#45](https://github.com/OmarDardery/Nixus/issues/45) (Incus ownership) →
+[#46](https://github.com/OmarDardery/Nixus/issues/46) (SOPS/age + recovery kit) →
+[#41](https://github.com/OmarDardery/Nixus/issues/41) (Compose + Projects Web UI) →
+[#42](https://github.com/OmarDardery/Nixus/issues/42) (declarative backups) →
+[#43](https://github.com/OmarDardery/Nixus/issues/43) (GitHub/Drive destinations) →
+[#40](https://github.com/OmarDardery/Nixus/issues/40) (final Arcane/Docker apps VM retirement, gated by pre-cutover restore proof) →
+[#44](https://github.com/OmarDardery/Nixus/issues/44) (final Arcane-free exact-revision qualification).
 Deprecation of new Arcane onboarding may begin earlier; never delete legacy
 operator data without a proven replacement and recovery. This **replaces** conflicting future Arcane/Portainer
 and Docker-VM plans below. Existing-delivery descriptions remain historical/current,
@@ -33,7 +33,7 @@ not the desired architecture. The current code is **not yet Arcane-free**.
 
 ## Present implementation and historical roadmap
 
-Nixlab prepares, maintains and recovers a NixOS host for Incus. Incus remains the
+Nixus prepares, maintains and recovers a NixOS host for Incus. Incus remains the
 virtualization UI. See the [ownership contract](ownership.md).
 
 | Area | Delivered behavior |
@@ -41,13 +41,13 @@ virtualization UI. See the [ownership contract](ownership.md).
 | Host lifecycle | Single-command preserved-installation setup, reviewed changes, source/OS updates, confirmation recovery |
 | Ethernet | Host bridges/VLANs, management addressing, guest firewall integration, trusted LAN access, narrow outbound LAN exceptions |
 | Hardware | USB serial discovery, selected stable aliases, native Incus attachment guidance, existing UUID filesystems/ZFS datasets |
-| Native tools | Enabled Incus/Cockpit links plus legacy Arcane link (to remove in #126), upstream credits/docs, all-project read-only guest IPs, pinned Community Scripts Incus CLI wizard, explicit verification labels |
+| Native tools | Enabled Incus/Cockpit links plus legacy Arcane link (to remove in #40), upstream credits/docs, all-project read-only guest IPs, pinned Community Scripts Incus CLI wizard, explicit verification labels |
 | Ownership | Ordinary native/helper resources remain native; declared infrastructure drift is refused before preseed |
 | Recovery | Atomic generations, per-group downtime, shared-volume grouping, maintenance exclusions, independent restic, archive recovery |
 
 The portal has no guest lifecycle/console/snapshot editor, application store or
 arbitrary script runner. Legacy guest CLI/API actions remain for compatibility.
-Docker and metrics history stay optional. NixLab does not ship
+Docker and metrics history stay optional. Nixus does not ship
 application-specific guests or install recipes as core features.
 
 Source checks/Nix evaluation are distinct from live evidence. CI includes a real
@@ -63,14 +63,14 @@ compatibility remain separate scopes.
 
 ## Delivery gates
 
-The [existing roadmap](https://github.com/OmarDardery/nixlab/issues/19) remains
+The [existing roadmap](https://github.com/OmarDardery/Nixus/issues/13) remains
 the delivery authority: qualify the stable single-host beta first, then daily
 operations, complete single-node workflows, and finally optional multi-node
 capabilities. Missing physical, real-VM or independent-recovery evidence blocks
 the corresponding exit. Priorities below do not bypass those gates.
 
 These entries extend existing typed configuration, reviewed transactions and
-native tooling. Networking/HTTPS (#14), generic deployment patterns, secret
+native tooling. Networking/HTTPS (#8), generic deployment patterns, secret
 rotation and multi-host inventory already have roadmap coverage; their entries
 below describe incremental capabilities rather than replacement implementations.
 
@@ -119,7 +119,7 @@ Extend existing secret handling with safe assignment and recipient-management wo
 - Stage recipient rotation with decryptability verification and recovery before retiring old recipients.
 - Validate permissions and prevent known-secret leakage into generated configuration, logs and exports.
 
-## Service Publishing — P2 · Optional · Extend #14
+## Service Publishing — P2 · Optional · Extend #8
 
 Prerequisites: existing networking/access workflow; inventory and secret references.
 
@@ -127,15 +127,15 @@ Extend planned DNS, proxy and HTTPS workflows with an owned, resumable publicati
 
 - Add explicitly enabled DNS-provider adapters with scoped credentials and exact change previews.
 - Track partial completion across DNS, routing and certificates.
-- Restrict removal and rollback to resources NixLab owns.
+- Restrict removal and rollback to resources Nixus owns.
 - Verify published endpoints before reporting success; public exposure remains opt-in and excludes management services.
 
-## Multi-Host Fleet Control — P2 · Optional · Extend #19
+## Multi-Host Fleet Control — P2 · Optional · Extend #13
 
 Prerequisites: existing Milestone 3 exit criteria; inventory, roles, reviewed
 deployments and secret-recipient workflows.
 
-Coordinate independent NixLab hosts without making their operation depend on a controller.
+Coordinate independent Nixus hosts without making their operation depend on a controller.
 
 - Add explicit enrollment, per-host configuration and scoped deployment authority.
 - Coordinate staged deployments with offline and partial-failure reporting.
@@ -155,7 +155,7 @@ Give generic NixOS and Compose templates a versioned, editable lifecycle.
 
 ## Energy-Aware Fleet Policies — P3 · Stretch
 
-Prerequisites: independent-host fleet control; existing #18 power capabilities;
+Prerequisites: independent-host fleet control; existing #12 power capabilities;
 dependency metadata.
 
 Use supported power observations to schedule noncritical workloads safely.

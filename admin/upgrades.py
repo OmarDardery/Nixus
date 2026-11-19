@@ -10,7 +10,7 @@ import tempfile
 import urllib.request
 import runtime as rt
 
-UPSTREAM = 'https://github.com/OmarDardery/nixlab.git'
+UPSTREAM = 'https://github.com/OmarDardery/Nixus.git'
 PROTECTED = {'machine', 'local', 'installed-system', 'site-modules', 'secrets', '.git'}
 
 
@@ -19,7 +19,7 @@ def main_revision():
                             capture_output=True, text=True, timeout=30, check=True)
     fields = result.stdout.split()
     if len(fields) != 2 or not re.fullmatch(r'[0-9a-f]{40}', fields[0]) or fields[1] != 'refs/heads/main':
-        raise ValueError('Could not resolve NixLab main to one exact revision')
+        raise ValueError('Could not resolve Nixus main to one exact revision')
     return fields[0]
 
 
@@ -32,8 +32,8 @@ def version(root):
 
 
 def releases():
-    request = urllib.request.Request('https://api.github.com/repos/OmarDardery/nixlab/releases?per_page=30',
-                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'nixlab'})
+    request = urllib.request.Request('https://api.github.com/repos/OmarDardery/Nixus/releases?per_page=30',
+                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'nixus'})
     with urllib.request.urlopen(request, timeout=15) as response:
         data = json.load(response)
     result = subprocess.run(['git', 'ls-remote', '--tags', UPSTREAM], capture_output=True, text=True, check=True, timeout=30)
@@ -55,7 +55,7 @@ def platform_path(name):
     path = PurePosixPath(name)
     return (bool(path.parts) and not path.is_absolute() and '..' not in path.parts
             and path.parts[0] not in PROTECTED
-            and name not in {'hardware-configuration.nix', '.nixlab-files.json'})
+            and name not in {'hardware-configuration.nix', '.nixus-files.json'})
 
 
 def metadata(root):
@@ -96,7 +96,7 @@ def prepare(source, revision, log):
                     raise ValueError('Platform source must contain bounded regular files only')
                 incoming[name] = (stream.extractfile(member).read(), 0o755 if member.mode & 0o111 else 0o644)
         if not {'flake.nix', 'flake.lock', 'admin/main.py'}.issubset(incoming):
-            raise ValueError('Selected revision does not contain a Nixlab platform')
+            raise ValueError('Selected revision does not contain a Nixus platform')
     # Machine settings/modules were already staged by Manager.review and remain
     # untouched. Git is transport only; no reset, checkout or merge changes them.
     for name in before.keys() - incoming.keys():
@@ -106,7 +106,7 @@ def prepare(source, revision, log):
     rt.write_json(source / 'platform-release.json', {'version': version(source), 'revision': revision, 'repository': UPSTREAM})
     incoming['platform-release.json'] = ((source / 'platform-release.json').read_bytes(), 0o644)
     names = {n for n, _ in rt.source_files(source) if not platform_path(n)} | set(incoming)
-    rt.write_json(source / '.nixlab-files.json', sorted(names - {'.nixlab-files.json'}))
+    rt.write_json(source / '.nixus-files.json', sorted(names - {'.nixus-files.json'}))
     changes = []
     for name in sorted(before.keys() | incoming.keys()):
         old, new = before.get(name), incoming.get(name, (None,))[0]
@@ -128,9 +128,9 @@ def publish(source, root):
             raise ValueError('Platform destination cannot traverse symlinks')
     # The union records new files before any publication. After a power loss,
     # recovery can remove partially published additions as well as restore edits.
-    rt.write_json(root / '.nixlab-files.json', sorted((local | set(current) | set(desired)) - {'.nixlab-files.json'}))
+    rt.write_json(root / '.nixus-files.json', sorted((local | set(current) | set(desired)) - {'.nixus-files.json'}))
     for name, path in desired.items():
         rt.atomic(root / name, path.read_bytes(), mode=path.stat().st_mode & 0o777)
     for name in current.keys() - desired.keys():
         rt.durable_unlink(root / name)
-    rt.write_json(root / '.nixlab-files.json', sorted((local | set(desired)) - {'.nixlab-files.json'}))
+    rt.write_json(root / '.nixus-files.json', sorted((local | set(desired)) - {'.nixus-files.json'}))

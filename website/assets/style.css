@@ -7,7 +7,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
 
 
-/* NixLab public website and documentation redesign. */
+/* Nixus public website and documentation redesign. */
 :root{--site-card:#161c24;--site-surface:#1e2631;--site-border:#303947;--site-muted:#b1bac7}
 body{background:#0e1116;color:var(--text);font-size:15px}
 .site-header{background:#0e1116f2;border-bottom:1px solid var(--site-border)}

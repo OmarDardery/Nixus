@@ -1,4 +1,4 @@
-# Evaluate NixLab's host listeners once for collision checks and input policy.
+# Evaluate Nixus's host listeners once for collision checks and input policy.
 { config, lib, site, ... }:
 let
   inherit (lib) concatMap optional optionals;
@@ -25,7 +25,7 @@ let
       map (listener "SSH" "trusted" (if binding.addr == null then "*" else binding.addr))
         (if binding.port == null then ssh.ports else [ binding.port ])
     ) sshBindings)
-    ++ nginx "nixlab-entry" "Portal redirect"
+    ++ nginx "nixus-entry" "Portal redirect"
     ++ optional site.setup.enable (listener "Portal HTTPS" "trusted" "0.0.0.0" site.setup.port)
     ++ optional config.services.cockpit.enable (listener "Cockpit" "trusted" "0.0.0.0" config.services.cockpit.port)
     ++ optional (config.virtualisation.incus.enable && incusBind != null)
@@ -53,17 +53,17 @@ let
   trustedPorts = lib.unique (map (item: item.port) (builtins.filter
     (item: item.exposure == "trusted" && item.family != "ipv6" && item.address != "127.0.0.1") listeners));
 in {
-  options.nixlab.managementPolicy.enforceFirewall = lib.mkEnableOption "the NixLab host management input firewall";
+  options.nixus.managementPolicy.enforceFirewall = lib.mkEnableOption "the Nixus host management input firewall";
 
   config = {
     assertions = conflicts;
-    environment.etc."nixlab/management-exposure.json".text = builtins.toJSON {
+    environment.etc."nixus/management-exposure.json".text = builtins.toJSON {
       inherit interface sourceCIDRs listeners;
       ipv6TrustedIngress = false;
-      firewallManaged = config.nixlab.managementPolicy.enforceFirewall;
+      firewallManaged = config.nixus.managementPolicy.enforceFirewall;
     };
     networking.firewall.extraInputRules = lib.mkIf
-      (config.nixlab.managementPolicy.enforceFirewall && trustedPorts != [ ] && sourceCIDRs != [ ]) ''
+      (config.nixus.managementPolicy.enforceFirewall && trustedPorts != [ ] && sourceCIDRs != [ ]) ''
         iifname ${builtins.toJSON interface} ip saddr { ${lib.concatStringsSep ", " sourceCIDRs} } tcp dport { ${lib.concatMapStringsSep ", " toString trustedPorts} } accept
       '';
   };

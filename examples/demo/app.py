@@ -28,7 +28,7 @@ class Handler(BaseHTTPRequestHandler):
                         cur.execute("INSERT INTO visits VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET count = visits.count + 1 RETURNING count")
                         count = cur.fetchone()[0]
                         cache.setex("last_visit", 60, count)
-                        data = {"application": "nixlab demo", "visits": count, "cache": "connected"}
+                        data = {"application": "nixus demo", "visits": count, "cache": "connected"}
             body = json.dumps(data).encode()
             self.send_response(200)
         except Exception:

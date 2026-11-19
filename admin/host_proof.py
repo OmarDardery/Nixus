@@ -8,7 +8,7 @@ import threading
 
 import runtime as rt
 
-PAM_SERVICE = 'nixlab-enrollment'
+PAM_SERVICE = 'nixus-enrollment'
 ROOT_SHELL = '/run/current-system/sw/bin/bash'
 SUDO = '/run/wrappers/bin/sudo'
 SLOTS = threading.BoundedSemaphore(2)

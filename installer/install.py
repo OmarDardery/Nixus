@@ -1,4 +1,4 @@
-"""Install a verified Nixlab stack on conventional NixOS, preserving the installed machine."""
+"""Install a verified Nixus stack on conventional NixOS, preserving the installed machine."""
 import argparse
 import ipaddress
 import json
@@ -16,8 +16,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / 'scripts'))
 import runtime as rt
 from settings_reader import read_settings
 
-REPOSITORY = 'https://github.com/OmarDardery/nixlab.git'
-TARGET = Path('/var/lib/nixlab/config')
+REPOSITORY = 'https://github.com/OmarDardery/Nixus.git'
+TARGET = Path('/var/lib/nixus/config')
 ORIGINAL = Path('/etc/nixos')
 
 
@@ -74,10 +74,10 @@ def copy_embedded_checkout(source, target, repository, revision=None):
     if revision and len(revision) == 40 and all(c in '0123456789abcdef' for c in revision):
         import upgrades
         rt.write_json(target / 'platform-release.json', {'version': upgrades.version(source), 'revision': revision, 'repository': repository})
-    run(['git', '-C', str(target), 'init', '-q', '-b', 'nixlab-source'])
+    run(['git', '-C', str(target), 'init', '-q', '-b', 'nixus-source'])
     run(['git', '-C', str(target), 'add', '.'])
-    run(['git', '-C', str(target), '-c', 'user.name=Nixlab installer', '-c',
-         'user.email=installer@nixlab.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'Initialize bundled Nixlab source'])
+    run(['git', '-C', str(target), '-c', 'user.name=Nixus installer', '-c',
+         'user.email=installer@nixus.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'Initialize bundled Nixus source'])
     run(['git', '-C', str(target), 'remote', 'add', 'origin', repository])
 
 
@@ -101,7 +101,7 @@ def parser_args():
     ssh.add_argument('--no-ssh-password-login', action='store_false', dest='ssh_password_login', help='Disable SSH password login; remote installs need a client public key')
     parser.set_defaults(ssh_password_login=True)
     parser.add_argument('--guest-subnet', help='Unused private IPv4 /24')
-    parser.add_argument('--adopt-incus', action='store_true', help='Back up existing Incus guests and add an isolated Nixlab namespace')
+    parser.add_argument('--adopt-incus', action='store_true', help='Back up existing Incus guests and add an isolated Nixus namespace')
     parser.add_argument('--no-update', action='store_true', help='Keep the current platform source on retry')
     interaction = parser.add_mutually_exclusive_group()
     interaction.add_argument('--interactive', action='store_true', help='Interview on a terminal and review planned services')
@@ -156,12 +156,12 @@ def ensure_portal_account():
 
 
 def publish_etc():
-    backup = Path('/etc/nixos.pre-nixlab')
+    backup = Path('/etc/nixos.pre-nixus')
     if ORIGINAL.is_symlink() and ORIGINAL.resolve() == TARGET.resolve():
         return
     if ORIGINAL.exists():
         if backup.exists():
-            raise ValueError('Both /etc/nixos and /etc/nixos.pre-nixlab exist; inspect them before linking the managed config')
+            raise ValueError('Both /etc/nixos and /etc/nixos.pre-nixus exist; inspect them before linking the managed config')
         ORIGINAL.rename(backup)
         backup.chmod(0o700)
     ORIGINAL.symlink_to(TARGET)
@@ -174,13 +174,13 @@ def summarize(settings, record=None):
     address = diagnostics.management_address(settings)
     if not settings['management']['configure']:
         print('Preserving current addressing: ' + address + '. DHCP is retained; no static address was assigned.')
-    print('Nixlab: https://' + address + ':' + str(settings['setup']['port']) + ' (username: admin)')
+    print('Nixus: https://' + address + ':' + str(settings['setup']['port']) + ' (username: admin)')
     if (rt.STATE / 'web-enrollment').is_file() and not (rt.STATE / 'auth.json').exists():
-        print('Open the portal, then approve its browser code with sudo nixlab-admin approve-enrollment.')
+        print('Open the portal, then approve its browser code with sudo nixus-admin approve-enrollment.')
     else:
-        print('Use your existing portal account. Choose a replacement password from an authorized host terminal: sudo nixlab-admin reset-password.')
+        print('Use your existing portal account. Choose a replacement password from an authorized host terminal: sudo nixus-admin reset-password.')
     if settings['ready']:
-        print('Incus: https://' + address + ':8443 (create/import a browser certificate from the Nixlab portal)')
+        print('Incus: https://' + address + ':8443 (create/import a browser certificate from the Nixus portal)')
         if settings['cockpit']['enable']:
             print('Cockpit: https://' + address + ':' + str(settings['cockpit']['port']) + ' (existing non-root Linux account/password)')
             if settings['cockpit']['managePassword']:
@@ -189,15 +189,15 @@ def summarize(settings, record=None):
                 print('Linux operator recovery: use an authorized host terminal and sudo passwd operator.')
         print('All enabled management endpoints passed health checks. No disks were formatted.')
         if (record or {}).get('rebootRequired'):
-            print('Reboot to use the new kernel; then run sudo nixlab doctor.')
+            print('Reboot to use the new kernel; then run sudo nixus doctor.')
     fingerprint = run(['openssl', 'x509', '-in', str(rt.STATE / 'ca.crt'), '-noout', '-fingerprint', '-sha256'], capture_output=True, text=True).stdout.strip()
     print('Local management CA: ' + fingerprint)
     if not settings['adminKeys']:
         print('No administrator key enrolled. Local console access remains available.')
-        print('Enroll your laptop PUBLIC key later: sudo nixlab enroll-key /path/to/laptop.pub')
+        print('Enroll your laptop PUBLIC key later: sudo nixus enroll-key /path/to/laptop.pub')
     print('SSH password login: ' + ('enabled for existing non-root accounts' if settings.get('access', {}).get('sshPasswordLogin') else 'disabled'))
     print('Later rebuilds: sudo nixos-rebuild switch --flake path:/etc/nixos#hypervisor')
-    print('Diagnostics: sudo nixlab doctor')
+    print('Diagnostics: sudo nixus doctor')
 
 
 def main():
@@ -254,7 +254,7 @@ def main():
                 return
         if not args.switch and (status.get('setupComplete') or (status.get('effectiveSettings') or {}).get('ready')):
             parser.error('--wizard is for initial onboarding only; this host is already configured. '
-                         'Use the existing portal or #update. For account recovery use sudo nixlab-admin reset-password.')
+                         'Use the existing portal or #update. For account recovery use sudo nixus-admin reset-password.')
     interface, address, prefix, gateway = choose_network(args.interface, args.address)
     trusted = args.trusted_cidr or [str(ipaddress.ip_interface(f'{address}/{prefix}').network)]
     if os.environ.get('SSH_CONNECTION'):
@@ -283,7 +283,7 @@ def main():
             print('Plan only: existing Incus adoption would require --adopt-incus and a complete independent backup.')
     # All source changes and evaluations happen in a disposable planning tree.
     # Publish only after key/network/Wi-Fi/KVM/adoption validation succeeds.
-    with tempfile.TemporaryDirectory(prefix='nixlab-plan-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='nixus-plan-') as temporary:
         stage = Path(temporary) / 'config'
         incoming = args.checkout
         changed = False
@@ -297,15 +297,15 @@ def main():
         else:
             if not ORIGINAL.is_dir() or not (ORIGINAL / 'configuration.nix').is_file() or not (ORIGINAL / 'hardware-configuration.nix').is_file():
                 parser.error('A conventional /etc/nixos installation with both configuration files is required')
-            if Path('/etc/nixos.pre-nixlab').exists():
-                parser.error('/etc/nixos.pre-nixlab already exists; inspect it before conversion')
+            if Path('/etc/nixos.pre-nixus').exists():
+                parser.error('/etc/nixos.pre-nixus already exists; inspect it before conversion')
             if incoming:
                 copy_embedded_checkout(incoming.resolve(), stage, args.repo, args.ref)
             else:
                 run(['git', 'clone', '--single-branch', '--branch', args.ref, args.repo, str(stage)])
             rt.write_json(stage / 'machine/format.json', {'version': 1})
             copy_nix_modules(ORIGINAL.resolve(), rt.machine_path(stage, 'installed'))
-            default = evaluate(stage, 'nixlabDefaults')
+            default = evaluate(stage, 'nixusDefaults')
             default.update(system='x86_64-linux', cpuVendor=host['cpuVendor'], hostName=socket.gethostname().split('.')[0])
             default['setup']['enable'] = True
             wireless = Path('/sys/class/net', interface, 'wireless').exists()
@@ -357,11 +357,11 @@ def main():
                 print('Plan only: no source, network, guest, or system changes were made.')
                 return
             if (args.interactive or (not existing and sys.stdin.isatty() and not args.non_interactive and not args.answers)):
-                if input('Apply this reviewed plan using the guarded NixLab installer? [y/N] ').strip().lower() not in ('y', 'yes'):
+                if input('Apply this reviewed plan using the guarded Nixus installer? [y/N] ').strip().lower() not in ('y', 'yes'):
                     print('Cancelled before publishing any configuration.')
                     return
         rt.write_json(rt.machine_path(stage, 'settings'), default)
-        overview = evaluate(stage, 'nixlabOverview')
+        overview = evaluate(stage, 'nixusOverview')
         # Reuse client keys already authorized for the installer account. Server
         # host keys and arbitrary public-key files are never enrollment sources.
         for home in (Path('/root'), Path('/home') / os.environ.get('SUDO_USER', '')):
@@ -395,7 +395,7 @@ def main():
             # Provision and report the evaluated stack, while the transaction
             # continues to store the administrator's original JSON overlay.
             rt.write_json(rt.machine_path(stage, 'settings'), candidate)
-            effective_candidate = evaluate(stage, 'nixlabSettings')
+            effective_candidate = evaluate(stage, 'nixusSettings')
             rt.write_json(rt.machine_path(stage, 'settings'), default)
             validate_keys(effective_candidate['adminKeys'])
             if remote and not effective_candidate['adminKeys'] and not effective_candidate['access']['sshPasswordLogin']:
@@ -482,7 +482,7 @@ def report_failure():
         rt.write_json(rt.STATE / 'installation-failure.json', report)
         print('Failure report: ' + str(rt.STATE / 'installation-failure.json'), file=sys.stderr)
         print('Retry the same install command; completed work is detected automatically.', file=sys.stderr)
-        print('Diagnostics: sudo nixlab doctor (once host tools are installed).', file=sys.stderr)
+        print('Diagnostics: sudo nixus doctor (once host tools are installed).', file=sys.stderr)
     except OSError:
         pass
 
@@ -492,11 +492,11 @@ if __name__ == '__main__':
     try:
         import fcntl
         from locking import open_lock
-        with open_lock(Path('/run/lock/nixlab-install.lock')) as lock:
+        with open_lock(Path('/run/lock/nixus-install.lock')) as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                raise ValueError('Another Nixlab installer is already running')
+                raise ValueError('Another Nixus installer is already running')
             main()
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         report_failure()

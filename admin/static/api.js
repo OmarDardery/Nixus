@@ -6,7 +6,7 @@ async function api(path, body, csrf = state.csrf) {
     options.method = "POST";
     options.headers = {
       "Content-Type": "application/json",
-      "X-Nixlab-CSRF": csrf,
+      "X-Nixus-CSRF": csrf,
     };
     options.body = JSON.stringify(body);
   }
@@ -32,7 +32,7 @@ function download(name, bytes, type) {
 async function claimCertificate() {
   const response = await fetch("/api/browser-certificate/download", {
     method: "POST", credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "X-Nixlab-CSRF": state.csrf },
+    headers: { "Content-Type": "application/json", "X-Nixus-CSRF": state.csrf },
     body: "{}",
   });
   if (!response.ok) {

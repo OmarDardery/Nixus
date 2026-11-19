@@ -25,7 +25,7 @@ class WorkspaceTests(unittest.TestCase):
         (p / "modules" / "nested").mkdir(parents=True)
         (p / "modules" / "_disabled").mkdir()
         (p / "files").mkdir()
-        (p / "default.nix").write_text("{ ... }: { nixlab.project.name = \"aiostreams\"; }")
+        (p / "default.nix").write_text("{ ... }: { nixus.project.name = \"aiostreams\"; }")
         (p / "modules" / "network.nix").write_text("{ ... }: { }")
         (p / "modules" / "nested" / "resources.nix").write_text("{ ... }: { }")
         (p / "modules" / "_disabled" / "never.nix").write_text('throw "never"')
@@ -63,7 +63,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_revision_hash_detects_content_changes_and_no_secret_output(self):
         result = self.check()
-        (self.p / "modules" / "network.nix").write_text("{ ... }: { nixlab.project.enable = false; }")
+        (self.p / "modules" / "network.nix").write_text("{ ... }: { nixus.project.enable = false; }")
         self.assertNotEqual(self.check()["sourceHash"], result["sourceHash"])
         self.assertNotIn("encrypted-ciphertext-fixture", json.dumps(self.check()))
 

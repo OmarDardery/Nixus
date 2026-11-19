@@ -11,8 +11,8 @@ import time
 
 import runtime as rt
 
-COCKPIT_TEMPLATE = Path('/etc/nixlab/cockpit-base.conf')
-COCKPIT_CONFIG = Path('/run/nixlab/cockpit.conf')
+COCKPIT_TEMPLATE = Path('/etc/nixus/cockpit-base.conf')
+COCKPIT_CONFIG = Path('/run/nixus/cockpit.conf')
 
 
 def clock_status(now=None):
@@ -89,7 +89,7 @@ def probe(settings):
     address = management_address(settings)
     targets = [('Incus API', 8443, '/1.0', {200}), ('Incus UI', 8443, '/ui/', {200})] if settings['ready'] else []
     if settings['setup']['enable']:
-        targets.append(('Nixlab', settings['setup']['port'], '/', {200}))
+        targets.append(('Nixus', settings['setup']['port'], '/', {200}))
     if settings['ready'] and settings['cockpit']['enable']:
         targets.append(('Cockpit', settings['cockpit']['port'], '/ping', {200}))
     checks = []
@@ -104,11 +104,11 @@ def probe(settings):
     if settings['setup']['enable']:
         try:
             status, target_ok = http_entry(address, settings['setup']['port'])
-            checks.append({'name': 'Nixlab HTTP entry', 'url': f'http://{address}:80',
+            checks.append({'name': 'Nixus HTTP entry', 'url': f'http://{address}:80',
                            'ok': status == 308 and target_ok,
                            'detail': 'HTTP ' + str(status) + (' → HTTPS' if target_ok else ' (invalid target)')})
         except (OSError, ValueError, http.client.HTTPException) as exc:
-            checks.append({'name': 'Nixlab HTTP entry', 'url': f'http://{address}:80',
+            checks.append({'name': 'Nixus HTTP entry', 'url': f'http://{address}:80',
                            'ok': False, 'detail': type(exc).__name__})
     return {'address': address, 'ok': all(check['ok'] for check in checks), 'checks': checks}
 
@@ -125,7 +125,7 @@ def wait_ready(settings, timeout=180):
             report = {'ok': False, 'error': 'Management health probe failed'}
         if time.monotonic() >= deadline:
             rt.write_json(rt.STATE / 'last-health.json', report)
-            raise ValueError('Management health checks failed: ' + json.dumps(report) + '; run sudo nixlab doctor')
+            raise ValueError('Management health checks failed: ' + json.dumps(report) + '; run sudo nixus doctor')
         time.sleep(2)
 
 
@@ -157,8 +157,8 @@ def doctor(settings):
         report = {'ok': False, 'error': 'Management health probe failed'}
     report['clock'] = clock_status()
     report['services'] = []
-    for unit in ('incus', 'incus-preseed', 'nixlab-instances', 'nixlab-management-identity',
-                 'nixlab-admin-backend', 'nixlab-ui', 'nixlab-rollback-guard.service',
+    for unit in ('incus', 'incus-preseed', 'nixus-instances', 'nixus-management-identity',
+                 'nixus-admin-backend', 'nixus-ui', 'nixus-rollback-guard.service',
                  'cockpit.socket', 'cockpit.service'):
         result = subprocess.run(['systemctl', 'show', unit, '-p',
                                  'Id,LoadState,ActiveState,SubState,Result,ExecMainStatus'],

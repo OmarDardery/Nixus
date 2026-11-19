@@ -97,7 +97,7 @@ does not silently enroll a node, trust all `tailscale0` traffic, or open managem
 **Host → Networking** creates host interfaces, not guest network objects. For example:
 
 ```nix
-nixlab.settings.connectivity = {
+nixus.settings.connectivity = {
   bridges = [
     { name = "br-lan"; interfaces = [ "enp2s0" ]; }
     { name = "br-apps"; interfaces = [ "vlan20" ]; }
@@ -138,7 +138,7 @@ Switch trunks/router changes are external actions. See
 [ownership](ownership.md) before editing the reserved bootstrap network in Incus.
 
 
-## Guest addresses in the NixLab console
+## Guest addresses in the Nixus console
 
 Overview shows a bounded read-only inventory across Incus projects: reported NIC
 addresses, reservations, network/NIC names and guest state. Addresses inside
@@ -168,7 +168,7 @@ the private NAT NIC, and keep the original device definition for recovery. Use
 the local console or independent management access. If the bridge does not exist
 yet, plan a maintenance window to detach the affected LAN device in Incus before
 reviewing the host change, then attach it to the bridge once the host change is
-confirmed. NixLab does not edit guest NICs or shared profiles during review.
+confirmed. Nixus does not edit guest NICs or shared profiles during review.
 
 After attachment, check the guest link and configured address source. For a
 DHCP client, inspect `networkctl status INTERFACE` when the guest uses
@@ -180,18 +180,18 @@ after restarting the guest and rebooting the host.
 Host bridges, VLANs, management addressing, baseline guest subnet/DHCP range and
 reserved apps IP stay under Host → Networking and the existing reviewed activation
 flow. Per-guest reservations and networks stay in Incus. No router or DNS-provider
-changes are made automatically. NixLab portal roles are host-console roles and
+changes are made automatically. Nixus portal roles are host-console roles and
 can read this all-project inventory; they are not Incus project permissions.
 
 ### Inspect management exposure
 
-On the hypervisor, `/etc/nixlab/management-exposure.json` lists the evaluated
-NixLab listener addresses and ports, the management interface and the trusted
+On the hypervisor, `/etc/nixus/management-exposure.json` lists the evaluated
+Nixus listener addresses and ports, the management interface and the trusted
 IPv4 client CIDRs. The same list generates the host's management input rule.
 An IPv4 wildcard listener still binds all IPv4 addresses so DHCP renewals can
 keep using it. Incoming management connections must arrive on the selected
 interface from a trusted source. Local metrics stay off the management rule.
-The JSON describes the NixLab policy. Check custom firewall rules and actual
+The JSON describes the Nixus policy. Check custom firewall rules and actual
 socket state with `sudo nft list ruleset` and `sudo ss -ltn`.
 
 Bootstrap retains the installed firewall and interface-scoped portal ports.

@@ -10,8 +10,8 @@ from guest_deploy import Transport
 
 state = rt.STATE
 manager = d.Deployments(state / 'source', state)
-manifest = rt.read_json(Path('/etc/nixlab-test-deployments.json'))
-paths = rt.read_json(Path('/etc/nixlab-test-deployment-paths.json'))
+manifest = rt.read_json(Path('/etc/nixus-test-deployments.json'))
+paths = rt.read_json(Path('/etc/nixus-test-deployment-paths.json'))
 main_id, failed_id = 'b' * 32, 'c' * 32
 
 
@@ -19,7 +19,7 @@ def create(job_id, targets):
     directory = state / 'jobs' / job_id
     directory.mkdir(parents=True)
     source = directory / 'source'; source.mkdir()
-    rt.write_json(source / '.nixlab-files.json', [])
+    rt.write_json(source / '.nixus-files.json', [])
     (directory / 'system').symlink_to('/run/current-system')
     rt.write_json(directory / 'job.json', {'id': job_id, 'status': 'confirmed', 'baseDigest': 'fixture', 'candidateDigest': rt.digest_source(source)})
     rt.write_json(state / 'active.json', {'id': job_id})
@@ -68,8 +68,8 @@ elif action == 'verify':
     for name in ('primary', 'worker'):
         transport = Transport('lab', name)
         assert transport.inspect()['profile'] == manifest[name]['system']
-        assert transport.execute('cat', '/etc/nixlab-deploy-version').stdout.strip() == 'v2'
-        assert transport.execute('cat', '/var/lib/nixlab/preserved').stdout.strip() == 'original-data'
+        assert transport.execute('cat', '/etc/nixus-deploy-version').stdout.strip() == 'v2'
+        assert transport.execute('cat', '/var/lib/nixus/preserved').stdout.strip() == 'original-data'
     print('Real NixOS guests updated in place; health rollback, dependency failure, interrupted transfer and controller reboot verified.')
 else:
     raise ValueError('Unknown disposable fixture action')

@@ -1,14 +1,14 @@
-# Community Scripts on Nixlab
+# Community Scripts on Nixus
 
 The runner packages the upstream **Incus** backend and shared engine. Portable
-container scripts already use this backend; Nixlab does not emulate `pct`, `qm`,
+container scripts already use this backend; Nixus does not emulate `pct`, `qm`,
 `/etc/pve` or a Proxmox host.
 
 ```console
-sudo nixlab-helpers doctor
-nixlab-helpers list
-sudo nixlab-helpers run debian --project lab
-sudo nixlab-helpers run adguard --project lab
+sudo nixus-helpers doctor
+nixus-helpers list
+sudo nixus-helpers run debian --project lab
+sudo nixus-helpers run adguard --project lab
 ```
 
 Run from SSH or the host console. The upstream wizard selects storage, resources
@@ -27,7 +27,7 @@ image service, pool capacity, networks and pinned GitHub URLs. The upstream wiza
 still validates the chosen application's actual requirements.
 
 Shared locks serialize provisioning with host mutation and exports. Finish pending
-host activation first. Root-only run metadata under `/var/lib/nixlab/helpers`
+host activation first. Root-only run metadata under `/var/lib/nixus/helpers`
 records project, source revisions and exit status. Upstream logs may contain
 credentials; review before sharing them.
 
@@ -38,10 +38,10 @@ not undo those applications; include application-consistent backups.
 
 ## Compatibility
 
-- **Verified on Nixlab:** install, health, restart/persistence and restore evidence
+- **Verified on Nixus:** install, health, restart/persistence and restore evidence
   for the exact host/engine/script tuple has been recorded.
 - **Upstream-supported; unverified here:** a packaged Incus container script exists
-  but has not completed Nixlab qualification.
+  but has not completed Nixus qualification.
 - **Unsupported:** PVE host tooling, PVE-specific VM scripts, missing scripts or
   requirements absent from the Incus backend.
 

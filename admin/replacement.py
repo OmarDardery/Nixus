@@ -18,8 +18,8 @@ import runtime as rt
 from locking import open_lock
 import fcntl
 
-MODE = Path('/etc/nixlab/recovery-mode')
-DESIRED = Path('/etc/nixlab/desired-instances.json')
+MODE = Path('/etc/nixus/recovery-mode')
+DESIRED = Path('/etc/nixus/desired-instances.json')
 
 
 def journal():
@@ -54,13 +54,13 @@ def material(directory):
     if inventory.get('format') != 2 or not isinstance(inventory.get('archiveSHA256'), dict):
         raise ValueError('Use a complete version-2 backup generation with archive checksums')
     for name, expected in inventory['archiveSHA256'].items():
-        if not re.fullmatch(r'(?:instance-[0-9a-f]{64}|volume-[0-9a-f]{64}|nixlab-config|nixlab-secrets)\.tar\.gz', name):
+        if not re.fullmatch(r'(?:instance-[0-9a-f]{64}|volume-[0-9a-f]{64}|nixus-config|nixus-secrets)\.tar\.gz', name):
             raise ValueError('Unsupported recovery archive name')
         path = directory / name
         if (path.is_symlink() or not path.is_file() or path.stat().st_uid != os.geteuid() or path.stat().st_mode & 0o022
                 or not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected) or digest(path) != expected):
             raise ValueError('Recovery archive missing or checksum mismatch')
-    for name in ('nixlab-config.tar.gz', 'nixlab-secrets.tar.gz'):
+    for name in ('nixus-config.tar.gz', 'nixus-secrets.tar.gz'):
         if name not in inventory['archiveSHA256']:
             raise ValueError('Recovery generation lacks configuration/secrets; provide independent recovery material first')
         recovery.inspect(directory / name)
@@ -158,7 +158,7 @@ def plan(directory, mapping):
     if not guests: raise ValueError('No recoverable guests are present')
     if len({(g['project'], g['name']) for g in guests}) != len(guests) or len({v['target'] for v in volumes}) != len(volumes):
         raise ValueError('Duplicate recovery identities are not supported')
-    configuration, files = recovery.inspect(directory / 'nixlab-config.tar.gz')
+    configuration, files = recovery.inspect(directory / 'nixus-config.tar.gz')
     source_revision = configuration.get('release', {}).get('revision', 'unknown')
     if not isinstance(source_revision, str) or not re.fullmatch(r'[0-9a-f]{40}', source_revision): source_revision = 'unknown'
     lock = files.get('config/flake.lock')
@@ -209,7 +209,7 @@ def edit(arguments, document):
 def resume(confirmed=False):
     if not confirmed: raise ValueError('Explicit --confirm is required for recovery imports')
     if not MODE.is_file() or MODE.read_text().strip() != '1':
-        raise ValueError('Enable nixlab.recovery.enable on the replacement host before importing')
+        raise ValueError('Enable nixus.recovery.enable on the replacement host before importing')
     record = read_json(journal())
     if record['phase'] == 'complete': raise ValueError('Recovery was released; no imports are repeated')
     source, inventory = material(record['source'])
@@ -219,7 +219,7 @@ def resume(confirmed=False):
     current_pool = api('/1.0/storage-pools/' + quote(pool, safe=''))
     if pool_fingerprint(current_pool) != record['poolFingerprint']:
         raise ValueError('Replacement pool configuration changed after review')
-    token = 'user.nixlab.recovery-id'
+    token = 'user.nixus.recovery-id'
     project, bridge = record['project'], record['bridge']
 
     def step(key, action):
@@ -266,7 +266,7 @@ def resume(confirmed=False):
 
     def stage_kit(name):
         destination = rt.STATE / ('recovery-' + record['id']) / name
-        archive = source / ('nixlab-' + name + '.tar.gz')
+        archive = source / ('nixus-' + name + '.tar.gz')
         if destination.exists():
             manifest, entries = recovery.inspect(archive)
             if read_json(destination / 'manifest.json') != manifest or any(
@@ -300,7 +300,7 @@ def resume(confirmed=False):
         current = next((g for g in existing if g['name'] == item['target']), None)
         if current is None:
             overrides = ['--config', 'boot.autostart=false', '--config', ops.OWNER + '=false',
-                         '--config', ops.LAST + '=', '--config', 'user.nixlab.restore-review=required',
+                         '--config', ops.LAST + '=', '--config', 'user.nixus.restore-review=required',
                          '--config', token + '=' + record['id']]
             for name, device in item['originalDevices'].items():
                 if device.get('type') == 'nic':
@@ -316,7 +316,7 @@ def resume(confirmed=False):
         if current.get('config', {}).get(token) != record['id'] or current.get('status') != 'Stopped':
             raise ValueError('Unexpected or running guest; refusing automatic recovery changes')
         config = current['config'].copy()
-        config.update({'boot.autostart': 'false', 'snapshots.schedule': '', 'user.nixlab.restore-review': 'required'})
+        config.update({'boot.autostart': 'false', 'snapshots.schedule': '', 'user.nixus.restore-review': 'required'})
         for key in list(config):
             if re.fullmatch(r'volatile\.[A-Za-z0-9_.-]+\.hwaddr', key): config.pop(key)
         edit(['config', 'edit', item['target'], '--project', project],
@@ -359,7 +359,7 @@ def release(confirmed=False, data_verified=False, acknowledge_exclusions=False):
         # network review. Never reconnect original addresses automatically.
         current = api(guest_path(item['project'], item['name']))
         if (current.get('status') != 'Stopped' or current.get('config', {}).get('volatile.uuid') != item.get('uuid')
-                or current.get('config', {}).get('user.nixlab.recovery-id') != record['id']):
+                or current.get('config', {}).get('user.nixus.recovery-id') != record['id']):
             raise ValueError('Move verified guests to their reviewed original project/name, stopped, before release')
     record.update(phase='complete', restore='operator-attested' if record['coverage'].get('complete') else 'operator-attested-selected', verifiedAt=time.time(),
                   durationSeconds=time.time() - record['created'])
@@ -369,7 +369,7 @@ def release(confirmed=False, data_verified=False, acknowledge_exclusions=False):
 
 def cli(argv):
     import argparse
-    parser = argparse.ArgumentParser(prog='nixlab-admin recovery')
+    parser = argparse.ArgumentParser(prog='nixus-admin recovery')
     commands = parser.add_subparsers(dest='command', required=True)
     create = commands.add_parser('plan'); create.add_argument('generation', type=Path); create.add_argument('--mappings', type=Path, required=True)
     commands.add_parser('status')

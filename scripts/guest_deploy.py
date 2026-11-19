@@ -6,7 +6,7 @@ import subprocess
 import time
 from urllib.parse import quote
 
-OWNER = 'user.nixlab.managed'
+OWNER = 'user.nixus.managed'
 STORE = re.compile(r'/nix/store/[a-z0-9]{32}-[^/\s]+')
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,62}')
 
@@ -54,7 +54,7 @@ class Transport:
             raise DeploymentError('Guest inventory unavailable; no guest is created by deployment') from None
         config = current.get('config', {})
         if config.get(OWNER) != 'true': raise DeploymentError('Native-owned guest is observed only; explicit source ownership is required')
-        if config.get('user.nixlab.restore-review') == 'required': raise DeploymentError('Release the guest from restore quarantine before deployment')
+        if config.get('user.nixus.restore-review') == 'required': raise DeploymentError('Release the guest from restore quarantine before deployment')
         if current.get('status') != 'Running': raise DeploymentError('Start this source-owned guest in Incus before deployment')
         if not config.get('volatile.uuid'): raise DeploymentError('Guest has no stable instance identity')
         if self.execute('test', '-e', '/etc/NIXOS', timeout=10, check=False).returncode:
@@ -119,7 +119,7 @@ class Transport:
 
     def retain(self, deployment, previous, target):
         if not re.fullmatch(r'[a-z0-9-]{1,80}', deployment): raise DeploymentError('Invalid deployment identity')
-        directory = '/nix/var/nix/gcroots/nixlab-deployments'
+        directory = '/nix/var/nix/gcroots/nixus-deployments'
         self.execute('mkdir', '-p', '-m', '0700', directory)
         for suffix, path in (('previous', previous), ('target', target)):
             self.execute('nix-store', '--add-root', directory + '/' + deployment + '-' + suffix,
@@ -132,8 +132,8 @@ class Transport:
         # publication and switching must serialize with a later recovery attempt.
         script = 'nix-env --profile /nix/var/nix/profiles/system --set "$1"\nexec "$1/bin/switch-to-configuration" switch'
         self.execute('timeout', '--kill-after=10s', '600', 'flock', '--exclusive', '--timeout', '300',
-                     '/run/lock/nixlab-guest-deployment.lock', 'sh', '-eu', '-c', script,
-                     'nixlab-guest-switch', closure, timeout=630)
+                     '/run/lock/nixus-guest-deployment.lock', 'sh', '-eu', '-c', script,
+                     'nixus-guest-switch', closure, timeout=630)
 
     def reboot_required(self, current):
         if current['type'] != 'virtual-machine': return False
@@ -161,5 +161,5 @@ class Transport:
     def healthy(self, probe, timeout):
         import math
         seconds = max(1, math.ceil(timeout))
-        return self.execute('timeout', '--kill-after=2s', str(seconds), store_path(probe) + '/bin/nixlab-guest-health',
+        return self.execute('timeout', '--kill-after=2s', str(seconds), store_path(probe) + '/bin/nixus-guest-health',
                             timeout=seconds + 3, check=False).returncode == 0

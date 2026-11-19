@@ -1,1 +1,1 @@
-{ ... }: { nixlab.project.enable = true; }
+{ ... }: { nixus.project.enable = true; }

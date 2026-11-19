@@ -31,7 +31,7 @@ function nativeSourcePath(file) {
   }
   if (parts.some(part => {
     const lower = part.toLowerCase();
-    return [".git", ".ssh", ".gnupg", ".nixlab", "node_modules", ".env",
+    return [".git", ".ssh", ".gnupg", ".nixus", "node_modules", ".env",
       "id_rsa", "id_ed25519", "id_ecdsa", "projects.agekey"].includes(lower) ||
       (lower.startsWith(".env.") && ![".env.example", ".env.sample", ".env.template"].includes(lower)) ||
       [".agekey", ".p12", ".pfx", ".key"].some(ext => lower.endsWith(ext)) ||
@@ -143,7 +143,7 @@ function nativeProjectPage() {
         ? 'Archive members are validated and shown with per-file SHA-256 hashes after private server-side extraction; archive entries cannot be edited here.'
         : 'Original file bytes are preserved unless you explicitly save a text edit. Files are local to this browser until staging.') +
       '</p>'
-    : '<p class="note">Selection stays in your browser. No file contents are sent to NixLab.</p>';
+    : '<p class="note">Selection stays in your browser. No file contents are sent to Nixus.</p>';
   const editor = nativeSourceEditor.path
     ? '<section><h3>Optional text edit: <code>' + esc(nativeSourceEditor.path) + '</code></h3>' +
       '<p class="note">Saving replaces only this browser copy, recalculates SHA-256, and clears any previous staged selection. It never edits a deployed file.</p>' +
@@ -164,7 +164,7 @@ function nativeProjectPage() {
     esc(JSON.stringify(item.after)) + (item.potentialDisruption ? ' (possible interruption)' : '') +
     '</p>').join("");
   const initPanel = nativePersistedSource.loaded && !persisted?.available
-    ? '<p>Restore a pinned flake.nix and flake.lock from your Git backup to initialize this machine. Their bytes are verified as private NixLab workspace source; no uploaded Nix code is evaluated during initialization.</p>' +
+    ? '<p>Restore a pinned flake.nix and flake.lock from your Git backup to initialize this machine. Their bytes are verified as private Nixus workspace source; no uploaded Nix code is evaluated during initialization.</p>' +
       '<label class="field"><span>Restored flake.nix</span><textarea id="native-workspace-flake" rows="6" spellcheck="false" placeholder="Paste exact backed-up flake.nix"></textarea></label>' +
       '<label class="field"><span>Restored flake.lock (JSON)</span><textarea id="native-workspace-lock" rows="5" spellcheck="false" placeholder="Paste exact pinned flake.lock"></textarea></label>' +
       '<label class="field"><span>Current administrator password</span><input type="password" id="native-workspace-password" autocomplete="current-password"></label>' +

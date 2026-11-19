@@ -188,16 +188,16 @@ class CredentialContractTests(unittest.TestCase):
     def test_configuration_download_does_not_package_runtime_or_job_secrets(self):
         with tempfile.TemporaryDirectory() as folder:
             root, state = Path(folder) / 'source', Path(folder) / 'state'
-            rt.write_json(root / '.nixlab-files.json', ['flake.nix'])
+            rt.write_json(root / '.nixus-files.json', ['flake.nix'])
             rt.atomic(root / 'flake.nix', '{}')
             rt.atomic(state / 'ca.key', SECRETS['private-key'])
             rt.atomic(state / 'setup-password', SECRETS['setup'])
             rt.write_json(state / 'jobs' / ('a' * 32) / 'secrets.json', {'wifiPassword': SECRETS['staged']})
             with patch.object(rt, 'ROOT', root), patch.object(rt, 'STATE', state):
                 response = recovery.download()
-            self.assertEqual(set(response['files']), {'nixlab-config.tar.gz'})
+            self.assertEqual(set(response['files']), {'nixus-config.tar.gz'})
             archive = Path(folder) / 'download.tar.gz'
-            archive.write_bytes(base64.b64decode(response['files']['nixlab-config.tar.gz']))
+            archive.write_bytes(base64.b64decode(response['files']['nixus-config.tar.gz']))
             manifest, entries = recovery.inspect(archive)
             self.assertEqual(set(entries), {'config/flake.nix'})
             assert_public_clean(self, [response, manifest, entries])
@@ -205,7 +205,7 @@ class CredentialContractTests(unittest.TestCase):
     def test_failed_recovery_encryption_suppresses_child_output_and_removes_partial_file(self):
         with tempfile.TemporaryDirectory() as folder:
             root, target = Path(folder), Path(folder) / 'kit'
-            rt.write_json(root / '.nixlab-files.json', ['flake.nix'])
+            rt.write_json(root / '.nixus-files.json', ['flake.nix'])
             rt.atomic(root / 'flake.nix', '{}')
             secret = root / 'runtime-secret'
             rt.atomic(secret, SECRETS['staged'])
@@ -221,7 +221,7 @@ class CredentialContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Secret encryption failed') as error:
                     recovery.export(target, 'age1' + 'a' * 58, True)
             assert_public_clean(self, str(error.exception))
-            self.assertFalse((target / 'nixlab-secrets.tar.gz.age').exists())
+            self.assertFalse((target / 'nixus-secrets.tar.gz.age').exists())
 
     def test_cancelled_candidate_scrubs_staged_value_without_public_disclosure(self):
         from controller import Manager

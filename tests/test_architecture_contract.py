@@ -30,7 +30,7 @@ class ConfigurationContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / 'source'
             root.mkdir()
-            runtime.write_json(root / '.nixlab-files.json', ['flake.nix'])
+            runtime.write_json(root / '.nixus-files.json', ['flake.nix'])
             runtime.atomic(root / 'flake.nix', '{ }')
             runtime.write_json(root / 'machine/format.json', {'version': 1})
             settings = {'management': {'interface': 'enp1s0'}}
@@ -43,7 +43,7 @@ class ConfigurationContractTests(unittest.TestCase):
             self.assertTrue((destination / 'machine/modules/custom.nix').is_file())
             self.assertTrue((destination / 'machine/installed-system/configuration.nix').is_file())
             self.assertEqual((destination / 'flake.nix').read_text(), (root / 'flake.nix').read_text())
-            manifest = json.loads((destination / '.nixlab-files.json').read_text())
+            manifest = json.loads((destination / '.nixus-files.json').read_text())
             self.assertIn('machine/settings.json', manifest)
             self.assertIn('machine/installed-system/configuration.nix', manifest)
 

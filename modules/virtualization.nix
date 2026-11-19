@@ -3,10 +3,10 @@
   boot.kernelModules = [ (if site.cpuVendor == "amd" then "kvm-amd" else "kvm-intel") ];
   virtualisation.libvirtd.enable = lib.mkForce false;
   virtualisation.docker.enable = lib.mkForce false;
-  systemd.services.nixlab-kvm-check = {
+  systemd.services.nixus-kvm-check = {
     description = "Require usable hardware virtualization before provisioning VMs";
     wantedBy = [ "multi-user.target" ];
-    before = [ "nixlab-instances.service" ];
+    before = [ "nixus-instances.service" ];
     serviceConfig.Type = "oneshot";
     script = ''
       test -c /dev/kvm

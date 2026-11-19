@@ -1,8 +1,8 @@
 { config, lib, pkgs, site, ... }:
 let
   # Keep legacy order while using the typed resource projection.
-  mounts = map (mount: config.nixlab.storage.mounts.${mount.name}) site.mounts
-    ++ builtins.attrValues config.nixlab.storage.disks;
+  mounts = map (mount: config.nixus.storage.mounts.${mount.name}) site.mounts
+    ++ builtins.attrValues config.nixus.storage.disks;
   pools = builtins.filter (m: builtins.elem m.role [ "guests" "pool" ]) mounts;
   guestPaths = map (m: m.path) pools;
   backupPaths = map (m: m.path) (builtins.filter (m: m.role == "backup") mounts);
@@ -14,7 +14,7 @@ in {
       options = [ "nodev" "nosuid" "nofail" "x-systemd.device-timeout=10s" ] ++ lib.optional m.readOnly "ro";
     };
   }) mounts);
-  systemd.targets.nixlab-storage = {
+  systemd.targets.nixus-storage = {
     wantedBy = [ "multi-user.target" ];
     unitConfig.RequiresMountsFor = map (m: m.path) (builtins.filter (m: m.required) mounts);
   };
@@ -29,7 +29,7 @@ in {
   virtualisation.incus.preseed.storage_pools = map (m: {
     name = "disk-${m.name}"; driver = "dir"; config.source = m.path + "/incus";
   }) (builtins.filter (m: m.role == "pool") mounts);
-  systemd.services.restic-backups-nixlab = lib.mkIf site.backup.enable {
+  systemd.services.restic-backups-nixus = lib.mkIf site.backup.enable {
     unitConfig.RequiresMountsFor = backupPaths;
   };
   systemd.tmpfiles.rules = [ "d ${site.backup.stagingDirectory} 0700 root root -" ];

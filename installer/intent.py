@@ -1,4 +1,4 @@
-"""Versioned, non-secret installation intent -> conservative NixLab setup choices.
+"""Versioned, non-secret installation intent -> conservative Nixus setup choices.
 
 This module NEVER changes host networking, guests, disks, router DNS, USB devices,
 Cloudflare or credentials. Its output is a reviewed plan for the existing
@@ -68,7 +68,7 @@ def load(path):
 
 def interview(input_fn=input, output=print, existing=None, on_answer=None):
     values = dict(defaults() if existing is None else normalize(existing))
-    output("NixLab configuration interview. Enter keeps the recommendation.")
+    output("Nixus configuration interview. Enter keeps the recommendation.")
     for key, prompt, fallback, choices in QUESTIONS:
         original = values[key]
         default = ("yes" if original else "no") if isinstance(original, bool) else str(original)
@@ -128,7 +128,7 @@ def plan(answers, host, settings, *, remote=False):
     if a["access"] == "private":
         pending.append("Enable/enroll Tailscale through the Private Access recipe; verify private SSH without publishing management dashboards")
     if a["access"] == "public":
-        pending.append("Supply an existing tunnel UUID and root-only Cloudflare credential separately; publish only selected app origins, never SSH/Incus/Cockpit/NixLab")
+        pending.append("Supply an existing tunnel UUID and root-only Cloudflare credential separately; publish only selected app origins, never SSH/Incus/Cockpit/Nixus")
     if not a["backup"]:
         pending.append("Configure an independent off-host restic repository and test an actual isolated restore before trusting guest data")
     else:
@@ -163,7 +163,7 @@ def apply(candidate, proposal):
 
 
 def preview(proposal, output=print):
-    output("\nNixLab proposed configuration (review before activation)")
+    output("\nNixus proposed configuration (review before activation)")
     output("  Host metrics: " + ("enabled" if proposal["monitoring"] else "disabled"))
     output("  Laptop policy: " + ("always-on" if proposal["laptop"] else "standard server"))
     output("  Guest network: private NAT " + proposal["guestCidr"] + " (existing host LAN unchanged)")

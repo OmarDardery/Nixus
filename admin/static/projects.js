@@ -1,11 +1,11 @@
 "use strict";
 
 // Shared native-tool identity, credits and documentation. No remote assets load.
-const projectRepository = "https://github.com/OmarDardery/nixlab";
+const projectRepository = "https://github.com/OmarDardery/Nixus";
 const projectReferences = [
-  { name: "Nixlab", source: "https://github.com/OmarDardery/nixlab", detail: "Installation, host changes and recovery", guide: "plain-nixos.md",
-    docs: [["Project source", "https://github.com/OmarDardery/nixlab"]],
-    community: [["Issues & contributions", "https://github.com/OmarDardery/nixlab/issues"]] },
+  { name: "Nixus", source: "https://github.com/OmarDardery/Nixus", detail: "Installation, host changes and recovery", guide: "plain-nixos.md",
+    docs: [["Project source", "https://github.com/OmarDardery/Nixus"]],
+    community: [["Issues & contributions", "https://github.com/OmarDardery/Nixus/issues"]] },
   { name: "NixOS & Nix", source: "https://github.com/NixOS/nixpkgs", detail: "Declarative host and pinned packages", guide: "file-modules.md",
     docs: [["NixOS manual", "https://nixos.org/manual/nixos/stable/"], ["Nix CLI", "https://nix.dev/manual/nix/stable/"]],
     community: [["Community configurations", "https://wiki.nixos.org/wiki/Configuration_Collection"]] },

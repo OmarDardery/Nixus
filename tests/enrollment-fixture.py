@@ -31,13 +31,13 @@ STASH = rt.STATE / 'enrollment-fixture-original'
 
 
 def service(action):
-    subprocess.run(['systemctl', action, 'nixlab-ui.service', 'nixlab-admin-backend.service'], check=True,
+    subprocess.run(['systemctl', action, 'nixus-ui.service', 'nixus-admin-backend.service'], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
 
 
 def request(path, body=None, session=None):
     headers = {'Origin': ORIGIN}
-    if session: headers |= {'Cookie': session['cookie'], 'X-Nixlab-CSRF': session['csrf']}
+    if session: headers |= {'Cookie': session['cookie'], 'X-Nixus-CSRF': session['csrf']}
     if body is not None: headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(ORIGIN + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
     try:
@@ -68,7 +68,7 @@ def console_approve(code):
     master, slave = pty.openpty()
     def terminal():
         os.setsid(); fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-    child = subprocess.Popen(['nixlab-admin', 'approve-enrollment'], stdin=slave, stdout=slave, stderr=slave, preexec_fn=terminal)
+    child = subprocess.Popen(['nixus-admin', 'approve-enrollment'], stdin=slave, stdout=slave, stderr=slave, preexec_fn=terminal)
     output = bytearray()
     try:
         deadline = time.monotonic() + 15
@@ -138,8 +138,8 @@ elif sys.argv[1] == 'verify':
     assert sum(accounts.matches('labowner', password) for password in PASSWORDS) == 1, 'Conflicting first-admin verifiers'
     success = next(item for item in results if item[0] == 200)
     cookies = success[2].get_all('Set-Cookie')
-    cookie = next(item.split(';')[0] for item in cookies if item.startswith('nixlab_session='))
-    assert any('__Host-nixlab_bootstrap=' in item and 'Max-Age=0' in item for item in cookies), 'Bootstrap cookie was not retired'
+    cookie = next(item.split(';')[0] for item in cookies if item.startswith('nixus_session='))
+    assert any('__Host-nixus_bootstrap=' in item and 'Max-Age=0' in item for item in cookies), 'Bootstrap cookie was not retired'
     ordinary = {'cookie': cookie, 'csrf': success[1]['csrf']}
     assert request('/api/session', session=ordinary)[0] == 200, 'No ordinary portal session after enrollment'
     assert request('/api/bootstrap/claim', {'username': 'labowner', 'password': PASSWORDS[0]}, current)[0] == 400, 'Consumed browser proof replayed'
@@ -152,8 +152,8 @@ elif sys.argv[1] == 'verify':
     assert request('/api/enrollment')[1]['available'] is False, 'Recovery reopened first claim'
     for name in (enrollment.STATE_FILE, bootstrap.FILE):
         assert (rt.STATE / name).stat().st_mode & 0o777 == 0o600
-        assert subprocess.run(['runuser', '-u', 'nixlab-ui', '--', 'test', '-r', str(rt.STATE / name)]).returncode != 0, 'Web uid can read private bootstrap authority'
-    journal = subprocess.run(['journalctl', '--no-pager', '-o', 'cat', '-u', 'nixlab-ui', '-u', 'nixlab-admin-backend'], check=True, capture_output=True).stdout
+        assert subprocess.run(['runuser', '-u', 'nixus-ui', '--', 'test', '-r', str(rt.STATE / name)]).returncode != 0, 'Web uid can read private bootstrap authority'
+    journal = subprocess.run(['journalctl', '--no-pager', '-o', 'cat', '-u', 'nixus-ui', '-u', 'nixus-admin-backend'], check=True, capture_output=True).stdout
     assert all(value.encode() not in journal for value in (*PASSWORDS, HOST_PASSWORD, OUTSIDER_PASSWORD, RECOVERY_PASSWORD, WRONG_PASSWORD, current['approvalCode'], current['cookie'].split('=',1)[1], other['approvalCode'], other['cookie'].split('=',1)[1])), 'Journal disclosed bootstrap credentials'
     service('stop')
     for name in NAMES:

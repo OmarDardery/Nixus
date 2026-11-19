@@ -54,12 +54,12 @@ class ReleaseTests(unittest.TestCase):
                         return [{'jobs': jobs}] if '/jobs?' in args[-1] else run
                 raise AssertionError(args)
             args = argparse.Namespace(tag='v0.1.0-beta.1', evidence=evidence, runs=json.dumps(run_ids),
-                                      repository='OmarDardery/nixlab', output=root / 'assets')
+                                      repository='OmarDardery/Nixus', output=root / 'assets')
             with contextlib.chdir(source), patch.object(release, 'gh_json', side_effect=gh):
                 release.prepare(args)
-            with tarfile.open(args.output / 'nixlab-0.1.0-beta.1.tar.gz') as archive:
+            with tarfile.open(args.output / 'nixus-0.1.0-beta.1.tar.gz') as archive:
                 names = archive.getnames()
-                self.assertIn('nixlab-0.1.0-beta.1/README.md', names)
+                self.assertIn('nixus-0.1.0-beta.1/README.md', names)
                 self.assertFalse(any('runtime-password' in name for name in names))
             manifest = json.loads((args.output / 'manifest.json').read_text())
             self.assertEqual(manifest['revision'], revision)
@@ -134,7 +134,7 @@ class ReleaseTests(unittest.TestCase):
     def run_evidence(self, key):
         run = {'head_sha': 'a' * 40, 'status': 'completed', 'conclusion': 'success',
                'path': '.github/workflows/' + release.WORKFLOWS[key], 'event': 'push',
-               'repository': {'full_name': 'OmarDardery/nixlab'}, 'html_url': 'https://github.com/example/run'}
+               'repository': {'full_name': 'OmarDardery/Nixus'}, 'html_url': 'https://github.com/example/run'}
         name = 'Deploy to GitHub Pages' if key == 'website' else 'Required test'
         jobs = [{'status': 'completed', 'conclusion': 'success', 'steps': [{'name': name, 'status': 'completed', 'conclusion': 'success'}]}]
         return run, jobs
@@ -142,24 +142,24 @@ class ReleaseTests(unittest.TestCase):
     def test_every_required_workflow_rejects_failed_skipped_or_wrong_revision(self):
         for key in release.WORKFLOWS:
             run, jobs = self.run_evidence(key)
-            release.ci_run(key, run, jobs, 'a' * 40, 'OmarDardery/nixlab')
+            release.ci_run(key, run, jobs, 'a' * 40, 'OmarDardery/Nixus')
             for mutate in (lambda r, j: r.update(head_sha='b' * 40), lambda r, j: r.update(conclusion='failure'),
                            lambda r, j: r.update(event='pull_request'), lambda r, j: j[0].update(conclusion='skipped'),
                            lambda r, j: j[0]['steps'][0].update(conclusion='skipped')):
                 candidate, checks = copy.deepcopy(run), copy.deepcopy(jobs); mutate(candidate, checks)
-                with self.assertRaises(ValueError): release.ci_run(key, candidate, checks, 'a' * 40, 'OmarDardery/nixlab')
+                with self.assertRaises(ValueError): release.ci_run(key, candidate, checks, 'a' * 40, 'OmarDardery/Nixus')
 
     def test_build_only_website_is_not_release_qualification(self):
         for key in ('website',):
             run, jobs = self.run_evidence(key); jobs[0]['steps'][0]['name'] = 'Earlier fixture'
-            with self.assertRaises(ValueError): release.ci_run(key, run, jobs, 'a' * 40, 'OmarDardery/nixlab')
+            with self.assertRaises(ValueError): release.ci_run(key, run, jobs, 'a' * 40, 'OmarDardery/Nixus')
 
     def test_only_ineligible_tag_check_can_be_skipped(self):
         run, jobs = self.run_evidence('validate')
         jobs[0]['steps'].append({'name': 'Check release tag version', 'status': 'completed', 'conclusion': 'skipped'})
-        release.ci_run('validate', run, jobs, 'a' * 40, 'OmarDardery/nixlab')
+        release.ci_run('validate', run, jobs, 'a' * 40, 'OmarDardery/Nixus')
         jobs[0]['steps'][-1]['name'] = 'Guest integration'
-        with self.assertRaises(ValueError): release.ci_run('validate', run, jobs, 'a' * 40, 'OmarDardery/nixlab')
+        with self.assertRaises(ValueError): release.ci_run('validate', run, jobs, 'a' * 40, 'OmarDardery/Nixus')
 
 
 if __name__ == '__main__':

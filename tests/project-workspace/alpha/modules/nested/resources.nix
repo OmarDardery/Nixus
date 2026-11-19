@@ -1,5 +1,5 @@
 { ... }: {
-  nixlab.project.resources = {
+  nixus.project.resources = {
     cpus = 3;
     memory = "512MiB";
   };

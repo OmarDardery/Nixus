@@ -22,13 +22,13 @@ def command(args):
     return subprocess.check_output(args, text=True).strip()
 
 
-base = json.loads(Path('/etc/nixlab-repair-base.json').read_text())
+base = json.loads(Path('/etc/nixus-repair-base.json').read_text())
 original = command(['incus', 'config', 'get', 'native', 'volatile.uuid', '--project', 'lab'])
-root = Path('/var/lib/nixlab-repair-source')
+root = Path('/var/lib/nixus-repair-source')
 root.mkdir(mode=0o700, exist_ok=True)
 rt.write_json(root / 'machine/format.json', {'version': 1})
 rt.write_json(root / 'machine/settings.json', base)
-rt.write_json(root / '.nixlab-files.json', ['machine/format.json', 'machine/settings.json'])
+rt.write_json(root / '.nixus-files.json', ['machine/format.json', 'machine/settings.json'])
 
 # Disposable VM only: seed existing saved profiles with the reported failure.
 command(['nmcli', 'connection', 'add', 'type', 'bridge', 'ifname', 'br-repair',
@@ -42,7 +42,7 @@ command(['nmcli', '--wait', '30', 'connection', 'up', 'repair-port'])
 broken = copy.deepcopy(base)
 broken['management'].update(interface='repair-port', address='198.51.100.10',
                             configure=False, trustedCIDRs=['198.51.100.0/24'])
-rt.write_json(Path('/var/lib/nixlab-test-identity.json'), broken)
+rt.write_json(Path('/var/lib/nixus-test-identity.json'), broken)
 command(['systemctl', 'stop', 'incus.service'])
 # Fixture only: fail the native shutdown hook while the daemon is stopped, so
 # its ExecStop is a no-op and existing containers remain running.
@@ -53,7 +53,7 @@ command(['systemctl', 'daemon-reload'])
 assert subprocess.run(['systemctl', 'start', 'incus-startup.service']).returncode != 0
 failed_hook.unlink()
 command(['systemctl', 'daemon-reload'])
-assert subprocess.run(['systemctl', 'restart', 'nixlab-management-identity.service']).returncode != 0
+assert subprocess.run(['systemctl', 'restart', 'nixus-management-identity.service']).returncode != 0
 assert subprocess.run(['systemctl', 'start', 'incus.service']).returncode != 0
 assert subprocess.run(['systemctl', 'is-active', '--quiet', 'incus.service']).returncode != 0
 
@@ -63,7 +63,7 @@ class Manager:
     def __init__(self): self.root = root
     def status(self): return {'setupComplete': True}
     def effective_settings(self):
-        return json.loads(Path('/var/lib/nixlab-test-identity.json').read_text())
+        return json.loads(Path('/var/lib/nixus-test-identity.json').read_text())
 
 
 manager = Manager()
@@ -84,7 +84,7 @@ assert firewall() == original_firewall, 'Bootstrap changed the host firewall pol
 assert command(['incus', 'config', 'get', 'native', 'volatile.uuid', '--project', 'lab']) == original
 assert command(['incus', 'exec', 'native', '--project', 'lab', '--disable-stdin', '--',
                 '/bin/cat', '/var/lib/test/index.html']) == 'preserved'
-snapshot = impact.capture(json.loads(Path('/etc/nixlab-impact-fixture.json').read_text()))
+snapshot = impact.capture(json.loads(Path('/etc/nixus-impact-fixture.json').read_text()))
 assert snapshot['state'] == 'observed', snapshot['state']
 assert any(g['name'] == 'native' for g in snapshot['guests']), snapshot['guests']
 assert repair.DROPIN.is_file()
@@ -93,7 +93,7 @@ assert all(p['auto'] == 'yes' for p in repair.profiles() if p['id'] in ('repair-
 # The actual native identity command must then work without the runtime override.
 corrected = copy.deepcopy(broken)
 corrected['management']['interface'] = 'br-repair'
-rt.write_json(Path('/var/lib/nixlab-test-identity.json'), corrected)
+rt.write_json(Path('/var/lib/nixus-test-identity.json'), corrected)
 recovery.native_identity()
 assert command(['incus', 'config', 'get', 'native', 'volatile.uuid', '--project', 'lab']) == original
 assert command(['incus', 'exec', 'native', '--project', 'lab', '--disable-stdin', '--',

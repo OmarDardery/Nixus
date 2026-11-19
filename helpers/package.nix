@@ -7,19 +7,19 @@ let
   };
   core = fetch pins.core;
   scripts = fetch pins.scripts;
-  runner = pkgs.runCommand "nixlab-helper-runner" { } ''
+  runner = pkgs.runCommand "nixus-helper-runner" { } ''
     mkdir -p $out
     cp ${./runner.py} $out/runner.py
     cp ${../scripts/locking.py} $out/locking.py
   '';
 in pkgs.writeShellApplication {
-  name = "nixlab-helpers";
+  name = "nixus-helpers";
   runtimeInputs = with pkgs; [ python3 bash incus-lts.client curl wget jq gawk gnused gnugrep coreutils
     findutils util-linux newt ncurses git openssl gnutar gzip xz unzip procps iproute2 iputils hostname systemd ];
   text = ''
-    export NIXLAB_HELPER_ENGINE=${core}
-    export NIXLAB_HELPER_SCRIPTS=${scripts}
-    export NIXLAB_HELPER_METADATA=${./.}
+    export NIXUS_HELPER_ENGINE=${core}
+    export NIXUS_HELPER_SCRIPTS=${scripts}
+    export NIXUS_HELPER_METADATA=${./.}
     exec python3 ${runner}/runner.py "$@"
   '';
 }

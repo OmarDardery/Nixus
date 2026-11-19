@@ -53,7 +53,7 @@ const esc = (v) =>
       ],
   );
 function brandLogo() {
-  return '<div class="brand" aria-label="Nixlab host console"><span class="brand-mark" aria-hidden="true">[n]</span><div class="brand-wordmark">nixlab<span class="brand-cursor" aria-hidden="true">_</span><small>HOST CONSOLE</small></div></div>';
+  return '<div class="brand" aria-label="Nixus host console"><span class="brand-mark" aria-hidden="true">[n]</span><div class="brand-wordmark">nixus<span class="brand-cursor" aria-hidden="true">_</span><small>HOST CONSOLE</small></div></div>';
 }
 const at = (obj, path) => path.split(".").reduce((a, k) => a?.[k], obj);
 function put(obj, path, value) {
@@ -176,7 +176,7 @@ function bindUiChrome() {
   document.querySelector("#ui-theme-toggle")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("nixlab-theme", next); } catch {}
+    try { localStorage.setItem("nixus-theme", next); } catch {}
   });
   document.querySelector("[data-ui-discard]")?.addEventListener("click", () => {
     if (!window.confirm("Discard all staged settings, uploaded modules and pending secret input?")) return;
@@ -204,7 +204,7 @@ function shell() {
   const current = pages.find(([id]) => id === state.page)?.[1] || "Overview";
   const address = state.status.managementAddress || settings.management.address;
   const observedHealth = freshObservation(operationView.health);
-  const requiredUnits = ["incus.service", "nixlab-admin-backend.service", "nixlab-ui.service",
+  const requiredUnits = ["incus.service", "nixus-admin-backend.service", "nixus-ui.service",
     ...(settings.cockpit?.enable ? ["cockpit.socket"] : [])];
   const units = operationView.health?.services || [];
   const knownHealth = observedHealth && units.length > 0;
@@ -214,10 +214,10 @@ function shell() {
   <aside class="sidebar" id="ui-sidebar" aria-label="Host console navigation">
     ${brandLogo()}<div class="sidebar-navigation">${navigationHtml()}</div>${quickManagementLinks(settings)}
     <div class="sidebar-bottom"><div class="sidebar-server"><span class="status-dot ${live ? "active" : knownHealth ? "warning" : "unknown"}" aria-hidden="true"></span><div><b>${esc(settings.hostName)}</b><span class="host-state">${esc(hostStatus)}</span><span>NixOS host · ${esc(address)}</span></div></div>
-      <div class="sidebar-links"><a href="/docs/troubleshooting.md">Offline help</a><a href="https://nixlab.dardery.work/" target="_blank" rel="noopener noreferrer">Website ↗</a></div><button class="small" data-action="logout">Sign out</button>
+      <div class="sidebar-links"><a href="/docs/troubleshooting.md">Offline help</a><a href="https://nixus.dardery.work/" target="_blank" rel="noopener noreferrer">Website ↗</a></div><button class="small" data-action="logout">Sign out</button>
     </div>
   </aside>
-  <div class="content"><header class="topbar"><div class="topbar-left"><button class="mobile-nav-toggle" type="button" id="ui-nav-toggle" aria-label="Open navigation" aria-controls="ui-sidebar" aria-expanded="false">☰</button><div class="breadcrumb">NixLab <span class="muted">/</span> <b>${esc(current)}</b></div></div>
+  <div class="content"><header class="topbar"><div class="topbar-left"><button class="mobile-nav-toggle" type="button" id="ui-nav-toggle" aria-label="Open navigation" aria-controls="ui-sidebar" aria-expanded="false">☰</button><div class="breadcrumb">Nixus <span class="muted">/</span> <b>${esc(current)}</b></div></div>
     <div class="top-actions"><button type="button" class="search-trigger" id="ui-search-open" aria-label="Search console pages">⌕ <span>Search pages</span> <kbd>Ctrl K</kbd></button>
       <button class="theme-toggle" id="ui-theme-toggle" aria-label="Toggle light and dark theme" type="button">◐</button>
       <a class="pill" href="/docs/beta.md">${esc(state.status.release?.version || "Development")}</a>
@@ -308,7 +308,7 @@ function storage() {
           )
           .join(
             "",
-          )}</select></label></div><p class="note mono">${esc(m.path || "/srv/nixlab/" + m.name)}</p><label class="toggle"><input type="checkbox" data-mount="${i}" data-mount-key="required" ${m.required ? "checked" : ""} ${m.role !== "data" ? "disabled" : ""}> Required for storage readiness / dependent services</label><label class="toggle"><input type="checkbox" data-mount="${i}" data-mount-key="readOnly" ${m.readOnly ? "checked" : ""} ${m.role !== "data" ? "disabled" : ""}> Read-only data mount</label></div>`,
+          )}</select></label></div><p class="note mono">${esc(m.path || "/srv/nixus/" + m.name)}</p><label class="toggle"><input type="checkbox" data-mount="${i}" data-mount-key="required" ${m.required ? "checked" : ""} ${m.role !== "data" ? "disabled" : ""}> Required for storage readiness / dependent services</label><label class="toggle"><input type="checkbox" data-mount="${i}" data-mount-key="readOnly" ${m.readOnly ? "checked" : ""} ${m.role !== "data" ? "disabled" : ""}> Read-only data mount</label></div>`,
     )
     .join("");
   return (
@@ -317,7 +317,7 @@ function storage() {
       `<div class="table-wrap"><table><thead><tr><th>Device</th><th>Size</th><th>Filesystem</th><th>Mounts</th></tr></thead><tbody>${disks.map((d) => `<tr><td><b>${esc(d.path)}</b><br><code>${esc(d.uuid || d.type)}</code></td><td>${formatBytes(d.size)}</td><td>${esc(d.fstype || "—")}</td><td>${esc((d.mountpoints || []).filter(Boolean).join(", ") || "Not mounted")}</td></tr>`).join("")}</tbody></table></div>`,
       "Read-only discovery",
     ) +
-    `<section class="card section"><div class="card-header"><h2>Declared mounts</h2><button data-action="add-mount">＋ Add filesystem</button></div><p class="section-intro">Mounts use <code>/srv/nixlab/&lt;name&gt;</code>. Guest and backup storage need writable Linux filesystems. Initialized Incus pools require a separate migration before moving them.</p>${rows || '<div class="empty">No additional disks selected. Guest data will use the system filesystem.</div>'}<div class="separator"></div><p class="note">This wizard mounts existing filesystems. Disk partitioning, formatting, encrypted-volume enrollment and ZFS pool creation use a separately reviewed storage workflow. Local backup staging still needs an independent backup destination.</p></section>`
+    `<section class="card section"><div class="card-header"><h2>Declared mounts</h2><button data-action="add-mount">＋ Add filesystem</button></div><p class="section-intro">Mounts use <code>/srv/nixus/&lt;name&gt;</code>. Guest and backup storage need writable Linux filesystems. Initialized Incus pools require a separate migration before moving them.</p>${rows || '<div class="empty">No additional disks selected. Guest data will use the system filesystem.</div>'}<div class="separator"></div><p class="note">This wizard mounts existing filesystems. Disk partitioning, formatting, encrypted-volume enrollment and ZFS pool creation use a separately reviewed storage workflow. Local backup staging still needs an independent backup destination.</p></section>`
   );
 }
 function apps() {
@@ -332,17 +332,17 @@ function security() {
       "Private by default.",
       "Linux password or SSH key access for the host, certificate identities for Incus, and application-only public ingress.",
     ) +
-    `<div class="grid">${card("SSH administration", `<div class="fields">${toggle("Allow SSH password login for non-root Linux accounts", "access.sshPasswordLogin")}${field("Operator SSH public keys", "adminKeys", { type: "textarea", list: true, full: true, placeholder: "ssh-ed25519 AAAA… your-device", hint: "One public key per line. Private keys never belong here." })}</div><p class="note">The operator account can administer the platform through sudo. Existing local accounts remain available from the installed configuration.</p><div class="fields"><label class="field"><span>Incus browser device name</span><input id="certificate-device" maxlength="32" autocomplete="off"></label><label class="field"><span>Bundle passphrase (at least 16 characters)</span><input id="certificate-passphrase" type="password" minlength="16" maxlength="256" autocomplete="new-password"></label></div><input id="certificate-renew" type="hidden"><div class="fields"><label class="field"><span>Current NixLab password</span><input id="certificate-current" type="password" autocomplete="current-password"></label><label class="field"><span><input id="certificate-full-admin" type="checkbox"> Grant unrestricted Incus host administration (advanced)</span></label></div><p class="note">Default: lab project only, 90 days. The encrypted bundle is available once for two minutes in this browser session. Renewal creates a new identity; the previous one remains trusted until you revoke it.</p><button data-action="certificate" ${!state.status.setupComplete ? "disabled" : ""}>Create an Incus browser identity</button><button data-action="certificate-download">Claim pending download</button><button data-action="certificate-list">Refresh browser identities</button><p class="note">Enter your current password above to issue or revoke. Older identities created outside this portal remain managed through Incus.</p><div id="certificate-result" aria-live="polite"></div><div id="certificate-list"></div>`)}</div>`
+    `<div class="grid">${card("SSH administration", `<div class="fields">${toggle("Allow SSH password login for non-root Linux accounts", "access.sshPasswordLogin")}${field("Operator SSH public keys", "adminKeys", { type: "textarea", list: true, full: true, placeholder: "ssh-ed25519 AAAA… your-device", hint: "One public key per line. Private keys never belong here." })}</div><p class="note">The operator account can administer the platform through sudo. Existing local accounts remain available from the installed configuration.</p><div class="fields"><label class="field"><span>Incus browser device name</span><input id="certificate-device" maxlength="32" autocomplete="off"></label><label class="field"><span>Bundle passphrase (at least 16 characters)</span><input id="certificate-passphrase" type="password" minlength="16" maxlength="256" autocomplete="new-password"></label></div><input id="certificate-renew" type="hidden"><div class="fields"><label class="field"><span>Current Nixus password</span><input id="certificate-current" type="password" autocomplete="current-password"></label><label class="field"><span><input id="certificate-full-admin" type="checkbox"> Grant unrestricted Incus host administration (advanced)</span></label></div><p class="note">Default: lab project only, 90 days. The encrypted bundle is available once for two minutes in this browser session. Renewal creates a new identity; the previous one remains trusted until you revoke it.</p><button data-action="certificate" ${!state.status.setupComplete ? "disabled" : ""}>Create an Incus browser identity</button><button data-action="certificate-download">Claim pending download</button><button data-action="certificate-list">Refresh browser identities</button><p class="note">Enter your current password above to issue or revoke. Older identities created outside this portal remain managed through Incus.</p><div id="certificate-result" aria-live="polite"></div><div id="certificate-list"></div>`)}</div>`
   );
 }
 function ingressPage() {
-  return title("", "Public application ingress", "Configure application-only ingress. NixLab, SSH, Cockpit and Incus administration must remain private.")
+  return title("", "Public application ingress", "Configure application-only ingress. Nixus, SSH, Cockpit and Incus administration must remain private.")
     + `<div class="grid">${card("Cloudflare Tunnel", `
       ${toggle("Enable a locally managed tunnel", "tunnel.enable")}
       <div class="fields">${field("Existing tunnel UUID", "tunnel.uuid", {full:true})}
       <label class="field full"><span>Hostname → internal application URL</span>
       <textarea data-ingress spellcheck="false" placeholder='{"app.example.com":"http://GUEST_IP:8080"}'>${esc(JSON.stringify(state.draft.tunnel.ingress, null, 2))}</textarea>
-      <small>Cloudflare owns the account and DNS; NixLab stages the ingress rules.</small></label>
+      <small>Cloudflare owns the account and DNS; Nixus stages the ingress rules.</small></label>
       ${secret("Tunnel-specific credentials JSON", "tunnelCredentials", "Secrets stay outside Git and the Nix store.", true)}</div>
       <p class="note">Do not expose private management services. Protect public apps with their own authentication or Cloudflare Access.</p>
     `)}</div>` + publicApplications();
@@ -449,7 +449,7 @@ function formatBytes(v) {
 function login(message = "") {
   clearInterval(state.timer);
   state.timer = null;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><p>Use your NixLab portal account. Hosts with browser enrollment enabled will show console approval here. If you need a new portal password, use <code>sudo nixlab-admin reset-password</code> from an authorized host terminal.</p><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">SSH and Cockpit use separate identities from the NixLab portal. Verify the local CA fingerprint before signing in. <a href="/ca.crt">Download the management CA</a>.</p></section></main>`;
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><p>Use your Nixus portal account. Hosts with browser enrollment enabled will show console approval here. If you need a new portal password, use <code>sudo nixus-admin reset-password</code> from an authorized host terminal.</p><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">SSH and Cockpit use separate identities from the Nixus portal. Verify the local CA fingerprint before signing in. <a href="/ca.crt">Download the management CA</a>.</p></section></main>`;
   document.querySelector("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const button = e.target.querySelector("button");
@@ -470,7 +470,7 @@ function login(message = "") {
   api("enrollment").then(({available, recoveryRequired}) => {
     if (!form.isConnected) return;
     if (available) showEnrollment();
-    else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixlab-admin reset-password from a private host terminal or restore supported account state.";
+    else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixus-admin reset-password from a private host terminal or restore supported account state.";
   }).catch(() => {});
 }
 
@@ -478,14 +478,14 @@ async function showEnrollment() {
   let bootstrap;
   try { bootstrap = await api("bootstrap"); }
   catch { return login("Enrollment is unavailable. Refresh or use authorized console recovery."); }
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Verify this machine</h1><p>Verify the management CA before entering credentials. Authenticate an existing local Linux administrator whose sudo policy permits a root shell. This does not link Linux and portal passwords.</p><form id="host-proof-form"><label class="field"><span>Linux administrator account</span><input name="hostUsername" autocomplete="username" required maxlength="32"></label><label class="field"><span>Linux administrator password</span><input name="hostPassword" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">Verify host administrator</button></form><details><summary>Use SSH keys or local console approval instead</summary><p>On the host run <code>sudo nixlab-admin approve-enrollment</code> and enter this browser's code at the private prompt. The command prints no password or bearer token.</p><label class="field"><span>Browser approval code</span><input id="bootstrap-code" readonly autocomplete="off"></label></details><p id="bootstrap-status" role="status"></p><form id="enrollment-form"><label class="field"><span>New NixLab administrator username</span><input name="username" autocomplete="username" pattern="[a-z][a-z0-9_-]{0,31}" maxlength="32" required></label><label class="field"><span>New NixLab password</span><input name="password" type="password" autocomplete="new-password" minlength="16" maxlength="256" required></label><p id="enrollment-error" class="error" aria-live="polite"></p><button class="primary" disabled>Create administrator</button></form><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Verify this machine</h1><p>Verify the management CA before entering credentials. Authenticate an existing local Linux administrator whose sudo policy permits a root shell. This does not link Linux and portal passwords.</p><form id="host-proof-form"><label class="field"><span>Linux administrator account</span><input name="hostUsername" autocomplete="username" required maxlength="32"></label><label class="field"><span>Linux administrator password</span><input name="hostPassword" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">Verify host administrator</button></form><details><summary>Use SSH keys or local console approval instead</summary><p>On the host run <code>sudo nixus-admin approve-enrollment</code> and enter this browser's code at the private prompt. The command prints no password or bearer token.</p><label class="field"><span>Browser approval code</span><input id="bootstrap-code" readonly autocomplete="off"></label></details><p id="bootstrap-status" role="status"></p><form id="enrollment-form"><label class="field"><span>New Nixus administrator username</span><input name="username" autocomplete="username" pattern="[a-z][a-z0-9_-]{0,31}" maxlength="32" required></label><label class="field"><span>New Nixus password</span><input name="password" type="password" autocomplete="new-password" minlength="16" maxlength="256" required></label><p id="enrollment-error" class="error" aria-live="polite"></p><button class="primary" disabled>Create administrator</button></form><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
   const form = document.querySelector("#enrollment-form");
   const proof = document.querySelector("#host-proof-form");
   let submitting = false;
   const update = () => {
     document.querySelector("#bootstrap-code").value = bootstrap.approvalCode;
     document.querySelector("#bootstrap-status").textContent = bootstrap.approved
-      ? "This browser is approved. Choose your independent NixLab account."
+      ? "This browser is approved. Choose your independent Nixus account."
       : "Host approval required. Verification expires after ten minutes and cannot be transferred to another browser.";
     form.querySelector("button").disabled = submitting || !bootstrap.approved;
   };
@@ -575,7 +575,7 @@ function countdown() {
 setInterval(countdown, 1000);
 
 if (typeof window !== "undefined") {
-  try { document.documentElement.dataset.theme = localStorage.getItem("nixlab-theme") === "light" ? "light" : "dark"; } catch {}
+  try { document.documentElement.dataset.theme = localStorage.getItem("nixus-theme") === "light" ? "light" : "dark"; } catch {}
   window.addEventListener("popstate", () => { if (state.status) { state.page = selectedHash(); shell(); } });
   window.addEventListener("hashchange", () => { if (state.status && selectedHash() !== state.page) { state.page = selectedHash(); shell(); } });
 }

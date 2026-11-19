@@ -10,10 +10,10 @@ import subprocess
 import sys
 import tempfile
 
-BASE = Path(os.environ.get('NIXLAB_HELPER_METADATA', Path(__file__).parent))
-ENGINE = Path(os.environ.get('NIXLAB_HELPER_ENGINE', '/nonexistent'))
-SCRIPTS = Path(os.environ.get('NIXLAB_HELPER_SCRIPTS', '/nonexistent'))
-STATE = Path('/var/lib/nixlab/helpers')
+BASE = Path(os.environ.get('NIXUS_HELPER_METADATA', Path(__file__).parent))
+ENGINE = Path(os.environ.get('NIXUS_HELPER_ENGINE', '/nonexistent'))
+SCRIPTS = Path(os.environ.get('NIXUS_HELPER_SCRIPTS', '/nonexistent'))
+STATE = Path('/var/lib/nixus/helpers')
 NAME = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}')
 
 
@@ -24,8 +24,8 @@ def catalog():
     known = json.loads((BASE / 'compatibility.json').read_text())
     return [{'id': p.stem, 'title': known.get(p.stem, {}).get('title', p.stem),
              'status': known.get(p.stem, {}).get('status', 'upstream-supported'),
-             'notes': known.get(p.stem, {}).get('notes', 'Not qualified on Nixlab.'),
-             'verifiedOnNixlab': known.get(p.stem, {}).get('status') == 'verified'}
+             'notes': known.get(p.stem, {}).get('notes', 'Not qualified on Nixus.'),
+             'verifiedOnNixus': known.get(p.stem, {}).get('status') == 'verified'}
             for p in sorted((SCRIPTS / 'ct').glob('*.sh')) if not p.is_symlink() and NAME.fullmatch(p.stem)]
 
 
@@ -116,14 +116,14 @@ def main():
     if os.geteuid() != 0: parser.error('Run doctor/run with sudo on the Incus host')
     if args.action == 'run' and (not args.script or not NAME.fullmatch(args.script)
                                 or args.script not in {item['id'] for item in catalog()}):
-        parser.error('Choose a packaged ct script ID from nixlab-helpers list; PVE host/VM scripts are unsupported')
+        parser.error('Choose a packaged ct script ID from nixus-helpers list; PVE host/VM scripts are unsupported')
     if args.action == 'run' and not sys.stdin.isatty(): parser.error('The upstream wizard requires an interactive terminal')
     secure_state()
-    admin_state = Path('/var/lib/nixlab-admin')
+    admin_state = Path('/var/lib/nixus-admin')
     admin_state.mkdir(mode=0o700, exist_ok=True)
     from locking import open_lock
     import fcntl
-    with open_lock('/var/lib/nixlab-admin/mutation.lock') as config_lock, open_lock('/run/lock/nixlab-incus.lock') as incus_lock:
+    with open_lock('/var/lib/nixus-admin/mutation.lock') as config_lock, open_lock('/run/lock/nixus-incus.lock') as incus_lock:
         fcntl.flock(config_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(incus_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         active = json.loads((admin_state / 'active.json').read_text()) if (admin_state / 'active.json').is_file() else {}

@@ -55,7 +55,7 @@ def declarations(preseed):
 
 def baseline(settings):
     owned = rt.read_json(infrastructure.STATE, {'objects': {}, 'declarations': {}})
-    preseed = rt.read_json(Path('/etc/nixlab/owned-infrastructure.json'))
+    preseed = rt.read_json(Path('/etc/nixus/owned-infrastructure.json'))
     if preseed is None:
         # Upgrade from versions that wrote the guard ledger but not the projection.
         preseed = {}
@@ -66,10 +66,10 @@ def baseline(settings):
             if kind == 'profiles': item['project'] = project
             preseed.setdefault(kind, []).append(item)
     return {'settings': settings, 'hostSystem': str(Path('/run/current-system').resolve()),
-            'hostSettingsDigest': digest(rt.read_json(Path('/etc/nixlab/effective-settings.json'), {})),
-            'expectedIncus': bool(rt.read_json(Path('/etc/nixlab/effective-settings.json'), {}).get('ready')),
-            'disks': rt.read_json(Path('/etc/nixlab/effective-disks.json'), {}),
-            'instances': rt.read_json(Path('/etc/nixlab/desired-instances.json'), []), 'preseed': preseed}
+            'hostSettingsDigest': digest(rt.read_json(Path('/etc/nixus/effective-settings.json'), {})),
+            'expectedIncus': bool(rt.read_json(Path('/etc/nixus/effective-settings.json'), {}).get('ready')),
+            'disks': rt.read_json(Path('/etc/nixus/effective-disks.json'), {}),
+            'instances': rt.read_json(Path('/etc/nixus/desired-instances.json'), []), 'preseed': preseed}
 
 
 def api(path, deadline, missing=False):
@@ -100,7 +100,7 @@ def api(path, deadline, missing=False):
 
 def capture(candidate):
     snapshot = {'state': 'absent', 'system': str(Path('/run/current-system').resolve()),
-                'settingsDigest': digest(rt.read_json(Path('/etc/nixlab/effective-settings.json'), {})),
+                'settingsDigest': digest(rt.read_json(Path('/etc/nixus/effective-settings.json'), {})),
                 'owned': rt.read_json(infrastructure.STATE, {'objects': {}, 'declarations': {}}),
                 'objects': {}, 'guests': [], 'resources': {}, 'projects': {}, 'server': {}}
     if not Path('/var/lib/incus/unix.socket').exists():
@@ -243,7 +243,7 @@ def make_plan(before, after, snapshot, unit_changes=None, opaque=False, transiti
         fields = changed_fields(old.get(identity, {}), new.get(identity, {}))
         affected = consumers(identity, snapshot)
         if identity in new:
-            ownership.append({'identity': identity, 'owner': 'NixLab / Nix', 'fields': changed_fields({}, new[identity]), 'consumers': affected})
+            ownership.append({'identity': identity, 'owner': 'Nixus / Nix', 'fields': changed_fields({}, new[identity]), 'consumers': affected})
         if identity in conflicts:
             add('infrastructure', identity, 'ownership-conflict', 'Native edits conflict with source-owned infrastructure.', affected,
                 resolution='Inspect this object in Incus. Restore its declared fields or explicitly review the corresponding Nix declaration; do not delete the ownership ledger.')
@@ -327,12 +327,12 @@ def make_plan(before, after, snapshot, unit_changes=None, opaque=False, transiti
         critical = bool(a and (affected or a.get('role') in ('guests', 'pool') or name in before.get('disks', {})))
         critical &= any(f in ('uuid', 'path', 'fsType', 'role') for f in fields)
         # Direct dependencies from modules/mounts.nix plus services requiring Incus.
-        if a.get('required'): affected.add('nixlab-storage.target')
+        if a.get('required'): affected.add('nixus-storage.target')
         incus_mount = bool(pools) or a.get('role') in ('guests', 'pool')
-        if incus_mount: affected.update(('incus.service', 'incus-preseed.service', 'nixlab-instances.service'))
+        if incus_mount: affected.update(('incus.service', 'incus-preseed.service', 'nixus-instances.service'))
         backup = before['settings'].get('backup', {})
         if backup.get('enable') and (incus_mount or a.get('role') == 'backup' or on_mount(backup.get('stagingDirectory', ''))):
-            affected.add('restic-backups-nixlab.service')
+            affected.add('restic-backups-nixus.service')
         add('mount', name, 'migration-required' if critical else 'restart-required',
             'Backing filesystem changes require reviewing dependent pools, guests and backup services.', sorted(affected), fields,
             resolution='Move dependent data/consumers before remapping or removing this filesystem.' if critical else None)

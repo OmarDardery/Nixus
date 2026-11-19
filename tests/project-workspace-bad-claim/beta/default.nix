@@ -1,1 +1,1 @@
-{ ... }: { nixlab.project.claims = [ "volume/shared" ]; }
+{ ... }: { nixus.project.claims = [ "volume/shared" ]; }

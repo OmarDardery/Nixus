@@ -21,30 +21,30 @@ JOB = 'b' * 32
 
 
 def initialize():
-    if (rt.ROOT / '.nixlab-files.json').exists():
+    if (rt.ROOT / '.nixus-files.json').exists():
         return  # A reboot must not overwrite the pending transaction's state.
-    source = Path(os.environ['NIXLAB_TEST_SITE_SOURCE'])
+    source = Path(os.environ['NIXUS_TEST_SITE_SOURCE'])
     names = ['site.nix', 'site-defaults.nix', 'lib/machine.nix', 'lib/settings-migrations.nix']
     for name in names:
         rt.atomic(rt.ROOT / name, (source / name).read_bytes())
-    settings = json.loads(Path('/etc/nixlab-test-settings.json').read_text())
+    settings = json.loads(Path('/etc/nixus-test-settings.json').read_text())
     rt.write_json(rt.ROOT / 'machine/format.json', {'version': 1})
     rt.write_json(rt.ROOT / 'machine/settings.json', settings)
     rt.write_json(rt.ROOT / 'machine/installation.json', {
         'interface': settings['management']['interface'],
         'trustedCIDRs': settings['management']['trustedCIDRs']})
-    rt.write_json(rt.ROOT / '.nixlab-files.json', names + [
+    rt.write_json(rt.ROOT / '.nixus-files.json', names + [
         'machine/format.json', 'machine/settings.json', 'machine/installation.json'])
     rt.STATE.mkdir(parents=True, mode=0o710, exist_ok=True)
-    os.chown(rt.STATE, 0, grp.getgrnam('nixlab-ui').gr_gid)
+    os.chown(rt.STATE, 0, grp.getgrnam('nixus-ui').gr_gid)
     rt.STATE.chmod(0o710)
     rt.write_json(rt.STATE / 'auth.json', rt.password_record('vm-bootstrap-test-password'),
-                  mode=0o640, group='nixlab-ui')
+                  mode=0o640, group='nixus-ui')
     rt.issue_tls(settings['management']['address'], settings['hostName'])
 
 
 def activate():
-    settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'))
+    settings = rt.read_json(Path('/etc/nixus/effective-settings.json'))
     assert not settings['ready'] and settings['guests']['cidr'] == ''
     directory = rt.STATE / 'jobs' / JOB
     directory.mkdir(parents=True, mode=0o700)
@@ -66,7 +66,7 @@ def activate():
     assert rt.read_json(rt.STATE / 'pending.json')['id'] == JOB
     assert (directory / 'recovery/manifest.json').is_file()
     # Force recovery to happen on the next boot, not a lucky pre-reboot tick.
-    subprocess.run(['systemctl', 'stop', 'nixlab-rollback-guard.timer', 'nixlab-rollback-guard.service'],
+    subprocess.run(['systemctl', 'stop', 'nixus-rollback-guard.timer', 'nixus-rollback-guard.service'],
                    check=True, timeout=30)
     # Deliberately leave access unconfirmed, then simulate an interrupted intent
     # publication. Recovery must restore this from its existing durable manifest.

@@ -70,10 +70,10 @@ def run(manager, interface=None, repair=None):
         if state.get('pending'):
             raise ValueError('Activation recovery is pending; resolve it in the host console first')
         if not state.get('setupComplete'):
-            raise ValueError('Finish initial NixLab setup before running #update')
+            raise ValueError('Finish initial Nixus setup before running #update')
         changes = management_change(manager.effective_settings(), interface, manager.settings()) if interface is not None else {}
         revision = main_revision()
-        print('NixLab main: ' + revision, flush=True)
+        print('Nixus main: ' + revision, flush=True)
         if not changes and repair is None and already_current(manager, state, revision):
             print('Platform source and active system are already current.')
             if state.get('rebootRequired'): print('A kernel reboot is pending; reboot separately when ready.')
@@ -125,7 +125,7 @@ def run(manager, interface=None, repair=None):
         if repair: repair.native_identity()
         report = diagnostics.wait_ready(record.get('effectiveSettings') or manager.effective_settings())
         for check in report['checks']:
-            if check['name'] in ('Nixlab', 'Incus UI', 'Cockpit') and check['ok']:
+            if check['name'] in ('Nixus', 'Incus UI', 'Cockpit') and check['ok']:
                 print(check['name'] + ': ' + check['url'], flush=True)
         # The initiating SSH connection may survive while new logins and
         # portal access are broken. It cannot prove independent reachability.
@@ -141,13 +141,13 @@ def run(manager, interface=None, repair=None):
         except (ValueError, OSError, subprocess.SubprocessError):
             print('Rollback needs attention; inspect the host console before retrying.', file=sys.stderr)
         raise
-    print('NixLab update activated but NOT confirmed; a new management session must confirm before the rollback deadline.', flush=True)
+    print('Nixus update activated but NOT confirmed; a new management session must confirm before the rollback deadline.', flush=True)
     if manager.status().get('rebootRequired'):
         print('A kernel reboot is pending; reboot separately when ready.', flush=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Update installed NixLab from main using guarded build/activation.')
+    parser = argparse.ArgumentParser(description='Update installed Nixus from main using guarded build/activation.')
     parser.add_argument('--interface', help='Use this already-addressed management interface through the reviewed update')
     parser.add_argument('--repair-network', action='store_true',
                         help='At the local console, recover existing Ethernet/bridge connections before the guarded update')
@@ -155,7 +155,7 @@ def main():
     if os.geteuid() != 0 or not Path('/etc/NIXOS').is_file():
         raise ValueError('Run on the installed NixOS host with administrator privileges')
     if not (rt.ROOT / 'flake.nix').is_file() or not rt.machine_path(rt.ROOT, 'settings').is_file():
-        raise ValueError('No installed NixLab configuration found; use #install for initial installation')
+        raise ValueError('No installed Nixus configuration found; use #install for initial installation')
     if not sys.stdin.isatty():
         raise ValueError('#update requires an interactive terminal for activation and access confirmation')
     manager = Manager()

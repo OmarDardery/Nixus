@@ -49,16 +49,16 @@ jobs:
                   return json.loads(subprocess.check_output(
                       ['nix', 'eval', '--json',
                        f'.#nixosConfigurations.{variant}.config.{path}'], text=True))
-              setup_enabled = evaluate('nixlab.settings.setup.enable')
+              setup_enabled = evaluate('nixus.settings.setup.enable')
               nginx_enabled = evaluate('services.nginx.enable')
               print(variant, 'setup.enabled=', setup_enabled,
                     'nginx.enabled=', nginx_enabled, flush=True)
               assert setup_enabled is True, 'The fixture must enable the setup portal'
               assert nginx_enabled is True, 'The port-80 proxy must be enabled'
-              listen = evaluate('services.nginx.virtualHosts.nixlab-entry.listen')
+              listen = evaluate('services.nginx.virtualHosts.nixus-entry.listen')
               assert any(item['port'] == 80 and not item.get('ssl', False)
                          for item in listen), listen
-              entry = evaluate('services.nginx.virtualHosts.nixlab-entry.locations."/".return')
+              entry = evaluate('services.nginx.virtualHosts.nixus-entry.locations."/".return')
               assert entry == '308 https://$host:9440$request_uri', entry
-              assert evaluate('services.nginx.virtualHosts.nixlab-entry.default') is True
+              assert evaluate('services.nginx.virtualHosts.nixus-entry.default') is True
           PY

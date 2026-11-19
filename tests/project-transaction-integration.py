@@ -10,11 +10,11 @@ from pathlib import Path
 import subprocess
 from unittest.mock import patch
 
-BASE = Path("/var/lib/nixlab-project-tx-fixture")
+BASE = Path("/var/lib/nixus-project-tx-fixture")
 BASE.mkdir(mode=0o700, exist_ok=True)
-os.environ["NIXLAB_STATE"] = str(BASE / "state")
-os.environ["NIXLAB_PROJECTS"] = str(BASE / "projects")
-os.environ["NIXLAB_ROOT"] = str(BASE / "root")
+os.environ["NIXUS_STATE"] = str(BASE / "state")
+os.environ["NIXUS_PROJECTS"] = str(BASE / "projects")
+os.environ["NIXUS_ROOT"] = str(BASE / "root")
 
 import runtime as rt
 import project_transactions as tx
@@ -40,9 +40,9 @@ before = {
     "devices": current.get("devices", {}),
     "profiles": current.get("profiles", []),
 }
-incus("config", "set", "printer", "user.nixlab.managed=true", "--project", "alpha")
+incus("config", "set", "printer", "user.nixus.managed=true", "--project", "alpha")
 incus("config", "set", "printer",
-      "user.nixlab.last-applied=" + json.dumps(before, sort_keys=True, separators=(",", ":")),
+      "user.nixus.last-applied=" + json.dumps(before, sort_keys=True, separators=(",", ":")),
       "--project", "alpha")
 
 incus("start", "printer", "--project", "alpha")
@@ -51,20 +51,20 @@ incus("exec", "printer", "--project", "alpha", "--disable-stdin", "--",
 
 manager = tx.ProjectTransactions()
 manager.initialize(
-    "{ outputs = { self }: { nixlabProjects = { schemaVersion = 1; projects = {}; }; }; }",
+    "{ outputs = { self }: { nixusProjects = { schemaVersion = 1; projects = {}; }; }; }",
     json.dumps({"version": 7, "root": "root", "nodes": {"root": {"inputs": {}}}}),
     principal="vm-fixture")
 assert tx.validate_workspace(manager.workspace)["projects"] == {}
 
 def declaration(cpus):
     return (
-        '{ ... }: { nixlab.project.name = "alpha"; '
-        'nixlab.project.enable = true; '
-        'nixlab.project.backend = "incus-native"; '
-        'nixlab.project.incusProject = "alpha"; '
-        'nixlab.project.resources.cpus = ' + str(cpus) + '; '
-        'nixlab.project.resources.memory = "2GiB"; '
-        'nixlab.project.claims = [ "instance/printer" ]; }'
+        '{ ... }: { nixus.project.name = "alpha"; '
+        'nixus.project.enable = true; '
+        'nixus.project.backend = "incus-native"; '
+        'nixus.project.incusProject = "alpha"; '
+        'nixus.project.resources.cpus = ' + str(cpus) + '; '
+        'nixus.project.resources.memory = "2GiB"; '
+        'nixus.project.claims = [ "instance/printer" ]; }'
     )
 
 def queue(review, *, resume=False):

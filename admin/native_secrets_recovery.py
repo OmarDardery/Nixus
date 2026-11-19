@@ -15,11 +15,11 @@ import time
 import native_secrets as ns
 import runtime as rt
 
-MAGIC = b"NIXLAB-SECRETS-RECOVERY-V1"
+MAGIC = b"NIXUS-SECRETS-RECOVERY-V1"
 MAX_KIT = 256 * 1024
 FILES = {
-    "restic-password": Path("/var/lib/nixlab-secrets/restic-password"),
-    "restic-environment": Path("/var/lib/nixlab-secrets/restic-environment"),
+    "restic-password": Path("/var/lib/nixus-secrets/restic-password"),
+    "restic-environment": Path("/var/lib/nixus-secrets/restic-environment"),
 }
 
 
@@ -59,7 +59,7 @@ def _decode(blob, passphrase):
         if not isinstance(envelope, dict) or set(envelope) != {
                 "format", "version", "salt", "nonce", "ciphertext"}:
             raise ValueError
-        if envelope["format"] != "nixlab-recovery-kit" or envelope["version"] != 1:
+        if envelope["format"] != "nixus-recovery-kit" or envelope["version"] != 1:
             raise ValueError
         salt, nonce, cipher = (_un64(envelope[key]) for key in ("salt", "nonce", "ciphertext"))
         if len(salt) != 16 or len(nonce) != 12 or len(cipher) > MAX_KIT:
@@ -107,7 +107,7 @@ class RecoveryKit:
                              sort_keys=True, separators=(",", ":")).encode()
         salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
         cipher = _aes()(_derive(passphrase, salt)).encrypt(nonce, payload, MAGIC)
-        envelope = {"format": "nixlab-recovery-kit", "version": 1,
+        envelope = {"format": "nixus-recovery-kit", "version": 1,
                     "salt": _b64(salt), "nonce": _b64(nonce),
                     "ciphertext": _b64(cipher)}
         serial = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
@@ -118,7 +118,7 @@ class RecoveryKit:
             raise ValueError("Recovery kit self-test failed")
         rt.audit("native-recovery-kit-exported", principal=actor,
                  backupCredentials=sorted(saved), encrypted=True)
-        return {"format": "nixlab-recovery-kit-v1", "encrypted": _b64(serial),
+        return {"format": "nixus-recovery-kit-v1", "encrypted": _b64(serial),
                 "sha256": hashlib.sha256(serial).hexdigest(),
                 "verified": True, "recipient": recipient,
                 "credentialNames": sorted(saved),

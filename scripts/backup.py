@@ -22,8 +22,8 @@ from locking import open_lock
 import incus_client
 import backup_plan
 
-ROOT = Path(os.environ.get('NIXLAB_EXPORT_DIRECTORY', '/var/lib/nixlab/exports'))
-PENDING = Path('/var/lib/nixlab/restart-pending.json')
+ROOT = Path(os.environ.get('NIXUS_EXPORT_DIRECTORY', '/var/lib/nixus/exports'))
+PENDING = Path('/var/lib/nixus/restart-pending.json')
 
 def incus(*args, timeout=43200):
     return incus_client.run(args, timeout, RuntimeError, 'Incus exited {code}')
@@ -256,7 +256,7 @@ def backup(with_recovery=False):
                     seen_volumes.add(identity)
                     volumes.append({'project': namespace, 'pool': pool['name'], 'name': volume['name'],
                                     'archive': artifact('volume', namespace, pool['name'], volume['name'])})
-    settings_file = os.environ.get('NIXLAB_BACKUP_POLICY')
+    settings_file = os.environ.get('NIXUS_BACKUP_POLICY')
     policy = json.loads(Path(settings_file).read_text()) if settings_file else {}
     groups = consistency_groups(guests, volumes, policy.get('groups', []), namespaces)
     excluded = set(policy.get('exclude', []))
@@ -265,7 +265,7 @@ def backup(with_recovery=False):
     skipped, selected = [], []
     for group in groups:
         members = [g['project'] + '/' + g['name'] for g in group['guests']]
-        protected = any(member in excluded or g.get('expanded_config', g.get('config', {})).get('user.nixlab.backup') == 'manual'
+        protected = any(member in excluded or g.get('expanded_config', g.get('config', {})).get('user.nixus.backup') == 'manual'
                         for member, g in zip(members, group['guests']))
         if protected:
             skipped.extend(members)
@@ -274,11 +274,11 @@ def backup(with_recovery=False):
     selected_volumes = [v for group in selected for v in group['volumes']]
     coverage = backup_plan.coverage(guests, volumes, selected_guests, selected_volumes, namespaces)
     if with_recovery:
-        checked = subprocess.run([os.environ['NIXLAB_RECOVERY_TOOL'], 'recovery-coverage'],
+        checked = subprocess.run([os.environ['NIXUS_RECOVERY_TOOL'], 'recovery-coverage'],
                                  check=True, capture_output=True, text=True, timeout=60)
         recovery_coverage = json.loads(checked.stdout)
         if recovery_coverage.get('format') != 1 or recovery_coverage.get('complete') is not True:
-            raise ValueError('Required recovery credentials are missing or unsafe; run nixlab-admin recovery coverage before backup')
+            raise ValueError('Required recovery credentials are missing or unsafe; run nixus-admin recovery coverage before backup')
         coverage['recovery'] = recovery_coverage
     reserve = policy.get('reserveMiB', 1024) * 1024**2
     capacity = staging_plan(selected_guests, selected_volumes, reserve, with_recovery)
@@ -318,7 +318,7 @@ def backup(with_recovery=False):
                     'guests': selected_guests, 'projects': projects, 'pools': pools, 'customVolumes': selected_volumes,
                     'profiles': profiles, 'networks': networks, 'trustedCertificates': trusted, 'serverConfiguration': server}
         if with_recovery:
-            tool = os.environ['NIXLAB_RECOVERY_TOOL']
+            tool = os.environ['NIXUS_RECOVERY_TOOL']
             subprocess.run([tool, 'recovery-backup', str(destination)], check=True)
         checksums = {}
         for path in sorted(destination.glob('*.tar.gz')):
@@ -366,7 +366,7 @@ def generations(root):
 
 if __name__ == '__main__':
     os.umask(0o077)
-    with open_lock('/run/lock/nixlab-incus.lock') as lock:
+    with open_lock('/run/lock/nixus-incus.lock') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             with cancellable():

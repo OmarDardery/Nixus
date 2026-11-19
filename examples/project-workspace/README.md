@@ -1,15 +1,15 @@
-# Independent declarative NixLab workspace (foundation only)
+# Independent declarative Nixus workspace (foundation only)
 
 This example is a **template**, not a deployed workload. Copy its contents to
-`/srv/nixlab/projects/` on a host where that directory is outside the NixLab
+`/srv/nixus/projects/` on a host where that directory is outside the Nixus
 OS checkout. It evaluates Nix source only, and does **not** start Incus instances
 or rebuild NixOS.
 
 ```sh
 # After reviewing the source and before allowing a project to be applied:
-cd /srv/nixlab/projects
+cd /srv/nixus/projects
 nix flake lock --flake path:$PWD
-nix eval --json path:$PWD#nixlabProjects
+nix eval --json path:$PWD#nixusProjects
 ```
 
 Commit or independently back up **flake.lock** with the source. Never copy a
@@ -28,6 +28,6 @@ source size and lock presence before a *future* privileged broker evaluates an
 uploaded workspace. Running `nix eval` manually on untrusted Nix files is
 **not** a security boundary; review and sandbox the input.
 
-**Not yet supported:** browser creation, project revisions, NixLab project
+**Not yet supported:** browser creation, project revisions, Nixus project
 review/apply, Incus Compose and secret injection. These are tracked separately
-in issues #135, #133, #134 and #128.
+in issues OmarDardery/nixlab#135, #45, #46 and #41.

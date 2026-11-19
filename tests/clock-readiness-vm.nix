@@ -1,6 +1,6 @@
 { pkgs }:
 pkgs.testers.runNixOSTest {
-  name = "nixlab-clock-readiness";
+  name = "nixus-clock-readiness";
   globalTimeout = 240;
   nodes.machine = { lib, ... }: {
     system.stateVersion = "26.05";

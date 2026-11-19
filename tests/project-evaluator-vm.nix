@@ -1,6 +1,6 @@
 { pkgs }:
 let
-  fixture = flakeText: pkgs.runCommand "nixlab-project-eval-fixture" { } ''
+  fixture = flakeText: pkgs.runCommand "nixus-project-eval-fixture" { } ''
     mkdir -p "$out"
     cat > "$out/flake.nix" <<'EOF'
 ${flakeText}
@@ -12,28 +12,28 @@ EOF
   good = fixture ''
     {
       outputs = { self }: {
-        nixlabProjects = { schemaVersion = 1; projects = {}; };
+        nixusProjects = { schemaVersion = 1; projects = {}; };
       };
     }
   '';
-  denied = pkgs.runCommand "nixlab-forbidden-project-eval-fixture" { } ''
+  denied = pkgs.runCommand "nixus-forbidden-project-eval-fixture" { } ''
     cp -r ${good} "$out"
     chmod -R u+w "$out"
     mkdir -p "$out/hostile"
     cat > "$out/hostile/default.nix" <<'EOF'
-{ ... }: { nixlab.project.name = builtins.readFile /etc/shadow; }
+{ ... }: { nixus.project.name = builtins.readFile /etc/shadow; }
 EOF
   '';
 in pkgs.testers.runNixOSTest {
-  name = "nixlab-project-evaluator";
+  name = "nixus-project-evaluator";
   globalTimeout = 420;
   nodes.machine = { ... }: {
     system.stateVersion = "26.05";
     virtualisation.memorySize = 2048;
     environment.systemPackages = [ pkgs.python3 pkgs.nix pkgs.systemd ];
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
-    environment.variables.NIXLAB_PROJECT_EVAL_LIB = "${../lib/project-workspace.nix}";
-    environment.variables.NIXLAB_PROJECT_NIXPKGS_LIB = "${pkgs.path}/lib";
+    environment.variables.NIXUS_PROJECT_EVAL_LIB = "${../lib/project-workspace.nix}";
+    environment.variables.NIXUS_PROJECT_NIXPKGS_LIB = "${pkgs.path}/lib";
   };
   testScript = ''
     start_all()

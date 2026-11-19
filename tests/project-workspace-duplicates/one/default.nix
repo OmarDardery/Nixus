@@ -1,1 +1,1 @@
-{ ... }: { nixlab.project.name = "duplicate"; }
+{ ... }: { nixus.project.name = "duplicate"; }

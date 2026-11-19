@@ -76,7 +76,7 @@ reconciliation plan**. Changes written after cutover do not magically return to 
 Do not promise zero data loss from an OS rollback. Retire the original backups/host only after a
 sufficient observation period and a successful independent restore drill.
 
-| Proxmox habit | Nixlab equivalent |
+| Proxmox habit | Nixus equivalent |
 |---|---|
 | `pct list`, `qm list` | `homelab list` / `incus list --project lab` |
 | `pct exec ID -- CMD` | `homelab exec ALIAS -- CMD` |
@@ -101,7 +101,7 @@ the version number. The broker fails clearly when Nix is unavailable.
 
 ## Arcane retirement: safe transition to Incus-only projects
 
-As of the new platform direction, **fresh NixLab installations do not create
+As of the new platform direction, **fresh Nixus installations do not create
 a Docker/Arcane applications VM**, even if the installer records Compose
 workloads as a future requirement. The latter are intended for independently
 declarative Incus/Incus Compose projects after compatibility qualification.
@@ -109,7 +109,7 @@ The old `apps` settings exist only to keep legacy hosts readable while a
 separately reviewed migration is built.
 
 **Existing `lab/apps` is not deleted or stopped by changing
-`apps.enable = false`.** NixLab no longer emits the old "stop apps" reconciliation
+`apps.enable = false`.** Nixus no longer emits the old "stop apps" reconciliation
 sentinel for disabled apps. The legacy VM's disk, Docker named volumes, Arcane
 database, encryption key, Compose definitions and runtime secrets remain
 physical data under Incus until the operator explicitly migrates or archives them.
@@ -135,12 +135,12 @@ Before cutover, create an independent, encrypted off-host recovery point with
 actual filesystem/database consistency. Use `incus export` for the powered-off
 VM plus any independent Incus custom volumes; Docker named volumes and bind
 mounts inside its disk require their own documented consistency/restore checks.
-NixLab's current grouped restic backup may cover only declared/observed
+Nixus's current grouped restic backup may cover only declared/observed
 volumes, so inspect its coverage report rather than assuming every service
 is protected.
 
 New Incus Compose support, SOPS/age secret migration and automatic project-data
-backups are tracked by #127/#133/#134/#128/#129/#130. **No Arcane volume is
+backups are tracked by OmarDardery/nixlab#127/#45/#46/#41/#42/#43. **No Arcane volume is
 automatically converted to an Incus Compose volume**. Restore each application
 from reviewed configuration, its encrypted secret material and separately
 validated state. Test the new endpoint before switching LAN DNS or Cloudflare

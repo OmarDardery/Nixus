@@ -3,10 +3,10 @@ let
   inherit (lib) mkOption types;
   strings = types.attrsOf types.str;
   declared = site.instances ++ map (i: lib.filterAttrs (_: value: value != null) i)
-    (builtins.attrValues config.nixlab.incus.instances);
+    (builtins.attrValues config.nixus.incus.instances);
   identities = map (i: "${i.project}/${i.name}") declared;
 in {
-  options.nixlab.incus.instances = mkOption {
+  options.nixus.incus.instances = mkOption {
     default = { };
     description = "Source-owned named instances; legacy UI inventory remains supported.";
     type = types.attrsOf (types.submodule ({ name, ... }: {
@@ -23,7 +23,7 @@ in {
       };
     }));
   };
-  options.nixlab.incus.desiredInstances = mkOption {
+  options.nixus.incus.desiredInstances = mkOption {
     type = types.listOf types.attrs;
     readOnly = true;
     description = "Internal evaluated reconciliation input, shared with impact planning.";

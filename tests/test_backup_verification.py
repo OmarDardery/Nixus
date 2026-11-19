@@ -16,7 +16,7 @@ from credential_fixtures import SECRETS, assert_public_clean
 
 NOW = 1800000000
 CLOCK = {'state': 'synchronized', 'evidenceWarning': False}
-REPOSITORY = 'sftp:backup@example.invalid:/nixlab'
+REPOSITORY = 'sftp:backup@example.invalid:/nixus'
 
 
 class VerificationTests(unittest.TestCase):

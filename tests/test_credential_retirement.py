@@ -104,7 +104,7 @@ class RetirementTests(unittest.TestCase):
             self.assertFalse((rt.STATE / 'setup-password').exists())
             self.assertTrue(accounts.matches('admin', SECRETS['operator']))
             self.assertFalse(accounts.matches('admin', SECRETS['setup']))
-            self.assertTrue(auth.get('nixlab_session=' + token) is None, 'Old session remained valid')
+            self.assertTrue(auth.get('nixus_session=' + token) is None, 'Old session remained valid')
             assert_public_clean(self, result)
 
     def test_failed_replacement_write_preserves_legacy_access(self):
@@ -137,7 +137,7 @@ class RetirementTests(unittest.TestCase):
 
     def test_update_entrypoint_does_not_echo_domain_errors(self):
         output = io.StringIO()
-        with patch.object(sys, 'argv', ['nixlab-update']), patch.object(os, 'umask'), \
+        with patch.object(sys, 'argv', ['nixus-update']), patch.object(os, 'umask'), \
                 patch.object(os, 'geteuid', side_effect=OSError(SECRETS['staged'])), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             with self.assertRaises(SystemExit) as stopped:
@@ -187,7 +187,7 @@ main.reset_portal_password()
             rt.atomic(root / 'setup-password', SECRETS['setup'])
             master, slave = pty.openpty()
             process = subprocess.Popen([sys.executable, '-c', code], stdin=slave, stdout=slave, stderr=slave,
-                                       env=os.environ | {'NIXLAB_STATE': folder, 'NIXLAB_TEST': '1',
+                                       env=os.environ | {'NIXUS_STATE': folder, 'NIXUS_TEST': '1',
                                                          'PYTHONPATH': str(BASE / 'admin') + os.pathsep + str(BASE / 'scripts')})
             output = bytearray()
             try:

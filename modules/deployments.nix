@@ -1,7 +1,7 @@
 { config, lib, pkgs, site, ... }:
 let
   inherit (lib) mkOption types;
-  cfg = config.nixlab.deployment;
+  cfg = config.nixus.deployment;
   targetType = types.submodule ({ name, ... }: {
     options = {
       name = mkOption { type = types.strMatching "[A-Za-z0-9][A-Za-z0-9_.-]{0,62}"; default = name; };
@@ -19,7 +19,7 @@ let
   targets = cfg.targets;
   manifest = lib.mapAttrs (key: target:
     let probe = pkgs.writeShellApplication {
-      name = "nixlab-guest-health";
+      name = "nixus-guest-health";
       runtimeInputs = [ pkgs.systemd pkgs.curl ];
       text = lib.concatMapStringsSep "\n" (unit: "systemctl is-active --quiet ${lib.escapeShellArg unit}") target.healthUnits
         + "\n" + lib.concatMapStringsSep "\n" (url: "test \"$(curl --fail --silent --output /dev/null --write-out '%{http_code}' --max-time 5 --proto '=http' --noproxy '*' ${lib.escapeShellArg url})\" = 200") target.httpChecks;
@@ -27,15 +27,15 @@ let
       inherit (target) name project dependsOn healthUnits healthTimeout maxAttempts restartPolicy rollbackOnFailure;
       system = toString target.system; probe = toString probe; httpChecks = builtins.length target.httpChecks;
     }) targets;
-  declared = map (i: "${i.project}/${i.name}") config.nixlab.incus.desiredInstances;
+  declared = map (i: "${i.project}/${i.name}") config.nixus.incus.desiredInstances;
 in {
-  options.nixlab.deployment = {
+  options.nixus.deployment = {
     targets = mkOption { type = types.attrsOf targetType; default = { }; };
     manifest = mkOption { type = types.attrs; readOnly = true; internal = true; };
   };
   config = {
-    nixlab.deployment.manifest = manifest;
-    environment.etc."nixlab/deployments.json".text = builtins.toJSON manifest;
+    nixus.deployment.manifest = manifest;
+    environment.etc."nixus/deployments.json".text = builtins.toJSON manifest;
     assertions = [
       { assertion = builtins.length (builtins.attrNames targets) <= 16; message = "Declare at most 16 guest deployment targets."; }
       { assertion = lib.all (key: builtins.match "[a-z][a-z0-9-]{0,31}" key != null) (builtins.attrNames targets); message = "Deployment keys must be short lowercase names."; }

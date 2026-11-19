@@ -5,15 +5,15 @@
   "adminKeys": [],
   "backup": {
     "enable": false,
-    "environmentFile": "/var/lib/nixlab-secrets/restic-environment",
+    "environmentFile": "/var/lib/nixus-secrets/restic-environment",
     "exclude": [],
     "groups": [],
     "initialize": false,
-    "passwordFile": "/var/lib/nixlab-secrets/restic-password",
+    "passwordFile": "/var/lib/nixus-secrets/restic-password",
     "repository": "",
     "reserveMiB": 1024,
     "schedule": "*-*-* 03:00:00",
-    "stagingDirectory": "/var/lib/nixlab/exports"
+    "stagingDirectory": "/var/lib/nixus/exports"
   },
   "cockpit": {
     "enable": false,
@@ -43,7 +43,7 @@
   "helpers": {
     "enable": true
   },
-  "hostName": "nixlab",
+  "hostName": "nixus",
   "instances": [],
   "maintenance": {
     "laptopMode": false,
@@ -100,7 +100,7 @@
   },
   "system": "x86_64-linux",
   "tunnel": {
-    "credentialsFile": "/var/lib/nixlab-secrets/cloudflared.json",
+    "credentialsFile": "/var/lib/nixus-secrets/cloudflared.json",
     "enable": false,
     "ingress": {},
     "uuid": ""

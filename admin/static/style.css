@@ -269,7 +269,7 @@ details.card[open] > summary { margin-bottom: 16px; }
 }
 
 
-/* NixLab host console redesign. No network fonts or frontend dependencies. */
+/* Nixus host console redesign. No network fonts or frontend dependencies. */
 :root{
  color-scheme:dark; --bg:#0e1116;--panel:#171c24;--panel2:#1d242e;--panel3:#242d39;
  --text:#f1f3f5;--muted:#adb6c3;--subtle:#8996a6;--line:#303947;

@@ -9,7 +9,7 @@ import stat
 
 from project_workspace import validate_workspace, WorkspaceError
 
-ROOT = Path(os.environ.get("NIXLAB_PROJECTS", "/srv/nixlab/projects"))
+ROOT = Path(os.environ.get("NIXUS_PROJECTS", "/srv/nixus/projects"))
 
 
 def overview(root=None):

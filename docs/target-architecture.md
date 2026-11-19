@@ -1,11 +1,11 @@
-# NixLab target: declarative projects, encrypted secrets and recoverable Incus data
+# Nixus target: declarative projects, encrypted secrets and recoverable Incus data
 
 **Decision (2026-11-17). This is a proposed implementation contract, not an
 already shipped feature.** The goal is a reproducible single-host homelab in
 which every managed project can be reconstructed from reviewed Nix declarations,
 its SOPS-encrypted configuration and independently backed-up persistent data.
 
-NixLab keeps exactly three management surfaces: **NixLab Web UI** for declarative
+Nixus keeps exactly three management surfaces: **Nixus Web UI** for declarative
 source, change review, secrets, backup and recovery; **Incus + native Incus UI**
 for containers, OCI applications, VMs, projects, networks, devices and volumes;
 and **Cockpit** for underlying Linux host administration. NixOS remains the
@@ -14,8 +14,8 @@ adapter backed by Incus, not a Docker daemon or additional platform control
 plane.
 
 **Fully retire Arcane and the dedicated Docker applications VM from the final
-architecture.** This is tracked by [#126](https://github.com/OmarDardery/nixlab/issues/126).
-Current NixLab still contains both. An upgrade must preserve existing `lab/apps`
+architecture.** This is tracked by [#40](https://github.com/OmarDardery/Nixus/issues/40).
+Current Nixus still contains both. An upgrade must preserve existing `lab/apps`
 VM disks, named volumes, Compose files, credentials and data; migration is
 explicit and never a destructive cleanup step.
 
@@ -27,13 +27,13 @@ files are recursively assembled into an aggregated typed inventory. An optional
 nested flake is an explicit resource, **not** an automatically applied host module.
 
 ```text
-/etc/nixos/                              # NixLab NixOS host source, boot, host policy
+/etc/nixos/                              # Nixus NixOS host source, boot, host policy
   flake.nix, flake.lock
   machine/modules/                      # Explicit, privileged host-only modules
 
-/srv/nixlab/
+/srv/nixus/
   projects/
-    flake.nix                           # Workspace entrypoint, exposes nixlabProjects
+    flake.nix                           # Workspace entrypoint, exposes nixusProjects
     flake.lock                          # Pinned shared project evaluator dependencies
     .sops.yaml                          # Public age recipients and SOPS creation rules
     backups.nix                         # Web UI generated, reviewed backup policy
@@ -64,9 +64,9 @@ nested flake is an explicit resource, **not** an automatically applied host modu
     adguard/
   backups-local/                        # Temporary local staging, not sole copy
 
-/var/lib/nixlab/                         # Durable transactions/revisions/status
-/var/lib/nixlab/keys/projects.agekey     # Canonical root-owned age identity, 0400
-/var/lib/nixlab-secrets/                 # Protected runtime/remote/backup material
+/var/lib/nixus/                         # Durable transactions/revisions/status
+/var/lib/nixus/keys/projects.agekey     # Canonical root-owned age identity, 0400
+/var/lib/nixus-secrets/                 # Protected runtime/remote/backup material
 /var/lib/incus/                          # Incus-managed data in existing pools
 ```
 
@@ -85,7 +85,7 @@ Administrator approval covers exact reviewed bytes and resulting impact.
 
 ## 2. Deterministic, typed automatic project discovery
 
-The workspace flake exposes `nixlabProjects`, an evaluated JSON-serializable
+The workspace flake exposes `nixusProjects`, an evaluated JSON-serializable
 desired-state inventory. Discovery rules:
 
 1. At the top level, discover immediate project directories having
@@ -105,7 +105,7 @@ desired-state inventory. Discovery rules:
    in the Web UI; it is **not auto-deployed** without review.
 
 ```sh
-nix eval --json path:/srv/nixlab/projects#nixlabProjects
+nix eval --json path:/srv/nixus/projects#nixusProjects
 ```
 
 The explicit `path:` reference can include newly created files without Git
@@ -116,9 +116,9 @@ The source must be snapshotted for approval to avoid eval-versus-apply races.
 Illustrative project declaration (**not an implemented module**):
 
 ```nix
-# /srv/nixlab/projects/aiostreams/default.nix
+# /srv/nixus/projects/aiostreams/default.nix
 { ... }: {
-  nixlab.project = {
+  nixus.project = {
     name = "aiostreams";
     enable = true;
     backend = "incus-compose";
@@ -132,12 +132,12 @@ Illustrative project declaration (**not an implemented module**):
 Use **independent project revision deployments**, not `nix profile add`.
 A Nix user profile manages package outputs and is not an Incus service/volume/
 device reconciler. `nix build path:...#...` may produce reviewed artifacts;
-a separate NixLab broker operation executes the Incus changes. Project
+a separate Nixus broker operation executes the Incus changes. Project
 updates **never** implicitly run `nixos-rebuild`.
 
 ## 3. Incus ownership and deployment
 
-Default **one NixLab project ↔ one Incus project**, using independent names,
+Default **one Nixus project ↔ one Incus project**, using independent names,
 profiles, volumes and networks where Incus supports project isolation. The
 Incus project feature flags/restrictions need explicit initialization and
 qualification: a project name by itself does not confer complete security
@@ -148,7 +148,7 @@ Each managed resource has exactly **one** deployment owner:
 
 | Owner | Backend | May change |
 |---|---|---|
-| NixLab native reconciler | `incus-native` | Declared system containers, KVM VMs, resources, devices, profiles and storage |
+| Nixus native reconciler | `incus-native` | Declared system containers, KVM VMs, resources, devices, profiles and storage |
 | Incus Compose | `incus-compose` | Declared OCI services, project-local Compose networks and volumes |
 | Incus operator | `native-unmanaged` | Anything not explicitly adopted into the above |
 
@@ -171,7 +171,7 @@ build requirements, network APIs, authentication and failures before release.
 3. Show explicit effects: create/change/stop/restart, data migration, outage,
    secret rotation and unresolved ownership/drift conflicts.
 4. Require reauthentication and approve a fixed candidate revision using the
-   **existing** NixLab guarded root broker, not browser-provided raw commands.
+   **existing** Nixus guarded root broker, not browser-provided raw commands.
 5. Apply only whitelisted operations in dependency order, verify intended health
    and persist exact source and observed deployment revision.
 6. On errors, report partial work and resume safely. Configuration rollback
@@ -187,7 +187,7 @@ Maintain the existing physical/USB reconnect and data-loss qualification gates.
 The install Web UI offers two mutually exclusive choices:
 
 - **New installation:** generate one cryptographically random age identity at
-  `/var/lib/nixlab/keys/projects.agekey`, atomically, root-owned mode 0400.
+  `/var/lib/nixus/keys/projects.agekey`, atomically, root-owned mode 0400.
   Record only the **public** recipient in `.sops.yaml`.
 - **Restore installation:** import and verify the previously saved age identity
   **before** decrypting/activating restored project files.
@@ -233,21 +233,21 @@ automatically discovers managed projects added later. Source and mutable data
 are distinct protection classes.
 
 ```nix
-# Illustrative API, NOT currently a NixLab module
+# Illustrative API, NOT currently a Nixus module
 {
-  nixlab.backups = {
+  nixus.backups = {
     enable = true;
     schedule = "daily";
 
     configuration.github = {
       enable = true;
-      repository = "git@github.com:USER/nixlab-config.git";
+      repository = "git@github.com:USER/nixus-config.git";
       sshKeySecret = "github-deploy-key";
     };
 
     data.restic = {
       enable = true;
-      repository = "rclone:gdrive:nixlab-backups";
+      repository = "rclone:gdrive:nixus-backups";
       passwordSecret = "restic-password";
     };
 
@@ -274,7 +274,7 @@ Nix store, caches and OS installation files from Git.
 | Local Incus snapshots or staging | Fast local recovery point/immutable staging | Off-host disaster recovery by itself |
 | Independently stored encrypted recovery kit | Key/credential material to unlock source+data | Application state until combined with restic |
 
-Prefer **reusing** NixLab's existing grouped Incus exports, atomic generations,
+Prefer **reusing** Nixus's existing grouped Incus exports, atomic generations,
 consistency/downtime and restic verification. Avoid a second backup engine,
 persistent database or scheduler. To honor **project changes do not rebuild
 the host**, install a stable host backup runner/timer once and let its privileged
@@ -313,7 +313,7 @@ excluded workloads remain **partially covered**, never healthy/full. Default
 source discovery cannot infer database consistency; require per-project
 declarations and visible warnings.
 
-## 6. NixLab Web UI
+## 6. Nixus Web UI
 
 Web UI sections: **Projects, Backups, Host settings and Recovery**. Projects
 are editable/declarative, but deployment is always a reviewed action.
@@ -332,18 +332,18 @@ are editable/declarative, but deployment is always a reviewed action.
   preview, project/data coverage, local/Git/off-host status, restore drills and
   independent recovery-kit export/import.
 - **Deep host/guest operations**: links to Cockpit and native Incus UI, rather
-  than duplicating those complete interfaces in NixLab.
+  than duplicating those complete interfaces in Nixus.
 
-All browser operations use the existing authenticated NixLab backend, short
+All browser operations use the existing authenticated Nixus backend, short
 transactions, role checks/CSRF and root-only broker, never an Incus socket or
 unbounded shell passed from the browser.
 
 ## 7. Fresh-host disaster recovery
 
-Recovery from an independent copy must not need functioning previous NixLab
+Recovery from an independent copy must not need functioning previous Nixus
 control plane, GitHub SSH service or the failed host itself.
 
-1. Install ordinary NixOS, then initialize NixLab in **recovery mode**, with
+1. Install ordinary NixOS, then initialize Nixus in **recovery mode**, with
    no automatic project/Incus application activation.
 2. Import the independently stored encrypted recovery kit, unlock and verify
    original age identity + restic access before attempted project decryption.
@@ -360,24 +360,24 @@ control plane, GitHub SSH service or the failed host itself.
 
 ## 8. Implementation order and hard gates
 
-1. [#127](https://github.com/OmarDardery/nixlab/issues/127):
+1. [OmarDardery/nixlab#127](https://github.com/OmarDardery/nixlab/issues/127):
    top-level workspace flake, recursive typed project discovery and immutable sources.
-2. [#135](https://github.com/OmarDardery/nixlab/issues/135):
+2. [OmarDardery/nixlab#135](https://github.com/OmarDardery/nixlab/issues/135):
    project-only review/apply/recovery transactions without host rebuild.
-3. [#133](https://github.com/OmarDardery/nixlab/issues/133):
+3. [#45](https://github.com/OmarDardery/Nixus/issues/45):
    exclusive project-scoped Native Incus/Incus Compose reconciliation.
-4. [#134](https://github.com/OmarDardery/nixlab/issues/134):
+4. [#46](https://github.com/OmarDardery/Nixus/issues/46):
    install/import age identity, SOPS project secrets and scoped delivery.
-5. [#128](https://github.com/OmarDardery/nixlab/issues/128):
+5. [#41](https://github.com/OmarDardery/Nixus/issues/41):
    Web UI project/Nix/Compose/secrets/deployment workflows.
-6. [#129](https://github.com/OmarDardery/nixlab/issues/129):
+6. [#42](https://github.com/OmarDardery/Nixus/issues/42):
    one-time backup wizard, source/data discovery and existing restic integration;
-   [#130](https://github.com/OmarDardery/nixlab/issues/130):
+   [#43](https://github.com/OmarDardery/Nixus/issues/43):
    GitHub deploy keys and Google Drive rclone storage.
-7. [#126](https://github.com/OmarDardery/nixlab/issues/126):
+7. [#40](https://github.com/OmarDardery/Nixus/issues/40):
    final Arcane retirement after **pre-cutover** proven project, data and key
    backup/restore trials; preserve legacy workloads until explicit migration.
-8. [#131](https://github.com/OmarDardery/nixlab/issues/131):
+8. [#44](https://github.com/OmarDardery/Nixus/issues/44):
    final exact-revision Arcane-free new-install, physical-host and independent
    restore qualification **after** the runtime removal.
 

@@ -10,7 +10,7 @@ const controls = {
   "native-recovery-export-admin": {value: "admin-test-password"},
   "native-recovery-backup": {checked: true},
   "native-recovery-kit-file": {files: [{
-    size: 65, arrayBuffer: async () => Buffer.from('{"format":"nixlab-recovery-kit","version":1}')
+    size: 65, arrayBuffer: async () => Buffer.from('{"format":"nixus-recovery-kit","version":1}')
   }]},
   "native-recovery-import-passphrase": {value: "offline-recovery-test-passphrase"},
   "native-recovery-import-admin": {value: "admin-test-password"},
@@ -19,7 +19,7 @@ const controls = {
   "native-reindex-ack": {checked: true},
 };
 const calls = [], downloads = [];
-const encrypted = Buffer.from('{"format":"nixlab-recovery-kit","version":1}');
+const encrypted = Buffer.from('{"format":"nixus-recovery-kit","version":1}');
 const ctx = vm.createContext({
   document: {getElementById: id => controls[id] || null},
   Uint8Array, TextEncoder, atob, btoa, console,
@@ -56,7 +56,7 @@ async function main() {
   assert.equal(calls[0].body.current, "admin-test-password");
   assert.equal(calls[0].body.includeBackup, true);
   assert.equal(downloads.length, 1);
-  assert.equal(downloads[0].name, "nixlab-project-secrets-recovery.json");
+  assert.equal(downloads[0].name, "nixus-project-secrets-recovery.json");
   assert.deepEqual(downloads[0].data, encrypted);
   for (const id of ["native-recovery-export-passphrase", "native-recovery-export-confirm", "native-recovery-export-admin"])
     assert.equal(controls[id].value, "", "Sensitive browser control must clear: " + id);

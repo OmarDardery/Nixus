@@ -13,7 +13,7 @@ const project = read("incus-projects.js");
 assert.match(project, /guest-network/);
 assert.match(project, /crypto\.subtle\.digest\("SHA-256"/);
 assert.match(project, /webkitdirectory/);
-assert.match(project, /No file contents are sent to NixLab/);
+assert.match(project, /No file contents are sent to Nixus/);
 assert.match(project, /project-import\/prepare/);
 assert.match(project, /project-import\/chunk/);
 assert.match(project, /project-import\/finish/);

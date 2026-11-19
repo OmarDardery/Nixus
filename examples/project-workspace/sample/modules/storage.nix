@@ -1,3 +1,3 @@
 { ... }: {
-  nixlab.project.claims = [ "volume/sample-data" ];
+  nixus.project.claims = [ "volume/sample-data" ];
 }

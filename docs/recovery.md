@@ -10,7 +10,7 @@ confirmation must originate from an interactive SSH/Cockpit session opened
 console, the operator may acknowledge local access directly. The HTTPS portal
 requires a new post-activation login from a non-loopback client. If the new
 address, certificate or login is unusable, do not confirm; request
-`sudo nixlab-admin config rollback TRANSACTION_ID` at the host console or let
+`sudo nixus-admin config rollback TRANSACTION_ID` at the host console or let
 the guard expire. After interrupted activation, re-running the original installer
 or updater resumes/rechecks the same pending job. A stopped or missing worker
 and an unknown status are not authorization to create a competing transaction.
@@ -29,14 +29,14 @@ the apps VM, Arcane or an application identity service.
 
 ## Scheduled repository verification
 
-When restic backups are enabled, the existing `nixlab-backup-check.service` has a
+When restic backups are enabled, the existing `nixus-backup-check.service` has a
 persistent Sunday 05:00 timer with up to 30 minutes of jitter. It defaults to
 metadata checks, which validate repository structure and indexes but **do not read
 every data block**. A full repository read is available through the same service:
 
 ```nix
 { ... }: {
-  nixlab.backupVerification = {
+  nixus.backupVerification = {
     enable = true;
     mode = "full";
     schedule = "Sun *-*-* 05:00:00";
@@ -47,7 +47,7 @@ every data block**. A full repository read is available through the same service
 Review this module through the existing file configuration workflow. These are
 typed NixOS options, not a second mutable settings file. The portal displays the
 configured schedule, actual last-check scope and outcome; the existing **Check
-restic repository** action and `sudo nixlab-admin guests backup-check` run the
+restic repository** action and `sudo nixus-admin guests backup-check` run the
 same service. Setting `enable=false` disables scheduling while preserving manual
 checks. Changing policy lets an active read finish; its evidence retains its
 actual scope and the next run uses the new policy.
@@ -60,7 +60,7 @@ avoid long backups and rerun after resolving the cause. Existing service-failure
 webhooks also cover checks when notifications are configured; full Alertmanager
 routing and restore-drill qualification remain separate work.
 
-The root-only `/var/lib/nixlab/backup-verification.json` stores the latest result
+The root-only `/var/lib/nixus/backup-verification.json` stores the latest result
 and previous success. Root-only target fingerprints prevent evidence for an old
 repository from qualifying a new one; fingerprints and repository URLs are not
 public status fields. Raw restic stdout/stderr is discarded because remote errors
@@ -186,10 +186,10 @@ does **not** stop a running guest or export separately attached custom volumes a
 has live/crash-consistency limitations. For the full scheduled path:
 
 ```console
-sudo systemctl start restic-backups-nixlab
-sudo journalctl -u restic-backups-nixlab -u nixlab-backup-failed --since today
+sudo systemctl start restic-backups-nixus
+sudo journalctl -u restic-backups-nixus -u nixus-backup-failed --since today
 sudo systemctl list-timers '*restic*'
-sudo cat /var/lib/nixlab/restart-pending.json
+sudo cat /var/lib/nixus/restart-pending.json
 ```
 
 A network/credential/prune error means the job is failed. Existing good restic snapshots are
@@ -243,22 +243,22 @@ consistency require separate qualification before relying on them.
 
 1. Install fresh NixOS on the replacement machine with console recovery available.
    Preserve its own boot/hardware configuration. Use the normal single-command
-   NixLab installer, initially selecting containers only and no scheduled backups
+   Nixus installer, initially selecting containers only and no scheduled backups
    or public ingress. Do not import old guest declarations yet.
 2. Before enabling recovered services, add this reviewed machine module to the
-   installed source (`/var/lib/nixlab/config/machine/modules/recovery.nix` on the
+   installed source (`/var/lib/nixus/config/machine/modules/recovery.nix` on the
    modern layout), then build/review/activate through the usual host workflow:
 
    ```nix
-   { ... }: { nixlab.recovery.enable = true; }
+   { ... }: { nixus.recovery.enable = true; }
    ```
 
    This disables instance reconciliation, apps onboarding, backup/restart timers
    and configured Cloudflare ingress. Verify the resulting marker and units:
 
    ```sh
-   test "$(cat /etc/nixlab/recovery-mode)" = 1
-   systemctl is-enabled nixlab-instances.service nixlab-apps-onboarding.service
+   test "$(cat /etc/nixus/recovery-mode)" = 1
+   systemctl is-enabled nixus-instances.service nixus-apps-onboarding.service
    ip -br link
    ls -l /dev/disk/by-uuid
    incus storage list
@@ -303,16 +303,16 @@ consistency require separate qualification before relying on them.
 5. Plan, inspect and explicitly confirm the imports:
 
    ```sh
-   sudo nixlab-admin recovery plan /root/offhost/generations/GENERATION --mappings /root/recovery-mappings.json
-   sudo nixlab-admin recovery status
-   sudo nixlab-admin recovery resume --confirm
+   sudo nixus-admin recovery plan /root/offhost/generations/GENERATION --mappings /root/recovery-mappings.json
+   sudo nixus-admin recovery status
+   sudo nixus-admin recovery resume --confirm
    ```
 
    Planning hashes every archive, checks both recovery kits and records source
    identity and destination pool configuration. No Incus resource is changed by
-   planning. The new journal is `/var/lib/nixlab-admin/replacement-recovery.json`;
+   planning. The new journal is `/var/lib/nixus-admin/replacement-recovery.json`;
    source and credentials are staged under its reported recovery ID at
-   `/var/lib/nixlab-admin/recovery-ID/{config,secrets}`. These files stay root-only.
+   `/var/lib/nixus-admin/recovery-ID/{config,secrets}`. These files stay root-only.
    Compare source files and restore reviewed credentials individually, with their
    required owners/modes; never copy old hardware configuration or secrets over
    the replacement wholesale. Metadata/trust/network definitions remain available
@@ -322,7 +322,7 @@ consistency require separate qualification before relying on them.
    An interruption after volume import but before ownership was recorded leaves
    an **uncertain import**, not permission to overwrite it. Inspect that stopped
    target, verify it against the archive, and only then explicitly set its
-   `user.nixlab.recovery-id` to the journal ID using native Incus before resuming.
+   `user.nixus.recovery-id` to the journal ID using native Incus before resuming.
    If it cannot be verified, retain it and investigate; do not delete user data to
    make retry pass. No existing unmarked object is automatically adopted.
 7. Validate restored data using Incus exec/console on the isolated targets.
@@ -342,13 +342,13 @@ consistency require separate qualification before relying on them.
    Check installed `incus move --help` and `incus storage volume move --help` for
    backend restrictions. Preserve the recovery ID and imported instance UUID.
    Review desired declarations against these restored objects, including explicit
-   ownership adoption if managing them through NixLab. Do not enable onboarding
+   ownership adoption if managing them through Nixus. Do not enable onboarding
    against unreviewed credentials or an old guest OS target.
 9. Release the automation guard only after the application-data drill and reviewed
    source inventory match the restored identities:
 
    ```sh
-   sudo nixlab-admin recovery release --confirm --data-verified
+   sudo nixus-admin recovery release --confirm --data-verified
    ```
 
    Every desired guest that could be created must be among the recovered original
@@ -364,7 +364,7 @@ consistency require separate qualification before relying on them.
    status (which intentionally includes private workload/hardware mappings):
 
    ```sh
-   sudo nixlab-admin recovery export-report > recovery.json
+   sudo nixus-admin recovery export-report > recovery.json
    ```
 
    Inspect it before sharing. It contains source/input identity, coverage,
@@ -376,7 +376,7 @@ returning to the known replacement host configuration. There is no automatic
 delete/overwrite cleanup. The CLI does not claim arbitrary backend, device,
 custom-module secret or application-consistency coverage. Its two-node CI drill
 uses synthetic configuration kits; an independently supplied real off-host
-generation, mapped hardware and application checks are still mandatory for #11
+generation, mapped hardware and application checks are still mandatory for #5
 and release qualification.
 
 The instance manifest assists reconstruction; it is not an automatic restore of every possible
@@ -428,13 +428,13 @@ bind mounts, raw attached disks and other external sources. A read-only attachme
 still needs its source data to be recoverable. Uncovered or excluded data keeps
 coverage partial and does not refresh the full-host success timestamp. The root-only
 `inventory.json` retains `coverageDetails`, `capacity` and actual `archiveBytes`;
-`/var/lib/nixlab/backup-status.json` retains the most recent preflight/result.
+`/var/lib/nixus/backup-status.json` retains the most recent preflight/result.
 Existing version-2 inventories remain readable. Older inventories without these
 fields have no evidence for this additional coverage assessment.
 
 ```sh
-sudo nixlab-admin recovery coverage
-sudo cat /var/lib/nixlab/backup-status.json
+sudo nixus-admin recovery coverage
+sudo cat /var/lib/nixus/backup-status.json
 ```
 
 The credential check reports identifiers, never secret contents. Configured SOPS
@@ -448,5 +448,5 @@ restore, and these new records initially say `restore: unverified`. Prove actual
 Arcane state, Compose definitions, Docker volume records and any external data
 through an isolated restore drill. Incus server identity/administrator enrollment,
 external writers, arbitrary custom module secrets and application-specific
-consistency still require review; this change alone does not close #12 or qualify
+consistency still require review; this change alone does not close #6 or qualify
 a whole-host release. No new application integration or retention policy is added.

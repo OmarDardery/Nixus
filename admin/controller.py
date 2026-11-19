@@ -28,7 +28,7 @@ class Manager:
 
     def effective_settings(self, desired=None):
         return merge(self.settings() if desired is None else desired,
-                     rt.read_json(Path('/etc/nixlab/effective-settings.json'), {}))
+                     rt.read_json(Path('/etc/nixus/effective-settings.json'), {}))
 
     def migrate_layout(self):
         return rt.migrate_idle_layout(self.root, self.state)
@@ -75,7 +75,7 @@ class Manager:
         job = self.job(active['id']) if active.get('id') else None
         if job and job['status'] in ('building', 'applying') and time.time() - job.get('appliedAt', job['created']) > 30:
             phase = 'build' if job['status'] == 'building' else 'apply'
-            if not rt.worker_active('nixlab-' + phase + '-' + job['id']):
+            if not rt.worker_active('nixus-' + phase + '-' + job['id']):
                 latest = self.job(job['id'])
                 if latest['status'] == job['status']:
                     latest.pop('log', None)
@@ -107,7 +107,7 @@ class Manager:
                            'applications': list(rt.read_json(helper_base / ('helper-compatibility.json' if helper_base == rt.SOURCE else 'compatibility.json'), {}).values())}
         try:
             data['evaluated'] = json.loads(command(['nix', '--extra-experimental-features', 'nix-command flakes',
-                                                  'eval', '--json', 'path:' + str(self.root) + '#nixlabOverview'], timeout=120))
+                                                  'eval', '--json', 'path:' + str(self.root) + '#nixusOverview'], timeout=120))
         except (ValueError, subprocess.TimeoutExpired) as exc:
             data['evaluationError'] = 'Host inventory evaluation failed'
         import ipaddress
@@ -123,9 +123,9 @@ class Manager:
 
     def spawn(self, phase, job_id):
         rt.pin_worker_runtime(self.job_path(job_id))
-        args = ['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixlab-' + phase + '-' + job_id,
-                '--property=RuntimeMaxSec=10800', '--setenv=NIXLAB_ROOT=' + str(self.root),
-                '--setenv=NIXLAB_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
+        args = ['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixus-' + phase + '-' + job_id,
+                '--property=RuntimeMaxSec=10800', '--setenv=NIXUS_ROOT=' + str(self.root),
+                '--setenv=NIXUS_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
                 sys.executable, str(rt.SOURCE / 'main.py'), 'job', phase, job_id]
         subprocess.run(args, check=True, capture_output=True, text=True)
 
@@ -229,7 +229,7 @@ class Manager:
                            str(rt.machine_path(self.root, 'installation').relative_to(self.root))}
                 if any(base_files.get(name) != proposed_files.get(name)
                        for name in set(base_files) | set(proposed_files)
-                       if not platform_path(name) and name not in mutable and name != '.nixlab-files.json'):
+                       if not platform_path(name) and name not in mutable and name != '.nixus-files.json'):
                     raise ValueError('Installer source modifies unreviewed local machine files')
                 staged_changes = sorted(name for name in set(base_files) | set(proposed_files)
                                         if platform_path(name) and base_files.get(name) != proposed_files.get(name))
@@ -341,7 +341,7 @@ class Manager:
                 if other and other['status'] in ('applying', 'awaiting-confirmation', 'rolling-back'):
                     raise ValueError('Finish the active activation first')
                 if other and other['status'] == 'building':
-                    subprocess.run(['systemctl', 'stop', 'nixlab-build-' + other['id']], check=True, timeout=30)
+                    subprocess.run(['systemctl', 'stop', 'nixus-build-' + other['id']], check=True, timeout=30)
                 if other:
                     record = rt.read_job_record(self.job_path(other['id']) / 'job.json'); record['status'] = 'superseded'
                     rt.write_json(self.job_path(other['id']) / 'job.json', record)
@@ -361,7 +361,7 @@ class Manager:
             if job['status'] not in ('building', 'ready', 'failed'):
                 raise ValueError('Only an unapplied candidate can be discarded')
             if job['status'] == 'building':
-                subprocess.run(['systemctl', 'stop', 'nixlab-build-' + job_id], check=True, timeout=30)
+                subprocess.run(['systemctl', 'stop', 'nixus-build-' + job_id], check=True, timeout=30)
             job['status'] = 'cancelled'
             rt.write_json(directory / 'job.json', job)
             rt.remove_staged_secrets(directory)

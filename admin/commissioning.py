@@ -174,7 +174,7 @@ def collect(report, ctx, settings):
     def management():
         result = diagnostics.probe(settings)  # unlike doctor(), does not save diagnostics
         if not result['ok']: return False
-        units = ['incus.service', 'nixlab-instances.service', 'nixlab-management-health.service']
+        units = ['incus.service', 'nixus-instances.service', 'nixus-management-health.service']
         return command(['systemctl', 'is-active', *units]).splitlines() == ['active'] * len(units)
 
     def clock():
@@ -262,7 +262,7 @@ def matrix(paths, revision):
 
 
 def cli(argv):
-    parser = argparse.ArgumentParser(prog='nixlab-admin commissioning')
+    parser = argparse.ArgumentParser(prog='nixus-admin commissioning')
     sub = parser.add_subparsers(dest='action', required=True)
     for action in ('collect', 'record', 'status', 'export'):
         cmd = sub.add_parser(action)
@@ -282,8 +282,8 @@ def cli(argv):
     if os.geteuid() != 0: raise ValueError('Use sudo for local commissioning evidence')
     if args.action == 'record' and not args.acknowledge:
         raise ValueError('Perform the commissioning procedure first, then use --acknowledge to record an operator attestation')
-    settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'))
-    if not isinstance(settings, dict): raise ValueError('Install and activate NixLab before commissioning')
+    settings = rt.read_json(Path('/etc/nixus/effective-settings.json'))
+    if not isinstance(settings, dict): raise ValueError('Install and activate Nixus before commissioning')
     ctx = context(settings, args.mode, args.environment)
     directory = rt.STATE / 'commissioning'
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)

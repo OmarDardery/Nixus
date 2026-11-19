@@ -1,5 +1,5 @@
 { ... }: {
-  nixlab.project = {
+  nixus.project = {
     name = "beta";
     backend = "incus-native";
     backup.consistency = "quiesce";

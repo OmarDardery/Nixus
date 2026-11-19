@@ -114,7 +114,7 @@ class PublicCompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "source"
             root.mkdir()
-            rt.write_json(root / ".nixlab-files.json", ["flake.nix"])
+            rt.write_json(root / ".nixus-files.json", ["flake.nix"])
             rt.atomic(root / "flake.nix", "{ }")
             rt.write_json(root / "local/settings.json", {"management": {"interface": "eth0"}})
             rt.atomic(root / "site-modules/operator.nix", "{ ... }: { }")
@@ -125,7 +125,7 @@ class PublicCompatibilityTests(unittest.TestCase):
                          "site-modules/operator.nix", "installed-system/configuration.nix"):
                 with self.subTest(name=name):
                     self.assertEqual((root / name).read_bytes(), (target / name).read_bytes())
-                    self.assertIn(name, rt.read_json(target / ".nixlab-files.json"))
+                    self.assertIn(name, rt.read_json(target / ".nixus-files.json"))
 
     def test_job_state_rejects_path_traversal_and_symlink_aliases(self):
         with tempfile.TemporaryDirectory() as folder:

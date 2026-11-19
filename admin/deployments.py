@@ -14,7 +14,7 @@ from locking import open_lock
 from guest_deploy import DeploymentError, Transport, NAME, store_path
 
 VERSION = 1
-INCUS_LOCK = Path('/run/lock/nixlab-incus.lock')
+INCUS_LOCK = Path('/run/lock/nixus-incus.lock')
 ACTIVE = {'queued', 'running'}
 BOUNDARY = 'OS generations only: guest disks, databases, application schemas and external systems are not rolled back.'
 
@@ -131,7 +131,7 @@ class Deployments:
         directory = self.directory(job_id)
         record = rt.read_job_record(directory / 'deployment.json', None)
         if record and record['status'] in ACTIVE and time.time() - record['updatedAt'] > 30:
-            if not rt.worker_active('nixlab-deploy-' + job_id):
+            if not rt.worker_active('nixus-deploy-' + job_id):
                 record['status'] = 'interrupted'
                 record['error'] = 'Worker stopped. Resume rechecks the guest identity and generations before continuing.'
         if record and not private:
@@ -185,9 +185,9 @@ class Deployments:
             return {'id': job_id}
 
     def spawn(self, job_id):
-        subprocess.run(['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixlab-deploy-' + job_id,
-                    '--property=RuntimeMaxSec=10800', '--setenv=NIXLAB_ROOT=' + str(self.root),
-                    '--setenv=NIXLAB_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
+        subprocess.run(['systemd-run', '--quiet', '--collect', '--no-block', '--unit=nixus-deploy-' + job_id,
+                    '--property=RuntimeMaxSec=10800', '--setenv=NIXUS_ROOT=' + str(self.root),
+                    '--setenv=NIXUS_STATE=' + str(self.state), '--setenv=PATH=' + os.environ['PATH'],
                     sys.executable, str(rt.SOURCE / 'main.py'), 'deployment-job', job_id], check=True, capture_output=True, timeout=20)
 
     def abandon(self, job_id):

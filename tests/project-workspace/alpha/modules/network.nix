@@ -1,3 +1,3 @@
 { ... }: {
-  nixlab.project.claims = [ "network/alpha-net" ];
+  nixus.project.claims = [ "network/alpha-net" ];
 }

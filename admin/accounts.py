@@ -58,7 +58,7 @@ def update(username, role=None, password=None, delete=False):
             if password: item['password'] = rt.password_record(password)
             if 'password' not in item: raise ValueError('New accounts require a password')
             item['role'] = role; users[username] = item
-        rt.write_json(rt.STATE / 'users.json', users, mode=0o640, group='nixlab-ui')
+        rt.write_json(rt.STATE / 'users.json', users, mode=0o640, group='nixus-ui')
     rt.audit('portal-account-updated', username=username, role=role, deleted=bool(delete))
     return {'users': list_users()}
 
@@ -69,7 +69,7 @@ def change_password(username, password):
         with rt.locked(blocking=False):
             import enrollment
             enrollment.reconcile()
-            rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixlab-ui')
+            rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixus-ui')
             enrollment.save('migrated')
             enrollment.retire_legacy_capabilities()
             # Retire the old private bootstrap value only AFTER the supplied
@@ -120,7 +120,7 @@ def recover_password(password):
         enrollment.load()  # Future/corrupt authority requires supported-state restoration.
         enrollment.save('recovery-authorized')
         enrollment.retire_legacy_capabilities()
-        rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixlab-ui')
+        rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640, group='nixus-ui')
         enrollment.save('migrated')
         rt.durable_unlink(rt.STATE / 'setup-password')
     rt.audit('portal-account-recovered')

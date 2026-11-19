@@ -7,9 +7,9 @@ function referenceLink(label, url) {
 }
 
 function referenceCatalog() {
-  const row = item => `<div class="reference-row"><div><h3>${esc(item.name)}</h3><p>${esc(item.detail)}</p></div><div class="reference-links">${referenceLink("Nixlab guide", "/docs/" + item.guide)}${item.source ? referenceLink("Source", item.source) : ""}${item.docs.map(([label, url]) => referenceLink(label, url)).join("")}${item.community.map(([label, url]) => referenceLink(label, url)).join("")}</div></div>`;
+  const row = item => `<div class="reference-row"><div><h3>${esc(item.name)}</h3><p>${esc(item.detail)}</p></div><div class="reference-links">${referenceLink("Nixus guide", "/docs/" + item.guide)}${item.source ? referenceLink("Source", item.source) : ""}${item.docs.map(([label, url]) => referenceLink(label, url)).join("")}${item.community.map(([label, url]) => referenceLink(label, url)).join("")}</div></div>`;
   const local = [["Beta candidate", "beta"], ["Credits", "projects"], ["Install", "plain-nixos"], ["Troubleshoot", "troubleshooting"], ["CLI", "administration"], ["Helpers", "helpers"], ["Web setup", "setup"], ["Backups", "recovery"], ["Migration", "migration"], ["Roadmap", "roadmap"]];
-  return `<section class="reference-catalog" id="project-docs"><div class="section-label">DOCUMENTATION & COMMUNITY</div><h2>Upstream projects & credits</h2><p>Community resources are references, not verified Nixlab integrations. Plugins, templates and scripts have their own platform requirements.</p><div class="guide-shortcuts">${local.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("")}</div>${projectReferences.filter(item => !item.optional).map(row).join("")}<details class="more-references"><summary>Backups, secrets, ingress, metrics & host foundations</summary>${projectReferences.filter(item => item.optional).map(row).join("")}</details></section>`;
+  return `<section class="reference-catalog" id="project-docs"><div class="section-label">DOCUMENTATION & COMMUNITY</div><h2>Upstream projects & credits</h2><p>Community resources are references, not verified Nixus integrations. Plugins, templates and scripts have their own platform requirements.</p><div class="guide-shortcuts">${local.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("")}</div>${projectReferences.filter(item => !item.optional).map(row).join("")}<details class="more-references"><summary>Backups, secrets, ingress, metrics & host foundations</summary>${projectReferences.filter(item => item.optional).map(row).join("")}</details></section>`;
 }
 
 function commandGroups() {
@@ -18,26 +18,26 @@ function commandGroups() {
   const host = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(address) && address.split('.').every(n => Number(n) <= 255) ? address : "HOST_IP";
   return [
     { id: "cheatsheet", title: "Everyday homelab cheatsheet", guide: "administration.md", items: [
-      ["quick-doctor", "NixLab health", "Host terminal", "Check host and management endpoint readiness.", "sudo nixlab doctor"],
+      ["quick-doctor", "Nixus health", "Host terminal", "Check host and management endpoint readiness.", "sudo nixus doctor"],
       ["quick-guests", "Show all guests", "Host terminal", "Instances and their current states across Incus projects.", "sudo incus list --all-projects"],
       ["quick-failures", "Failed services", "Host terminal", "Inspect failed systemd units.", "systemctl --failed"],
-      ["quick-log", "Follow NixLab web logs", "Host terminal", "Investigate authentication or startup problems.", "sudo journalctl -u nixlab-ui -f"],
+      ["quick-log", "Follow Nixus web logs", "Host terminal", "Investigate authentication or startup problems.", "sudo journalctl -u nixus-ui -f"],
       ["quick-incus-projects", "List Incus namespaces", "Host terminal", "Inspect named Incus projects.", "sudo incus project list"],
       ["quick-guest-logs", "Guest service logs", "Host terminal", "Inspect the selected guest without publishing its admin interfaces.", "sudo incus exec GUEST --project lab -- journalctl -b --no-pager -n 50"],
-      ["quick-recovery", "Show pending install checklist", "Host terminal", "See pending guest network, device and backup commissioning steps.", "sudo nixlab install-plan"],
-      ["quick-config", "Current change status", "Host terminal", "View reviewed configuration transactions.", "sudo nixlab-admin config status"],
+      ["quick-recovery", "Show pending install checklist", "Host terminal", "See pending guest network, device and backup commissioning steps.", "sudo nixus install-plan"],
+      ["quick-config", "Current change status", "Host terminal", "View reviewed configuration transactions.", "sudo nixus-admin config status"],
     ] },
     { id: "updates", title: "Install & update", guide: "plain-nixos.md", items: [
-      ["platform-update", "Update Nixlab", "Host terminal", "Update from main with build/impact review, guarded activation and separate fresh-session access confirmation. Requests sudo and resumes interrupted updates; no automatic reboot.", "nix run --refresh github:OmarDardery/nixlab#update"],
-      ["package-review", "Review a package refresh", "Host terminal", "Build a candidate with refreshed pinned inputs. This does not activate it; inspect and apply it under Changes.", "sudo nixlab-admin config review --update-inputs"],
-      ["review-status", "Inspect the current transaction", "Host terminal", "Check build, activation or confirmation state before starting another change.", "sudo nixlab-admin config status"],
+      ["platform-update", "Update Nixus", "Host terminal", "Update from main with build/impact review, guarded activation and separate fresh-session access confirmation. Requests sudo and resumes interrupted updates; no automatic reboot.", "nix run --refresh github:OmarDardery/Nixus#update"],
+      ["package-review", "Review a package refresh", "Host terminal", "Build a candidate with refreshed pinned inputs. This does not activate it; inspect and apply it under Changes.", "sudo nixus-admin config review --update-inputs"],
+      ["review-status", "Inspect the current transaction", "Host terminal", "Check build, activation or confirmation state before starting another change.", "sudo nixus-admin config status"],
     ] },
     { id: "health", title: "Health, logs & SSH", guide: "troubleshooting.md", items: [
-      ["doctor", "Check the management stack", "Host terminal", "Probe the actual address and enabled management interfaces.", "sudo nixlab doctor"],
+      ["doctor", "Check the management stack", "Host terminal", "Probe the actual address and enabled management interfaces.", "sudo nixus doctor"],
       ["failed-units", "Find failed services", "Host terminal", "List failed systemd units on the host.", "systemctl --failed"],
-      ["cockpit-boot", "Read Cockpit’s boot logs", "Host terminal", "Collect evidence before restarting a service.", "sudo journalctl -b -u cockpit.socket -u cockpit.service -u nixlab-management-identity.service --no-pager"],
+      ["cockpit-boot", "Read Cockpit’s boot logs", "Host terminal", "Collect evidence before restarting a service.", "sudo journalctl -b -u cockpit.socket -u cockpit.service -u nixus-management-identity.service --no-pager"],
       ["ssh", "Connect to this host", "Your laptop", "Use the operator Linux password or an enrolled client key.", "ssh operator@" + host],
-      ["commissioning", "Collect commissioning evidence", "Host terminal", "Read-only probes record revision-bound results. Reboots, installation retry and restore drills remain separate procedures in the commissioning guide.", "sudo nixlab commissioning collect --mode fresh"],
+      ["commissioning", "Collect commissioning evidence", "Host terminal", "Read-only probes record revision-bound results. Reboots, installation retry and restore drills remain separate procedures in the commissioning guide.", "sudo nixus commissioning collect --mode fresh"],
     ] },
     { id: "guests", title: "Incus resources", guide: "administration.md", items: [
       ["list-guests", "List instances across projects", "Host terminal", "Read-only Incus inventory.", "sudo incus list --all-projects"],
@@ -49,10 +49,10 @@ function commandGroups() {
       ["guest-shell", "Open a guest shell", "Host terminal", "Interactive access explicitly names its project.", "sudo incus exec GUEST --project PROJECT -- sh"],
     ] },
     { id: "helpers", title: "Community helper commands", guide: "helpers.md", items: [
-      ["helper-list", "Browse the packaged helper catalog", "Host terminal", "List script IDs and compatibility metadata from the pinned sources.", "nixlab-helpers list"],
-      ["helper-doctor", "Check helper prerequisites", "Host terminal", "Verify Incus, images, networks and storage for the lab project.", "sudo nixlab-helpers doctor --project lab"],
-      ["helper-debian", "Example: Debian container wizard", "Host terminal", "Interactive Incus wizard; creates a guest. Helpers must be enabled. Choose its storage and network in the terminal.", "sudo nixlab-helpers run debian --project lab"],
-      ["helper-catalog", "Select a community helper", "Host terminal", "Browse application choices; review upstream scripts and prerequisites before use.", "nixlab-helpers list"],
+      ["helper-list", "Browse the packaged helper catalog", "Host terminal", "List script IDs and compatibility metadata from the pinned sources.", "nixus-helpers list"],
+      ["helper-doctor", "Check helper prerequisites", "Host terminal", "Verify Incus, images, networks and storage for the lab project.", "sudo nixus-helpers doctor --project lab"],
+      ["helper-debian", "Example: Debian container wizard", "Host terminal", "Interactive Incus wizard; creates a guest. Helpers must be enabled. Choose its storage and network in the terminal.", "sudo nixus-helpers run debian --project lab"],
+      ["helper-catalog", "Select a community helper", "Host terminal", "Browse application choices; review upstream scripts and prerequisites before use.", "nixus-helpers list"],
     ] },
   ];
 }

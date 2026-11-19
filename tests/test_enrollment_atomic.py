@@ -71,9 +71,9 @@ class AtomicEnrollmentTests(unittest.TestCase):
         self.state = Path(self.temp.name)
         self.patch = patch.object(rt, 'STATE', self.state)
         self.patch.start(); self.addCleanup(self.patch.stop)
-        self.env = os.environ | {'NIXLAB_STATE': str(self.state), 'NIXLAB_TEST': '1',
+        self.env = os.environ | {'NIXUS_STATE': str(self.state), 'NIXUS_TEST': '1',
             'PYTHONPATH': os.pathsep.join(str(BASE / name) for name in ('admin', 'scripts'))}
-        self.environment = patch.dict(os.environ, {'NIXLAB_TEST': '1'})
+        self.environment = patch.dict(os.environ, {'NIXUS_TEST': '1'})
         self.environment.start(); self.addCleanup(self.environment.stop)
 
     def start_child(self, stage='claim'):
@@ -113,7 +113,7 @@ class AtomicEnrollmentTests(unittest.TestCase):
                       'after-auth-rename', 'receipt-rename', 'after-receipt-rename'):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)):
                 previous_env = self.env
-                self.env = self.env | {'NIXLAB_STATE': folder}
+                self.env = self.env | {'NIXUS_STATE': folder}
                 try:
                     self.prepare()
                     code, result = self.finish(self.start_child(stage))
@@ -158,7 +158,7 @@ class AtomicEnrollmentTests(unittest.TestCase):
         accounts.change_password('admin', SECRETS['operator'])
         self.assertEqual(enrollment.load()['phase'], 'migrated')
         self.assertFalse((self.state / 'setup-password').exists())
-        self.assertIsNone(auth.get('nixlab_session=' + token))
+        self.assertIsNone(auth.get('nixus_session=' + token))
         self.assertTrue(accounts.matches('admin', SECRETS['operator']))
         self.assertEqual((self.state / 'jobs' / ('f' * 32) / 'job.json').read_bytes(), before)
         self.assertFalse(accounts.enrollment_open())
@@ -249,7 +249,7 @@ class AtomicEnrollmentTests(unittest.TestCase):
     def test_named_first_admin_users_publication_survives_sigkill(self):
         for stage in ('partial-write', 'file-fsync', 'after-auth-rename', 'receipt-rename'):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)):
-                previous_env = self.env; self.env = self.env | {'NIXLAB_STATE': folder}
+                previous_env = self.env; self.env = self.env | {'NIXUS_STATE': folder}
                 try:
                     self.prepare()
                     code, _ = self.finish(self.start_child(stage), username='namedowner')

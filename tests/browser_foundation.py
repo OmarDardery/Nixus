@@ -17,7 +17,7 @@ BASE = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, default=Path('/tmp/nixlab-browser'))
+    parser.add_argument('--output', type=Path, default=Path('/tmp/nixus-browser'))
     args = parser.parse_args(); args.output.mkdir(parents=True, exist_ok=True)
     settings = json.loads((BASE / 'tests/fixtures/defaults.json').read_text())
     settings.update(ready=True, cpuVendor='intel', adminKeys=['ssh-ed25519 EXAMPLE'])
@@ -87,7 +87,7 @@ def main():
                                            'noChange': False})
                         return
                     if endpoint == 'browser-certificate':
-                        record = {'name': 'nixlab-browser-ui-000000000000', 'device': body['device'],
+                        record = {'name': 'nixus-browser-ui-000000000000', 'device': body['device'],
                                   'fingerprint': 'a' * 64, 'restricted': not body.get('fullAdmin', False),
                                   'projects': ['lab'], 'expiresAt': 'fixture-expiry', 'status': 'trusted'}
                         certificate_records.append(record); certificate_pending[0] = True
@@ -135,7 +135,7 @@ def main():
             page.route('**/api/**', api)
             page.goto('http://127.0.0.1:' + str(server.server_port))
             page.get_by_role('heading', name='Sign in to your host.', exact=True).wait_for()
-            assert page.get_by_text('sudo nixlab-admin reset-password', exact=True).is_visible()
+            assert page.get_by_text('sudo nixus-admin reset-password', exact=True).is_visible()
             # The host credential is transient; a verified browser creates an
             # independent named portal identity and receives an ordinary session.
             page.evaluate('showEnrollment()')
@@ -207,7 +207,7 @@ def main():
             assert len(commands) == len(set(commands))
             assert {'doctor', 'commissioning', 'helper-debian', 'list-projects'}.issubset(commands)
             page.get_by_text('Health, logs & SSH', exact=True).click()
-            assert page.locator('#command-commissioning').text_content() == 'sudo nixlab commissioning collect --mode fresh'
+            assert page.locator('#command-commissioning').text_content() == 'sudo nixus commissioning collect --mode fresh'
             page.locator('[data-copy-command="commissioning"]').click()
             page.wait_for_function("['Copied', 'Selected'].includes(document.querySelector('[data-copy-command=commissioning]').textContent)")
             assert page.locator('[data-action=build]').count() == 0

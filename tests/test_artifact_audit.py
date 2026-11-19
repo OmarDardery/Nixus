@@ -68,11 +68,11 @@ class AuditTests(unittest.TestCase):
                 'admin/main.py': 'one\ntwo\n',
                 'tests/test_sample.py': 'test\n',
                 'tests/fixtures/architecture-contract.json': (
-                    '{"cliBinaries":{"nixlab-admin":"admin/package.nix"},'
+                    '{"cliBinaries":{"nixus-admin":"admin/package.nix"},'
                     '"flakeAttributes":["apps.x86_64-linux.install"],'
                     '"machinePaths":{"modern":{"settings":"machine/settings.json"}},'
-                    '"runtimeDefaults":{"NIXLAB_STATE":"/var/lib/nixlab-admin"},'
-                    '"systemdUnits":{"modules/admin-ui.nix":["nixlab-ui"]}}'
+                    '"runtimeDefaults":{"NIXUS_STATE":"/var/lib/nixus-admin"},'
+                    '"systemdUnits":{"modules/admin-ui.nix":["nixus-ui"]}}'
                 ),
             }
             for name, body in files.items():
@@ -87,10 +87,10 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(baseline['testFiles'], 2)
             self.assertEqual(baseline['sourceLinesInspected'], 2)
             self.assertEqual(baseline['testLinesInspected'], 1)
-            self.assertEqual(baseline['cliBinaries'], ['nixlab-admin'])
+            self.assertEqual(baseline['cliBinaries'], ['nixus-admin'])
             self.assertEqual(baseline['publicFlakeAttributesFromContract'],
                              ['apps.x86_64-linux.install'])
-            self.assertEqual(baseline['systemdUnitsFromContract']['modules/admin-ui.nix'], ['nixlab-ui'])
+            self.assertEqual(baseline['systemdUnitsFromContract']['modules/admin-ui.nix'], ['nixus-ui'])
 
     def test_inspection_limits_are_explicit_and_symlinks_are_not_traversed(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as elsewhere:

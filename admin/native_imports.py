@@ -34,7 +34,7 @@ def check_path(value):
         raise ValueError("Unsupported relative source path")
     for part in parts:
         lower = part.lower()
-        if (lower in {".git", ".ssh", ".gnupg", ".nixlab", "node_modules",
+        if (lower in {".git", ".ssh", ".gnupg", ".nixus", "node_modules",
                       ".env", "id_rsa", "id_ed25519", "id_ecdsa", "projects.agekey"}
                 or lower.startswith(".env.") and lower not in {".env.example", ".env.sample", ".env.template"}
                 or lower.endswith((".agekey", ".p12", ".pfx", ".key"))
@@ -315,14 +315,14 @@ def _verified_source(source, files, destination=None):
 class PublishedSources:
     """Reviewed, CAS-protected, immutable source publication (never deployment).
 
-    Separate from /srv/nixlab/projects: that path is a Nix flake workspace,
+    Separate from /srv/nixus/projects: that path is a Nix flake workspace,
     where merely including a Docker build context can expose bytes in the
     world-readable Nix store and break the workspace's 1 MiB-per-file bound.
     """
 
     def __init__(self, root=None):
         self.root = Path(root or os.environ.get(
-            "NIXLAB_PROJECT_SOURCES", "/srv/nixlab/project-sources"))
+            "NIXUS_PROJECT_SOURCES", "/srv/nixus/project-sources"))
 
     def _current(self, project):
         if not isinstance(project, str) or not NAME.fullmatch(project):

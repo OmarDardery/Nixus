@@ -51,7 +51,7 @@ def finish_interrupted_recovery(manager, record):
 
 
 def incoming_files(root):
-    if (root / '.git').exists() or (root / '.nixlab-files.json').is_file():
+    if (root / '.git').exists() or (root / '.nixus-files.json').is_file():
         return list(rt.source_files(root))
     # Nix's bundled source has neither a working copy nor a generated manifest.
     files = []
@@ -62,7 +62,7 @@ def incoming_files(root):
         if path.is_file() and '__pycache__' not in path.parts and upgrades.platform_path(name):
             files.append((name, path))
     if not {'flake.nix', 'flake.lock', 'admin/main.py'}.issubset({name for name, _ in files}):
-        raise ValueError('Bundled source does not contain a complete Nixlab platform')
+        raise ValueError('Bundled source does not contain a complete Nixus platform')
     return files
 
 
@@ -94,7 +94,7 @@ def stage_update(root, incoming, stage, baseline):
     for name, path in desired.items():
         rt.atomic(stage / name, path.read_bytes(), mode=path.stat().st_mode & 0o777)
     preserved = {name for name, _ in rt.source_files(stage) if not upgrades.platform_path(name)}
-    rt.write_json(stage / '.nixlab-files.json', sorted((preserved | set(desired)) - {'.nixlab-files.json'}))
+    rt.write_json(stage / '.nixus-files.json', sorted((preserved | set(desired)) - {'.nixus-files.json'}))
     return True, []
 
 
@@ -121,13 +121,13 @@ def incus_inventory():
 def adoption_settings(settings, data):
     """Use a separate namespace so native guests and their dependencies stay native."""
     if any(p['name'] == 'lab' for p in data['projects']):
-        raise ValueError('Existing project lab conflicts with the Nixlab namespace. '
-                         'Use the existing Nixlab checkout to resume, or migrate that project explicitly; no changes made')
+        raise ValueError('Existing project lab conflicts with the Nixus namespace. '
+                         'Use the existing Nixus checkout to resume, or migrate that project explicitly; no changes made')
     occupied = {item['name'] for item in data['networks']} | {item['name'] for item in data['pools']}
     def available(prefix):
         return next(name for name in [prefix] + [prefix + str(i) for i in range(1, 100)] if name not in occupied)
-    settings['guests']['bridge'] = available('nixlabbr')
-    settings['storage']['pool'] = available('nixlab-guests')
+    settings['guests']['bridge'] = available('nixusbr')
+    settings['storage']['pool'] = available('nixus-guests')
     settings['storage']['source'] = '/var/lib/incus/storage-pools/' + settings['storage']['pool']
     settings['connectivity']['guestInterfaces'] = [settings['guests']['bridge']]
     settings['connectivity']['preservedIncusBridges'] = [n['name'] for n in data['networks']

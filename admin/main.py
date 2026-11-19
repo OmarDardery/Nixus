@@ -1,4 +1,4 @@
-"""Nixlab local configuration broker and authenticated HTTPS interface."""
+"""Nixus local configuration broker and authenticated HTTPS interface."""
 import collections
 import base64
 import http.client
@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import runtime as rt
 import accounts as access_accounts
 
-SOCKET = Path(os.environ.get('NIXLAB_SOCKET', '/run/nixlab-admin/backend.sock'))
+SOCKET = Path(os.environ.get('NIXUS_SOCKET', '/run/nixus-admin/backend.sock'))
 MAX_BODY = 262144
 MAX_HEADERS = 16384
 MAX_REQUEST_LINE = 4096
@@ -187,12 +187,12 @@ def backend():
                     import backup
                     import backup_verification
                     settings = manager.effective_settings()
-                    unit = subprocess.run(['systemctl', 'show', 'restic-backups-nixlab.service',
+                    unit = subprocess.run(['systemctl', 'show', 'restic-backups-nixus.service',
                                            '--property=ActiveState,SubState,Result'], capture_output=True, text=True, timeout=10)
                     result = {'jobs': operations.status(), 'archives': operations.archives(),
                               'generations': backup.generations(Path(settings['backup']['stagingDirectory'])),
                               'backupService': dict(line.split('=', 1) for line in unit.stdout.splitlines() if '=' in line),
-                              'backupStatus': rt.read_json(Path('/var/lib/nixlab/backup-status.json'), {}),
+                              'backupStatus': rt.read_json(Path('/var/lib/nixus/backup-status.json'), {}),
                               'backupVerification': backup_verification.status(settings['backup']['enable'], repository=settings['backup']['repository'])}
                 elif self.path == '/guests':
                     result = {'guests': guests() if manager.settings()['ready'] else []}
@@ -371,7 +371,7 @@ def backend():
                     deploy = Deployments()
                     result = deploy.abandon(body['id']) if body.get('abandon') is True else deploy.submit(body['id'], resume=body.get('resume', False), principal=actor)
                 elif self.path == '/cancel-backup':
-                    subprocess.run(['systemctl', 'stop', '--no-block', 'restic-backups-nixlab.service'], check=True, timeout=10)
+                    subprocess.run(['systemctl', 'stop', '--no-block', 'restic-backups-nixus.service'], check=True, timeout=10)
                     result = {'ok': True, 'message': 'Cancellation requested; restart recovery remains active'}
                 elif self.path == '/recovery-export':
                     import recovery
@@ -395,7 +395,7 @@ def backend():
         SOCKET.unlink()
     server = UnixHTTPServer(str(SOCKET), Broker)
     os.chmod(SOCKET, 0o660)
-    # Backend runs with the nixlab-ui group; socket is never globally writable.
+    # Backend runs with the nixus-ui group; socket is never globally writable.
     server.serve_forever()
 
 
@@ -449,7 +449,7 @@ class Auth:
         import accounts
         token = ''
         for part in cookie.split(';'):
-            if part.strip().startswith('nixlab_session='):
+            if part.strip().startswith('nixus_session='):
                 token = part.strip().split('=', 1)[1]
         with self.lock:
             item = self.sessions.get(token)
@@ -482,7 +482,7 @@ class Auth:
             if not any(item is session for item in self.sessions.values()):
                 raise rt.PublicError('Session ended; inspect the identity list before reissuing')
             data = base64.b64decode(result['pkcs12'], validate=True)
-            if len(data) > 65536 or not re.fullmatch(r'nixlab-browser-[A-Za-z0-9_-]{1,64}', result['name']):
+            if len(data) > 65536 or not re.fullmatch(r'nixus-browser-[A-Za-z0-9_-]{1,64}', result['name']):
                 raise rt.PublicError('Invalid private certificate download; inspect the identity list')
             session['certificateDownload'] = {'data': data, 'name': result['name'],
                                               'fingerprint': result['fingerprint'],
@@ -626,7 +626,7 @@ def require_fresh_web_confirmation(session, job, address):
 
 def bootstrap_cookie(header):
     values = [part.strip().split('=', 1)[1] for part in header.split(';')
-              if part.strip().startswith('__Host-nixlab_bootstrap=')]
+              if part.strip().startswith('__Host-nixus_bootstrap=')]
     return values[0] if len(values) == 1 else None
 
 
@@ -667,7 +667,7 @@ def web():
             session = auth.get(self.headers.get('Cookie', ''))
             if not session:
                 raise PermissionError('Sign in to continue')
-            if mutation and not secrets.compare_digest(self.headers.get('X-Nixlab-CSRF', ''), session['csrf']):
+            if mutation and not secrets.compare_digest(self.headers.get('X-Nixus-CSRF', ''), session['csrf']):
                 raise PermissionError('Invalid request token')
             return session
         def do_GET(self):
@@ -693,7 +693,7 @@ def web():
                     filename, mime = assets[path]
                     return reply(self, 200, (rt.SOURCE / 'static' / filename).read_bytes(), mime)
                 if path == '/ca.crt':
-                    return reply(self, 200, broker_request('GET', '/ca')['certificate'].encode(), 'application/x-x509-ca-cert', {'Content-Disposition': 'attachment; filename=nixlab-ca.crt'})
+                    return reply(self, 200, broker_request('GET', '/ca')['certificate'].encode(), 'application/x-x509-ca-cert', {'Content-Disposition': 'attachment; filename=nixus-ca.crt'})
                 if path == '/api/enrollment':
                     return reply(self, 200, broker_request('GET', '/enrollment'))
                 if path == '/api/bootstrap':
@@ -702,7 +702,7 @@ def web():
                         'token': bootstrap_cookie(self.headers.get('Cookie', '')),
                         'address': self.client_address[0], 'origin': 'https://' + host})
                     token = result.pop('token')
-                    return reply(self, 200, result, extra={'Set-Cookie': '__Host-nixlab_bootstrap=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=600'})
+                    return reply(self, 200, result, extra={'Set-Cookie': '__Host-nixus_bootstrap=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=600'})
                 session = self.session()
                 if path.startswith('/docs/'):
                     import html
@@ -721,9 +721,9 @@ def web():
                     except ImportError:
                         content = '<pre>' + html.escape(text) + '</pre>'
                     page = ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-                            '<meta name="theme-color" content="#111310"><title>Nixlab · Offline guide</title>'
+                            '<meta name="theme-color" content="#111310"><title>Nixus · Offline guide</title>'
                             '<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/brand.css"><link rel="stylesheet" href="/style.css">'
-                            '<body><main class="page offline-guide"><header class="guide-bar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">[n]</span><span>nixlab<span class="brand-cursor" aria-hidden="true">_</span></span></a><a href="/">Back to host console →</a></header><article class="card">' + content + '</article></main></body></html>')
+                            '<body><main class="page offline-guide"><header class="guide-bar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">[n]</span><span>nixus<span class="brand-cursor" aria-hidden="true">_</span></span></a><a href="/">Back to host console →</a></header><article class="card">' + content + '</article></main></body></html>')
                     return reply(self, 200, page.encode(), 'text/html; charset=utf-8')
                 if path == '/api/session':
                     return reply(self, 200, {key: session[key] for key in ('csrf', 'username', 'role')})
@@ -758,7 +758,7 @@ def web():
                 if self.path in ('/api/enrollment', '/api/bootstrap/verify', '/api/bootstrap/claim'):
                     body = json_body(self)
                     token = bootstrap_cookie(self.headers.get('Cookie', ''))
-                    csrf = self.headers.get('X-Nixlab-CSRF', '')
+                    csrf = self.headers.get('X-Nixus-CSRF', '')
                     if not token or not csrf:
                         raise PermissionError('Bootstrap browser session and request token required')
                     payload = {'token': token, 'csrf': csrf, 'address': self.client_address[0], 'origin': 'https://' + host}
@@ -774,16 +774,16 @@ def web():
                     with auth.lock:
                         auth.failures.pop(self.client_address[0], None)
                     ordinary, session_csrf = auth.login(body.get('password'), self.client_address[0], username)
-                    principal = auth.get('nixlab_session=' + ordinary)
+                    principal = auth.get('nixus_session=' + ordinary)
                     return reply(self, 200, {'csrf': session_csrf, 'username': username, 'role': principal['role']}, extra=[
-                        ('Set-Cookie', 'nixlab_session=' + ordinary + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'),
-                        ('Set-Cookie', '__Host-nixlab_bootstrap=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')])
+                        ('Set-Cookie', 'nixus_session=' + ordinary + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'),
+                        ('Set-Cookie', '__Host-nixus_bootstrap=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')])
                 if self.path == '/api/login':
                     body = json_body(self)
                     username = body.get('username', 'admin')
                     token, csrf = auth.login(body.get('password'), self.client_address[0], username)
-                    return reply(self, 200, {'csrf': csrf, 'username': username, 'role': auth.get('nixlab_session=' + token)['role']}, extra={
-                        'Set-Cookie': 'nixlab_session=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'})
+                    return reply(self, 200, {'csrf': csrf, 'username': username, 'role': auth.get('nixus_session=' + token)['role']}, extra={
+                        'Set-Cookie': 'nixus_session=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'})
                 session = self.session(mutation=True)
                 body = json_body(self)
                 import accounts
@@ -832,7 +832,7 @@ def web():
                 if self.path == '/api/logout':
                     session.pop('certificateDownload', None)
                     session['created'] = -1000000000
-                    return reply(self, 200, {'ok': True}, extra={'Set-Cookie': 'nixlab_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'})
+                    return reply(self, 200, {'ok': True}, extra={'Set-Cookie': 'nixus_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'})
                 if self.path == '/api/password':
                     if not accounts.matches(session['username'], body.get('current')):
                         raise rt.PublicError('Current password is incorrect')
@@ -879,7 +879,7 @@ def web():
             except (ValueError, KeyError, OSError) as exc:
                 self.close_connection = True
                 reply(self, 400, {'error': rt.public_error(exc)})
-    server = BoundedHttpsServer(('0.0.0.0', int(os.environ.get('NIXLAB_PORT', '9440'))), Frontend)
+    server = BoundedHttpsServer(('0.0.0.0', int(os.environ.get('NIXUS_PORT', '9440'))), Frontend)
     server.daemon_threads = True
     credentials = Path(os.environ.get('CREDENTIALS_DIRECTORY', str(rt.STATE)))
     context = tls_context(credentials / 'tls.crt', credentials / 'tls.key')
@@ -941,7 +941,7 @@ def require_fresh_cli_confirmation(job, *, tty=None, ssh_started_at=None):
 def config_cli(argv):
     """Local root CLI using the same transaction API as the browser."""
     import argparse
-    parser = argparse.ArgumentParser(prog='nixlab-admin config')
+    parser = argparse.ArgumentParser(prog='nixus-admin config')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
     commands.add_parser('plan')
@@ -988,7 +988,7 @@ def project_cli(argv):
     """Root-only review and recovery; identical state to the browser broker."""
     import argparse
     from project_transactions import ProjectTransactions
-    parser = argparse.ArgumentParser(prog='sudo nixlab-admin projects')
+    parser = argparse.ArgumentParser(prog='sudo nixus-admin projects')
     parser.add_argument('command', choices=['status', 'initialize', 'review', 'publish', 'rollback', 'cancel', 'recover', 'deploy'])
     parser.add_argument('--changes', type=Path, help='UTF-8 JSON map of relative Nix file edits')
     parser.add_argument('--source-revisions', type=Path, help='Optional JSON map of published project to exact source revision SHA-256')
@@ -1031,7 +1031,7 @@ def project_cli(argv):
 
 def deploy_cli(argv):
     import argparse
-    parser = argparse.ArgumentParser(prog='nixlab-admin deploy')
+    parser = argparse.ArgumentParser(prog='nixus-admin deploy')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('status').add_argument('id', nargs='?')
     for action in ('start', 'resume', 'abandon'): commands.add_parser(action).add_argument('id')
@@ -1047,14 +1047,14 @@ def deploy_cli(argv):
 
 
 def renew():
-    settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings')))
+    settings = rt.read_json(Path('/etc/nixus/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings')))
     import subprocess
     checks = [subprocess.run(['openssl', 'x509', '-checkend', '2592000', '-noout', '-in', str(rt.STATE / name)], capture_output=True).returncode
               for name in ('tls.crt',)]
     if any(checks):
         import diagnostics
         rt.issue_tls(diagnostics.management_address(settings), settings['hostName'])
-        services = ['nixlab-ui.service']
+        services = ['nixus-ui.service']
         if settings['ready']:
             services += ['incus.service']
             if settings.get('cockpit', {}).get('enable'):
@@ -1064,7 +1064,7 @@ def renew():
 
 def guests_cli(argv):
     import argparse
-    parser = argparse.ArgumentParser(prog='nixlab-admin guests')
+    parser = argparse.ArgumentParser(prog='nixus-admin guests')
     parser.add_argument('action', choices=['list', 'status', 'register-export', 'start', 'stop', 'restart', 'snapshot', 'snapshot-copy', 'export', 'restore', 'backup', 'backup-check', 'release-restore'])
     parser.add_argument('--file', type=Path)
     parser.add_argument('--name'); parser.add_argument('--project', default='lab')
@@ -1117,7 +1117,7 @@ def approve_browser_console():
     import getpass
     import warnings
     if os.geteuid() != 0 or not sys.stdin.isatty():
-        raise SystemExit('Run sudo nixlab-admin approve-enrollment from a private host terminal')
+        raise SystemExit('Run sudo nixus-admin approve-enrollment from a private host terminal')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error', getpass.GetPassWarning)
@@ -1133,11 +1133,11 @@ def reset_portal_password():
     import getpass
     import warnings
     if os.geteuid() != 0 or not sys.stdin.isatty():
-        raise SystemExit('Run sudo nixlab-admin reset-password from a private host terminal')
+        raise SystemExit('Run sudo nixus-admin reset-password from a private host terminal')
     try:
         with warnings.catch_warnings():
             warnings.simplefilter('error', getpass.GetPassWarning)
-            value = getpass.getpass('New NixLab administrator password (16–256 characters): ')
+            value = getpass.getpass('New Nixus administrator password (16–256 characters): ')
         access_accounts.recover_password(value)
     except (getpass.GetPassWarning, EOFError, ValueError, OSError):
         raise SystemExit('Password change did not complete; check host account state from a private terminal before retrying') from None
@@ -1170,7 +1170,7 @@ if __name__ == '__main__':
                         if time.monotonic() >= deadline: raise
                         time.sleep(2)
             elif action == 'enroll-key':
-                if len(sys.argv) != 3: raise rt.PublicError('Usage: sudo nixlab enroll-key laptop.pub')
+                if len(sys.argv) != 3: raise rt.PublicError('Usage: sudo nixus enroll-key laptop.pub')
                 enroll_key(manager, sys.argv[2], settings)
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             sys.exit('Command failed; check inputs and host status before retrying')
@@ -1239,7 +1239,7 @@ if __name__ == '__main__':
     elif action == 'prune-jobs' and os.geteuid() == 0:
         import argparse
         from controller import Manager
-        parser = argparse.ArgumentParser(prog='nixlab-admin prune-jobs')
+        parser = argparse.ArgumentParser(prog='nixus-admin prune-jobs')
         parser.add_argument('--apply', action='store_true')
         parser.add_argument('--keep', type=int, default=20)
         args = parser.parse_args(sys.argv[2:])
@@ -1248,10 +1248,10 @@ if __name__ == '__main__':
         renew()
     elif action == 'approve-enrollment' and os.geteuid() == 0:
         if len(sys.argv) != 2:
-            sys.exit('Run sudo nixlab-admin approve-enrollment from a private host terminal')
+            sys.exit('Run sudo nixus-admin approve-enrollment from a private host terminal')
         approve_browser_console()
     elif action == 'reset-password' and os.geteuid() == 0:
         reset_portal_password()
     else:
-        sys.exit('Usage: nixlab-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|disk prepare}')
+        sys.exit('Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|disk prepare}')
 

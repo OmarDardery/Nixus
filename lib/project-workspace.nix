@@ -4,7 +4,7 @@
 { root }:
 let
   inherit (lib) mkOption types;
-  fail = message: throw "NixLab projects: ${message}";
+  fail = message: throw "Nixus projects: ${message}";
   sorted = names: lib.sort builtins.lessThan names;
   isIgnored = name: lib.hasPrefix "_" name || lib.hasPrefix "." name;
 
@@ -64,7 +64,7 @@ let
       ) (sorted (builtins.attrNames entries));
 
   schema = directoryName: { lib, ... }: {
-    options.nixlab.project = {
+    options.nixus.project = {
       name = mkOption {
         type = types.strMatching "[a-z][a-z0-9-]{0,62}";
         default = directoryName;
@@ -153,7 +153,7 @@ let
         evaluated = lib.evalModules {
           modules = [ (schema directoryName) (directory + "/default.nix") ] ++ sources;
         };
-        p = evaluated.config.nixlab.project;
+        p = evaluated.config.nixus.project;
         secret = p.secrets.file;
     in if !(scanTree directory 0) then
       fail "Unsafe project source directory"
@@ -179,7 +179,7 @@ let
   noDuplicates = values: builtins.length values == builtins.length (lib.unique values);
 in
   if builtins.length projectDirs > 128 then fail "Workspace exceeds 128 projects"
-  else if !(noDuplicates names) then fail "Duplicate NixLab project identities"
+  else if !(noDuplicates names) then fail "Duplicate Nixus project identities"
   else if !(noDuplicates incusProjects) then fail "Multiple projects claim the same Incus project"
   else if !(noDuplicates claims) then fail "Conflicting declared resource claims"
   else {

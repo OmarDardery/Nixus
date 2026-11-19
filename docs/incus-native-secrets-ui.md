@@ -1,40 +1,40 @@
-# NixLab Secrets UI — SOPS/age and sops-nix contract
+# Nixus Secrets UI — SOPS/age and sops-nix contract
 
-**Status:** implementation underway in #146. Encrypted Web UI edits, revisioned SOPS ciphertext, age onboarding, local dotenv import, encrypted recovery kits, and source-only publication exist on the feature branch. **Incus/NixOS secret delivery, multi-recipient rekey, backup coverage and independent full-host restore are not yet qualified.** Tracks [#134](https://github.com/OmarDardery/nixlab/issues/134) and the [Incus-native plan](incus-native-plan.md).
+**Status:** implementation underway in OmarDardery/nixlab#146. Encrypted Web UI edits, revisioned SOPS ciphertext, age onboarding, local dotenv import, encrypted recovery kits, and source-only publication exist on the feature branch. **Incus/NixOS secret delivery, multi-recipient rekey, backup coverage and independent full-host restore are not yet qualified.** Tracks [#46](https://github.com/OmarDardery/Nixus/issues/46) and the [Incus-native plan](incus-native-plan.md).
 
 ## Decision
 
-NixLab has **one Secrets page in the existing Web UI**, not OpenBao, Infisical, Vault, a Docker secret service or a second secrets control plane. SOPS with age encrypts versioned project files; `sops-nix` delivers those files to **NixOS services**. NixLab's privileged broker coordinates reviewed writes and, for non-NixOS Incus OCI workloads, an independently qualified **scoped runtime file** adapter. The Web UI never receives a decryption identity.
+Nixus has **one Secrets page in the existing Web UI**, not OpenBao, Infisical, Vault, a Docker secret service or a second secrets control plane. SOPS with age encrypts versioned project files; `sops-nix` delivers those files to **NixOS services**. Nixus's privileged broker coordinates reviewed writes and, for non-NixOS Incus OCI workloads, an independently qualified **scoped runtime file** adapter. The Web UI never receives a decryption identity.
 
 **Important boundary:** `sops-nix` is a NixOS activation integration, not a general OCI secret-injection engine. Editing SOPS ciphertext does not automatically restart an OCI guest or activate NixOS. A separate reviewed project apply must propagate the new revision safely.
 
 ## Declarative state and ownership
 
 ```text
-/srv/nixlab/projects/<project>/
+/srv/nixus/projects/<project>/
   default.nix                   # secret references/consumers only; never values
   secrets.enc.yaml              # SOPS ciphertext (safe for encrypted source sync)
   .sops.yaml                    # approved age recipient policy (no private key)
-/var/lib/nixlab/keys/projects.agekey
+/var/lib/nixus/keys/projects.agekey
                                 # 0400, root; never Git, Nix store, image or guest
-/var/lib/nixlab-admin/          # locked journals, audit, reviewed transactions
-/run/nixlab/project-secrets/    # protected temporary runtime delivery (tmpfs)
+/var/lib/nixus-admin/          # locked journals, audit, reviewed transactions
+/run/nixus/project-secrets/    # protected temporary runtime delivery (tmpfs)
 ```
 
-The existing `nixlab.project.secrets.file = "secrets.enc.yaml"` typed field is the *ciphertext path*. Extend the typed project schema with references that contain only key names and consumer identities; the Nix evaluator cannot request plaintext. The source-revision metadata identifies ciphertext SHA-256, recipient-policy identity, names of referenced keys, consuming workloads and a revision/deployment status. **Never** expose ciphertext-derived plaintext values through pure Nix evaluation.
+The existing `nixus.project.secrets.file = "secrets.enc.yaml"` typed field is the *ciphertext path*. Extend the typed project schema with references that contain only key names and consumer identities; the Nix evaluator cannot request plaintext. The source-revision metadata identifies ciphertext SHA-256, recipient-policy identity, names of referenced keys, consuming workloads and a revision/deployment status. **Never** expose ciphertext-derived plaintext values through pure Nix evaluation.
 
 Project directories can be Git-synced using **ciphertext only**. `.sops.yaml` contains public recipients. An approved age identity is generated **once**, atomically, only after the user explicitly chooses generate or restore. A missing or damaged key must block secret operations instead of silently regenerating. Additional recipients/rekeys require a separate reviewed rotation. Root is the common trust boundary: one host identity can decrypt all projects; per-project isolation is enforced by broker authorization, separately restricted runtime files, and workload ownership.
 
 
-## Implemented source-only path (#146)
+## Implemented source-only path (OmarDardery/nixlab#146)
 
 - Project Web UI: write-only masked values, metadata-only key listing, batch import from local `.env`, reauthentication for sensitive operations and separately acknowledged publication.
-- Root broker: one-time age generation/import at `/var/lib/nixlab/keys/projects.agekey`, immutable encrypted SOPS reviews, SHA-256 CAS checks, previous ciphertext revisions, fail-closed source/policy drift, and recovery of interrupted ciphertext commits.
+- Root broker: one-time age generation/import at `/var/lib/nixus/keys/projects.agekey`, immutable encrypted SOPS reviews, SHA-256 CAS checks, previous ciphertext revisions, fail-closed source/policy drift, and recovery of interrupted ciphertext commits.
 - Offline kit: passphrase-encrypted age identity and optional existing restic unlock/remote credentials using scrypt + AES-GCM, in-memory verification and refusal to overwrite existing identity/credentials. A kit must be saved independently of encrypted source and checked before being trusted.
 - Typed project declarations: explicit `secrets.bindings` with key names, owned instance names, `nixos-sops` versus `incus-file` target type and restricted `/run/secrets/*` destinations; **no values** in evaluation.
 - Source-only operations never restart guests or claim that ciphertext publication is a successful secret rollout.
 
-**Remaining release gates:** NixOS guest-owned key/recipient provisioning and `sops-nix` activation; Incus OCI file-secret delivery through a verified ownership/ETag-aware adapter; multi-recipient rotation; complete encrypted off-host recovery; full-host VM test including a changed variable and confirmed service restart. Keep #134 open until demonstrated. No host private age identity may enter an Incus guest.
+**Remaining release gates:** NixOS guest-owned key/recipient provisioning and `sops-nix` activation; Incus OCI file-secret delivery through a verified ownership/ETag-aware adapter; multi-recipient rotation; complete encrypted off-host recovery; full-host VM test including a changed variable and confirmed service restart. Keep #46 open until demonstrated. No host private age identity may enter an Incus guest.
 
 ## Single Web UI information architecture
 
@@ -65,7 +65,7 @@ The UI itself is not the encryption boundary; the trusted broker/age identity an
 ## Delivery semantics
 
 - **NixOS host and NixOS guests:** use the existing `sops-nix` integration, `sops.age.keyFile`, `sops.secrets.<name>.sopsFile`, secret `key`/runtime `path`, owner/mode and `restartUnits` / `reloadUnits` where appropriate. Secret values never appear in Nix option strings. Guest private keys, if any, have an explicit guest-owned provenance; **never copy the host master key into a guest**.
-- **Incus OCI / Incus Compose:** `sops-nix` does **not** run inside generic OCI images. The NixLab broker decrypts only the approved referenced values for a scoped delivery adapter, into tmpfs/protected files and appropriate guest-owned paths after a verified Incus ownership/identity check. No age private key in the guest. No values in Incus `environment.*`, `user.*`, profiles, device metadata, logs or `incus config show`. Avoid assuming plain environment variables are secret; prefer explicit file-secret consumers. Recheck actual Incus persistence, visibility and cleanup in an integration test before shipping.
+- **Incus OCI / Incus Compose:** `sops-nix` does **not** run inside generic OCI images. The Nixus broker decrypts only the approved referenced values for a scoped delivery adapter, into tmpfs/protected files and appropriate guest-owned paths after a verified Incus ownership/identity check. No age private key in the guest. No values in Incus `environment.*`, `user.*`, profiles, device metadata, logs or `incus config show`. Avoid assuming plain environment variables are secret; prefer explicit file-secret consumers. Recheck actual Incus persistence, visibility and cleanup in an integration test before shipping.
 - **Original Compose/Dockerfiles:** preserve byte-exact source and relative paths. An original `env_file: .env` or `${VAR}` reference is mapped, where supported, to a generated *runtime-only* protected file; it must never silently rewrite the original Compose source. Fail closed on unsupported `build.secrets`/`build.ssh` and any case that would expose values in image layers, build args or an Incus-visible environment setting.
 - **Rotation/restart:** updating ciphertext is not the same as applying it. Show intended service restarts, preserve last healthy deployed revision, and require explicit approval. An independent host restore must include SOPS ciphertext **and** the separately retained age identity.
 
@@ -81,11 +81,11 @@ The UI itself is not the encryption boundary; the trusted broker/age identity an
 
 ## Implementation sequence
 
-1. Document the UI/write-only contract and threat boundaries (this document); keep #134 open.
+1. Document the UI/write-only contract and threat boundaries (this document); keep #46 open.
 2. Add a metadata-only Secrets panel, stable per-project secret reference schema and read-only broker projection; do not decrypt on GET.
 3. Add one-time age identity setup/import with explicit offline recovery and key-provenance checks.
 4. Add strictly bounded SOPS create/edit/delete/rotate, immutable ciphertext revisions and separate review/apply through the broker.
 5. Wire NixOS `sops-nix` runtime paths and independently qualify Incus OCI/Compose file-based delivery.
-6. Test off-host restore, rekey and leak prevention; only then mark the #134 gate complete and permit native project deployment requiring secrets.
+6. Test off-host restore, rekey and leak prevention; only then mark the #46 gate complete and permit native project deployment requiring secrets.
 
 Useful upstream references: [sops-nix README](https://github.com/Mic92/sops-nix/blob/master/README.md), [SOPS reference](https://getsops.io/docs/reference/), and [age](https://age-encryption.org/).

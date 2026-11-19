@@ -21,7 +21,7 @@ except ValueError:
     # Disposable fixture only: expose bounded Nix/systemd errors in CI.
     # Never use this reporting path for user project source or secrets.
     result = subprocess.run([
-        "journalctl", "--unit=nixlab-project-eval-" + "1" * 32,
+        "journalctl", "--unit=nixus-project-eval-" + "1" * 32,
         "--no-pager", "--output=cat", "--lines=25"
     ], capture_output=True, text=True, timeout=15)
     print("EVALUATOR_UNIT_JOURNAL", result.stdout[-5000:], result.stderr[-1000:], flush=True)

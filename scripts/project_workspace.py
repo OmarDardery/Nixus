@@ -1,4 +1,4 @@
-"""Read-only preflight for an *independent* declarative NixLab workspace.
+"""Read-only preflight for an *independent* declarative Nixus workspace.
 
 This module does not evaluate Nix or grant permission to deploy anything.
 A privileged broker must freeze the exact reviewed source, recheck this

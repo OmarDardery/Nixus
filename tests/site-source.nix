@@ -1,6 +1,6 @@
 # Minimal real source for management fixtures using the production Nix reader.
 { pkgs }:
-pkgs.runCommand "nixlab-test-site-source" { } ''
+pkgs.runCommand "nixus-test-site-source" { } ''
   mkdir -p $out/lib
   cp ${../site.nix} $out/site.nix
   cp ${../site-defaults.nix} $out/site-defaults.nix

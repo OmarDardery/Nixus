@@ -12,8 +12,8 @@ def read_settings(root):
                                  str(Path(root) / 'site.nix')],
                                 capture_output=True, text=True, timeout=10)
         if result.returncode:
-            if 'Unsupported NixLab settings schema version' in result.stderr:
-                raise ValueError('Unsupported NixLab settings schema version; use compatible platform source')
+            if 'Unsupported Nixus settings schema version' in result.stderr:
+                raise ValueError('Unsupported Nixus settings schema version; use compatible platform source')
             raise ValueError('Nix settings evaluation failed; inspect the source from the host console')
         settings = json.loads(result.stdout)
     except (OSError, UnicodeError, subprocess.SubprocessError):

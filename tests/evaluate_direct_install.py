@@ -24,7 +24,7 @@ def key(value):
     return 'ssh-ed25519 ' + base64.b64encode(wire).decode() + ' fixture'
 
 
-with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
+with tempfile.TemporaryDirectory(prefix='nixus-direct-eval-') as folder:
     root = Path(folder) / 'source'
     subprocess.run(['git', 'clone', '--quiet', '--no-hardlinks', str(ROOT), str(root)], check=True)
     installed = root / 'machine/installed-system'
@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
     try:
         read_settings(root)
     except ValueError as error:
-        assert 'Unsupported NixLab settings schema' in str(error)
+        assert 'Unsupported Nixus settings schema' in str(error)
     else:
         raise AssertionError('Future schema was accepted')
     path.write_text('{"secret":"SENTINEL-malformed-config"')
@@ -95,15 +95,15 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
     assert read_settings(root) == normalized
     path.write_text(json.dumps(settings))
     bootstrap = evaluate(root, 'nixosConfigurations.bootstrap.config', '''c: {
-      ready = c.nixlab.settings.ready;
+      ready = c.nixus.settings.ready;
       stateVersion = c.system.stateVersion;
       rootDevice = c.fileSystems."/".device;
       networkManager = c.networking.networkmanager.enable;
-      portal = c.nixlab.settings.setup.enable;
+      portal = c.nixus.settings.setup.enable;
       incus = c.virtualisation.incus.enable;
       cockpit = c.services.cockpit.enable;
       docker = c.virtualisation.docker.enable;
-      guard = c.systemd.timers.nixlab-rollback-guard.wantedBy;
+      guard = c.systemd.timers.nixus-rollback-guard.wantedBy;
     }''')
     assert not bootstrap['ready'] and bootstrap['portal'], bootstrap
     assert bootstrap['stateVersion'] == '25.11' and bootstrap['networkManager'], bootstrap
@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
     assert not bootstrap['incus'] and not bootstrap['cockpit'] and not bootstrap['docker'], bootstrap
     assert 'timers.target' in bootstrap['guard'], bootstrap
     evaluate(root, 'nixosConfigurations.bootstrap.config.system.build.toplevel.drvPath')
-    overview = evaluate(root, 'nixlabOverview')
+    overview = evaluate(root, 'nixusOverview')
     assert set(overview['adminKeys']) == {key(1), key(3)}, overview['adminKeys']
     host = {'architecture': 'x86_64', 'cpuVendor': 'intel', 'kvm': True,
             'interfaces': [{'name': 'eth0', 'wireless': False, 'addresses': ['192.0.2.10/24']}],
@@ -122,8 +122,8 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
       stateVersion = c.system.stateVersion;
       rootDevice = c.fileSystems."/".device;
       networkManager = c.networking.networkmanager.enable;
-      settings = c.nixlab.settings;
-      desired = c.nixlab.desiredSettings;
+      settings = c.nixus.settings;
+      desired = c.nixus.desiredSettings;
       incus = c.virtualisation.incus.enable;
       cockpit = c.services.cockpit.enable;
       hostDocker = c.virtualisation.docker.enable;
@@ -149,9 +149,9 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
     module_dir = root / 'machine/modules'
     module_dir.mkdir(parents=True, exist_ok=True)
     override_module = module_dir / 'settings-override.nix'
-    override_module.write_text('{ lib, ... }: { nixlab.settings.hostName = lib.mkForce "file-owned"; }')
+    override_module.write_text('{ lib, ... }: { nixus.settings.hostName = lib.mkForce "file-owned"; }')
     overridden = evaluate(root, 'nixosConfigurations.hypervisor.config',
-        'c: { desired = c.nixlab.desiredSettings.hostName; effective = c.nixlab.settings.hostName; }')
+        'c: { desired = c.nixus.desiredSettings.hostName; effective = c.nixus.settings.hostName; }')
     assert overridden == {'desired': candidate['hostName'], 'effective': 'file-owned'}, overridden
     override_module.unlink()
     # Evaluate the actual system derivation to force NixOS assertions too.
@@ -159,10 +159,10 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
     # A physical-console install is valid without a key. Adoption can use an
     # independent bridge/pool without changing native Incus resources.
     candidate['adminKeys'] = []
-    candidate['guests']['bridge'] = 'nixlabbr'
-    candidate['storage']['pool'] = 'nixlab-guests'
-    candidate['storage']['source'] = '/var/lib/incus/storage-pools/nixlab-guests'
-    candidate['connectivity']['guestInterfaces'] = ['nixlabbr']
+    candidate['guests']['bridge'] = 'nixusbr'
+    candidate['storage']['pool'] = 'nixus-guests'
+    candidate['storage']['source'] = '/var/lib/incus/storage-pools/nixus-guests'
+    candidate['connectivity']['guestInterfaces'] = ['nixusbr']
     candidate['connectivity']['preservedIncusBridges'] = ['incusbr0']
     path.write_text(json.dumps(candidate))
     adopted = evaluate(root, 'nixosConfigurations.hypervisor.config', '''c: {
@@ -171,7 +171,7 @@ with tempfile.TemporaryDirectory(prefix='nixlab-direct-eval-') as folder:
       nat = c.networking.nat.internalInterfaces;
       passwordLogin = c.services.openssh.settings.PasswordAuthentication;
     }''')
-    assert adopted == {'pool': 'nixlab-guests', 'bridge': 'nixlabbr', 'nat': ['nixlabbr'], 'passwordLogin': True}, adopted
+    assert adopted == {'pool': 'nixus-guests', 'bridge': 'nixusbr', 'nat': ['nixusbr'], 'passwordLogin': True}, adopted
     evaluate(root, 'nixosConfigurations.hypervisor.config.system.build.toplevel.drvPath')
     candidate['access']['sshPasswordLogin'] = False
     path.write_text(json.dumps(candidate))

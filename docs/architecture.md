@@ -26,17 +26,17 @@ not replace the evaluated NixOS/Incus and rollback integration tests.
 
 | Boundary | Canonical source / data owner | Public/stable surface | Failure or migration gate |
 |---|---|---|---|
-| Host settings, defaults, and legacy schema | `site-defaults.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `site.nix`; Python only validates request inputs | `machine/settings.json` (layout v1), legacy `local/settings.json`, `schemaVersion`, file-module overrides | #49; default/list/override/legacy tests and reject unknown future versions |
-| Host mutation | `admin/controller.py` `Manager` + `admin/worker.py` | Review, build, impact plan, apply, confirm, rollback, cancel; `active.json`, `pending.json`, `last-confirmed.json`, `jobs/` | #50/#52; preserved previous generation, live access check, interrupt and stopped-worker tests |
-| Entry points and HTTPS API | `installer/package.nix`, `admin/package.nix`, `admin/main.py` | `nix run .#install`, `nix run .#update`, `nixlab-admin` and authenticated `/api/*` paths/response fields | #50/#55/#62; public alias/route/shape regression before renaming; sensitive output is **not** protected compatibility |
-| Listener/exposure policy | `modules/settings.nix`, `modules/networking.nix`, `modules/admin-ui.nix`, service-owned listeners | Management HTTPS, Cockpit, Incus, optional app proxy and explicit trusted CIDRs | #51; collision/bind/scope tests, management access/rollback. Present fragmented policy is a gap |
-| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `admin/runtime.py` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI, Arcane DB for apps | Existing portal session and separate Cockpit/Incus/Arcane identity; `nixlab-management-identity.service` | #57/#61–#68; never freeze credential printing, blanket trust or weak onboarding |
-| Incus declared infrastructure | Native Incus preseed + `scripts/infrastructure.py`; reconciled instance fields via `scripts/reconcile.py` | Reserved project/profile/network/pool, last-applied state, ETag/ownership; **native** guests survive source changes | #47/#9; drift and changed-precondition refusal, no deletion of unowned guest state |
-| Apps VM and Compose | Incus owns apps VM/disk; Docker/Arcane or user's Compose repository owns containers/stacks and Arcane DB | Persistent guest disks, volumes and specialist UI | #10/#16/#58; updates cannot claim data rollback or overwrite existing specialist identity |
-| Backup and restore evidence | `scripts/backup.py`, `admin/operations.py`, `admin/recovery.py` and restic | Staged manifest, independent archive, integrity result and **actual restore proof** are distinct | #11/#12/#53; incomplete stage, exclusions and interruption never count as verified restore |
-| Monitoring and alerts | `modules/monitoring.nix`, `modules/notifications.nix` | Prometheus/optional historical metrics, failure notification | #53; Alertmanager is the planned normal router, **not currently assumed implemented** |
-| Nix/OCI dependencies | Single `flake.lock`; OCI image/template references currently live in their owning services | `nixosModules`, `nixosConfigurations`, `packages`, `apps`, `checks` | #54/#58; one lock and planned reviewed OCI manifest, no second dependency authority |
-| Release evidence | `scripts/release.py`, CI workflows, commissioning/recovery reports | `VERSION`, checks/qualification gates, source revision | #56/#8; machine-readable release contract planned, physical evidence remains distinct |
+| Host settings, defaults, and legacy schema | `site-defaults.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `site.nix`; Python only validates request inputs | `machine/settings.json` (layout v1), legacy `local/settings.json`, `schemaVersion`, file-module overrides | OmarDardery/nixlab#49; default/list/override/legacy tests and reject unknown future versions |
+| Host mutation | `admin/controller.py` `Manager` + `admin/worker.py` | Review, build, impact plan, apply, confirm, rollback, cancel; `active.json`, `pending.json`, `last-confirmed.json`, `jobs/` | OmarDardery/nixlab#50/#17; preserved previous generation, live access check, interrupt and stopped-worker tests |
+| Entry points and HTTPS API | `installer/package.nix`, `admin/package.nix`, `admin/main.py` | `nix run .#install`, `nix run .#update`, `nixus-admin` and authenticated `/api/*` paths/response fields | OmarDardery/nixlab#50/#20/#27; public alias/route/shape regression before renaming; sensitive output is **not** protected compatibility |
+| Listener/exposure policy | `modules/settings.nix`, `modules/networking.nix`, `modules/admin-ui.nix`, service-owned listeners | Management HTTPS, Cockpit, Incus, optional app proxy and explicit trusted CIDRs | #16; collision/bind/scope tests, management access/rollback. Present fragmented policy is a gap |
+| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `admin/runtime.py` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI, Arcane DB for apps | Existing portal session and separate Cockpit/Incus/Arcane identity; `nixus-management-identity.service` | #22/#26–#68; never freeze credential printing, blanket trust or weak onboarding |
+| Incus declared infrastructure | Native Incus preseed + `scripts/infrastructure.py`; reconciled instance fields via `scripts/reconcile.py` | Reserved project/profile/network/pool, last-applied state, ETag/ownership; **native** guests survive source changes | #15/OmarDardery/nixlab#9; drift and changed-precondition refusal, no deletion of unowned guest state |
+| Apps VM and Compose | Incus owns apps VM/disk; Docker/Arcane or user's Compose repository owns containers/stacks and Arcane DB | Persistent guest disks, volumes and specialist UI | #4/#10/#23; updates cannot claim data rollback or overwrite existing specialist identity |
+| Backup and restore evidence | `scripts/backup.py`, `admin/operations.py`, `admin/recovery.py` and restic | Staged manifest, independent archive, integrity result and **actual restore proof** are distinct | #5/#6/#18; incomplete stage, exclusions and interruption never count as verified restore |
+| Monitoring and alerts | `modules/monitoring.nix`, `modules/notifications.nix` | Prometheus/optional historical metrics, failure notification | #18; Alertmanager is the planned normal router, **not currently assumed implemented** |
+| Nix/OCI dependencies | Single `flake.lock`; OCI image/template references currently live in their owning services | `nixosModules`, `nixosConfigurations`, `packages`, `apps`, `checks` | #19/#23; one lock and planned reviewed OCI manifest, no second dependency authority |
+| Release evidence | `scripts/release.py`, CI workflows, commissioning/recovery reports | `VERSION`, checks/qualification gates, source revision | #21/#3; machine-readable release contract planned, physical evidence remains distinct |
 
 **Compatibility policy.** Changes to the manifest's flake paths, CLI aliases,
 authenticated portal routes/response fields, state paths, machine format, or
@@ -77,7 +77,7 @@ initial installer, never accepted from portal request bodies, and existing jobs
 without role metadata retain their hypervisor meaning. Both use the same source
 digest, impact gate, exact built closure, pending deadline and recovery manifest.
 
-Keep public `nix run ...#install` and `#update` entrypoints, the `nixlab-admin`
+Keep public `nix run ...#install` and `#update` entrypoints, the `nixus-admin`
 CLI, existing machine settings/modules, transaction records, and previous system
 generation recovery usable across refactors. A change to a public API, state path,
 or data interpretation needs a documented migration, rollback path and regression
@@ -257,14 +257,14 @@ fixture in `tests/test_setup.py` checks rejection/closure, existing auth/CSRF an
 hostname rules, safe method errors, and recovery after 100 stalled TLS clients.
 HTTP timeouts are inactivity bounds, not an absolute request deadline. Management
 firewall policy, TLS trust and private-network deployment remain necessary; these
-tests do not qualify public Internet exposure or complete the broader #74 audit.
+tests do not qualify public Internet exposure or complete the broader OmarDardery/nixlab#74 audit.
 
 ## Durable worker observations
 
 Configuration, guest operations and deployments keep separate state machines and
 recovery actions. They share `runtime.job_directory`, `runtime.tail_log` and
 `runtime.worker_active` for validated job IDs, bounded log reads and bounded local
-systemd observation. Worker inspection accepts only the existing NixLab worker
+systemd observation. Worker inspection accepts only the existing Nixus worker
 unit names and times out after ten seconds. Active, inactive/failed and missing
 units are distinguished from a failed inspection. A timeout, missing systemctl or
 permission/transport error reports unavailable state without marking the durable

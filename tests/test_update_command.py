@@ -73,7 +73,7 @@ class UpdateTests(unittest.TestCase):
         self.wait = self.stack.enter_context(patch.object(update.direct, 'wait_for', return_value=self.pending))
         self.health = self.stack.enter_context(patch.object(update.diagnostics, 'wait_ready'))
         self.health.return_value = {'checks': [
-            {'name': 'Nixlab', 'url': 'https://192.0.2.20:9440', 'ok': True}]}
+            {'name': 'Nixus', 'url': 'https://192.0.2.20:9440', 'ok': True}]}
         self.ask = self.stack.enter_context(patch.object(update, 'ask', return_value=True))
         self.print = self.stack.enter_context(patch('builtins.print'))
 
@@ -85,7 +85,7 @@ class UpdateTests(unittest.TestCase):
         self.health.assert_called_once()
         self.manager.confirm.assert_not_called()
         self.manager.rollback.assert_not_called()
-        self.print.assert_any_call('Nixlab: https://192.0.2.20:9440', flush=True)
+        self.print.assert_any_call('Nixus: https://192.0.2.20:9440', flush=True)
 
     def test_declined_activation_discards_only_unapplied_candidate(self):
         self.ask.return_value = False
@@ -251,17 +251,17 @@ class UpdateTests(unittest.TestCase):
     def test_bootstrap_runtime_is_pinned_in_existing_job_retention(self):
         with patch.object(update.rt, 'SOURCE', Path('/nix/store/example-installer-source/admin')), \
                 patch.object(update.rt.subprocess, 'run') as command:
-            update.rt.pin_worker_runtime(Path('/var/lib/nixlab-admin/jobs') / ID)
+            update.rt.pin_worker_runtime(Path('/var/lib/nixus-admin/jobs') / ID)
         args = command.call_args.args[0]
         self.assertEqual(args[-1], '/nix/store/example-installer-source')
-        self.assertEqual(args[2], '/var/lib/nixlab-admin/jobs/' + ID + '/worker-runtime')
+        self.assertEqual(args[2], '/var/lib/nixus-admin/jobs/' + ID + '/worker-runtime')
         self.assertTrue(command.call_args.kwargs['check'])
         self.assertEqual(command.call_args.kwargs['timeout'], 30)
-        with patch.dict(update.os.environ, {'NIXLAB_WORKER_RUNTIME': '/nix/store/update-launcher'}), \
+        with patch.dict(update.os.environ, {'NIXUS_WORKER_RUNTIME': '/nix/store/update-launcher'}), \
                 patch.object(update.rt.subprocess, 'run') as command:
             update.rt.pin_worker_runtime(Path('/tmp/job'))
             self.assertEqual(command.call_args.args[0][-1], '/nix/store/update-launcher')
-        with patch.dict(update.os.environ, {'NIXLAB_WORKER_RUNTIME': '/tmp/untrusted'}), \
+        with patch.dict(update.os.environ, {'NIXUS_WORKER_RUNTIME': '/tmp/untrusted'}), \
                 patch.object(update.rt.subprocess, 'run') as command:
             with self.assertRaises(ValueError): update.rt.pin_worker_runtime(Path('/tmp/job'))
             command.assert_not_called()

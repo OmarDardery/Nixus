@@ -2,9 +2,9 @@
 
 ## Native service sessions
 
-NixLab, Incus, Cockpit and Arcane authenticate separately. The optional Arcane
+Nixus, Incus, Cockpit and Arcane authenticate separately. The optional Arcane
 TLS proxy uses the upstream [Nginx njs module](https://nginx.org/en/docs/njs/) to
-remove `nixlab_session` from requests to the guest and from guest responses.
+remove `nixus_session` from requests to the guest and from guest responses.
 Browsers share cookies across ports, so the proxy must enforce this boundary.
 Arcane's own cookies, cookie security attributes and JWT headers are preserved.
 This module runs inside Nginx; it adds no background service. A custom replacement
@@ -12,17 +12,17 @@ proxy must preserve the same isolation.
 
 ## Commands, docs and community resources
 
-Open **Help** in the Nixlab host console for copyable platform updates,
+Open **Help** in the Nixus host console for copyable platform updates,
 package-refresh reviews, health checks, guest/Docker examples and community helper
 commands. Each example says where to run it. Copying never executes a command or
 creates a guest from the browser. Application wizards run interactively in the host
 terminal; Docker examples target the apps VM.
 
-The same section groups Nixlab guides, upstream documentation and community resources
+The same section groups Nixus guides, upstream documentation and community resources
 by project. Incus helpers, Cockpit plugins, Docker Compose examples and Arcane
 templates are labeled separately. Optional backup, secret, ingress and monitoring
 references are under the expanded resources list. Community compatibility and
-Nixlab qualification remain separate.
+Nixus qualification remain separate.
 
 ## Credential delivery during installation and recovery
 
@@ -31,20 +31,20 @@ Arcane first-boot input is delivered through protected stdin into guest tmpfs,
 verified through its real TLS login API, and deleted. It expires after 15 minutes.
 Existing databases remain authoritative and restart without a bootstrap password.
 Choose a separate initial password in **Services**, or explicitly opt in to reuse
-by entering your current NixLab password again. Reuse shares compromise risk;
+by entering your current Nixus password again. Reuse shares compromise risk;
 accounts remain independent and subsequent changes are not synchronized.
 
-The Arcane reset form requires your current NixLab password on every request.
+The Arcane reset form requires your current Nixus password on every request.
 The root broker checkpoints the database and drives the supported upstream
 interactive CLI through a private PTY, verifies login, and rolls back a failed
 reset. A reboot restores an interrupted checkpoint before starting Arcane.
-For local-console recovery use `sudo nixlab-admin arcane reset-password`.
+For local-console recovery use `sudo nixus-admin arcane reset-password`.
 Passwords never appear in argv, public output, operation records or the Nix store.
 
 Console-approved browser enrollment is explicitly enabled with
 `--wizard --web-enrollment`; the default legacy path is not silently migrated.
 An existing or forgotten portal account can be rotated with
-`sudo nixlab-admin reset-password` from an authorized private host terminal. It
+`sudo nixus-admin reset-password` from an authorized private host terminal. It
 refuses non-terminal/echoing input, accepts a supplied password and removes the
 old setup plaintext only after committing its replacement verifier. Existing
 sessions fail their next identity check; no UI restart is necessary. Do not put
@@ -85,7 +85,7 @@ Bad HTTP framing returns fixed generic errors without echoing submitted
 Authorization, Cookie or body content. Interrupted connections may close
 without a response. Normal browser imports, login and one-time certificate
 downloads remain authenticated; do not expose their traffic to support logs.
-Use the actual `nixlab-ui` unit, HTTPS port and certificate when diagnosing
+Use the actual `nixus-ui` unit, HTTPS port and certificate when diagnosing
 clients; no reverse-proxy forwarding or arbitrary internet ingress is assumed.
 
 Validation runs socket-level malformed/duplicate length, header overflow,
@@ -135,7 +135,7 @@ use authenticated TLS. An unrestricted certificate is host-root-equivalent. Use 
 project certificates/authorization for delegated users; review the version's supported controls.
 Revoke a lost client with `incus config trust list` / `incus config trust remove FINGERPRINT`.
 
-Default `/etc/nixlab/client.json` targets the local host and project `lab`. On a client, set
+Default `/etc/nixus/client.json` targets the local host and project `lab`. On a client, set
 `HOMELAB_CONFIG` to a JSON file such as:
 
 ```json
@@ -143,7 +143,7 @@ Default `/etc/nixlab/client.json` targets the local host and project `lab`. On a
   "remote": "labserver",
   "project": "lab",
   "appsInstance": "apps",
-  "exportDirectory": "/home/USER/nixlab-exports",
+  "exportDirectory": "/home/USER/nixus-exports",
   "aliases": { "100": "web", "105": "database" }
 }
 ```
@@ -162,13 +162,13 @@ TLS key/certificate under `/var/lib/incus`; preserve it securely or re-verify fi
 reinstallation. Certificate rotation must be planned. Optionally configure the native
 `virtualisation.incus.useACMEHost` with a real DNS/ACME certificate; no public management port is needed.
 
-In the NixLab portal, open **Host → Access**. Enter a device name, a dedicated
-bundle import passphrase (16–256 characters), and your current NixLab password.
+In the Nixus portal, open **Host → Access**. Enter a device name, a dedicated
+bundle import passphrase (16–256 characters), and your current Nixus password.
 The default identity manages only the `lab` project and lasts 90 days. The advanced
 unrestricted checkbox explicitly grants Incus host administration; it requires the
 same fresh password check and a separate acknowledgement in the API. Use it only
 for a trusted host administrator. Incus authentication remains independent of your
-NixLab portal session; no blanket CA trust is installed.
+Nixus portal session; no blanket CA trust is installed.
 
 The portal generates an ECDSA P-384 client identity with client-authentication EKU,
 digital-signature key usage and `CA:FALSE`. It registers only the public certificate
@@ -193,13 +193,13 @@ Open the Incus HTTPS endpoint, select this browser identity and switch to the
 not authorize the browser as an administrator. Supported browser/OS import stores
 and selection dialogs must be qualified on the actual client versions in use.
 
-Use **Refresh browser identities** to view NixLab-owned fingerprints, their actual
+Use **Refresh browser identities** to view Nixus-owned fingerprints, their actual
 Incus project restrictions, expiration and trust status. **Renew** creates a new
 identity and encrypted bundle; the previous identity stays trusted until explicitly
-revoked or its disclosed expiration. **Revoke** requires your current NixLab
+revoked or its disclosed expiration. **Revoke** requires your current Nixus
 password and removes only the selected owned fingerprint through Incus trust APIs.
 It also invalidates any pending portal download. The existing guard removes expired
-NixLab-owned trust; unrelated and older external trust entries are never adopted
+Nixus-owned trust; unrelated and older external trust entries are never adopted
 or removed automatically. Manage legacy/external certificates through Incus itself.
 The separate encrypted recovery kit preserves the root ownership registry;
 configuration-only exports and support metadata do not carry browser keys or bundles.
@@ -207,14 +207,14 @@ configuration-only exports and support metadata do not carry browser keys or bun
 If download/import is cancelled, a timeout occurs, or the broker restarts, inspect
 the identity list before retrying. Ownership intent is durable before Incus mutation,
 so even uncertain registration remains individually visible/revocable. Private keys
-are confined to root-only `/run/nixlab-browser` directories and cleaned on normal
+are confined to root-only `/run/nixus-browser` directories and cleaned on normal
 success/failure. The existing locked guard removes crash remnants older than five
 minutes; reboot clears `/run`. Guard failures are health findings, not silent cleanup.
 
 For local recovery, inspect `sudo incus config trust list` and revoke a verified
 full fingerprint with `sudo incus config trust remove FINGERPRINT`. Do not remove
 other operators' trust. Browser bundle renewal/revocation does not change Linux,
-NixLab portal, or application passwords.
+Nixus portal, or application passwords.
 
 The Python/HTTPS tests cover cryptography, failure cleanup, ownership, reauthentication,
 CSRF/session binding and single-claim races. The real Incus fixture checks TLS 1.3,
@@ -227,7 +227,7 @@ expiry and revoke smoke results before claiming that client combination qualifie
 
 Use Incus for containers, VMs, image templates, limits, devices, volumes, networks and snapshots.
 For a UI-created guest, runtime state belongs to Incus until deliberately adopted. Adoption
-requires reviewing its full configuration and explicitly setting `user.nixlab.managed=true`;
+requires reviewing its full configuration and explicitly setting `user.nixus.managed=true`;
 the reconciler refuses a name collision without that marker. A marker is authorization, not
 an ownership proof against someone who already has root access.
 
@@ -282,8 +282,8 @@ sudo homelab logs demo
 sudo homelab update demo
 sudo homelab project-restart demo
 sudo homelab down demo
-sudo homelab exec apps -- nixlab-project backup demo
-sudo homelab exec apps -- nixlab-project lock demo
+sudo homelab exec apps -- nixus-project backup demo
+sudo homelab exec apps -- nixus-project lock demo
 ```
 
 Deploy validates Compose and waits for health. The image itself defines the demo HTTP healthcheck;
@@ -309,9 +309,9 @@ No additional Dockge/Komodo dashboard competes for control.
 ## Logs and monitoring
 
 ```console
-journalctl -u incus -u incus-preseed -u nixlab-instances --since today
-journalctl -u nixlab-incus-audit --since today
-journalctl -t nixlab
+journalctl -u incus -u incus-preseed -u nixus-instances --since today
+journalctl -u nixus-incus-audit --since today
+journalctl -t nixus
 systemctl --failed
 sudo incus info apps --project lab --show-log
 sudo homelab logs demo
@@ -337,8 +337,8 @@ unattended alert delivery. Logs are not shipped to a remote collector by default
 
 Open `http://HOST_IP/` from a trusted LAN client. The lightweight port-80
 entrypoint sends an HTTP 308 redirect to `https://HOST_IP:9440/` (or your
-configured NixLab HTTPS port). **Authentication and session cookies are
-never served over HTTP.** Keep using the NixLab-generated TLS identity and
+configured Nixus HTTPS port). **Authentication and session cookies are
+never served over HTTP.** Keep using the Nixus-generated TLS identity and
 verify its fingerprint on initial enrollment.
 
 The portal Overview and sidebar link to enabled Incus UI (:8443),
@@ -346,12 +346,12 @@ Cockpit (configured port, normally :9090), and Arcane (configured
 port, normally :9443 on fresh installs or :9441 on older installs).
 Disabled or unconfigured services are not advertised as live. The
 **Help** page includes a copy-only homelab cheatsheet.
-Port 80 belongs to the *NixLab host IP*; a Mainsail server inside a
+Port 80 belongs to the *Nixus host IP*; a Mainsail server inside a
 separate Incus guest may independently listen on port 80 on its own IP.
 
 The port-80 listener uses Nginx on the host management interface. Do not
 install a second host web server that also binds 0.0.0.0:80. After an
-upgrade, run `sudo nixlab doctor` and check the HTTP-entry redirect
+upgrade, run `sudo nixus doctor` and check the HTTP-entry redirect
 result; the recovery guard still protects unconfirmed configuration
 switches. Do not expose management ports through Cloudflare tunnels.
 
@@ -359,30 +359,30 @@ switches. Do not expose management ports through Cloudflare tunnels.
 
 ### First-administrator claim state and interrupted enrollment
 
-The root broker owns version 1 of `/var/lib/nixlab-admin/bootstrap-state.json` (mode 0600). The portal cannot read or edit it. `auth.json` and named account verifiers keep their existing formats; account state lives outside configuration snapshots and transaction rollback does not replace it.
+The root broker owns version 1 of `/var/lib/nixus-admin/bootstrap-state.json` (mode 0600). The portal cannot read or edit it. `auth.json` and named account verifiers keep their existing formats; account state lives outside configuration snapshots and transaction rollback does not replace it.
 
 - `unclaimed`: enrollment was explicitly enabled by the root installer; no browser can claim without a separate host approval.
 - `host-verified`: a SHA-256 digest of the approved browser code, boot identity and ten-minute monotonic deadline permit one claim. A broker/web restart preserves the deadline; reboot or expiry invalidates approval.
-- `committing`: durable claim intent exists. The broker removes legacy enrollment markers before atomically publishing the verifier. If publication is interrupted before a valid verifier exists, the portal stays closed and needs a new `sudo nixlab-admin approve-enrollment` approval. If the verifier committed, the broker completes the receipt on retry/restart. A repeated completed request returns `alreadyComplete` and cannot replace the password.
+- `committing`: durable claim intent exists. The broker removes legacy enrollment markers before atomically publishing the verifier. If publication is interrupted before a valid verifier exists, the portal stays closed and needs a new `sudo nixus-admin approve-enrollment` approval. If the verifier committed, the broker completes the receipt on retry/restart. A repeated completed request returns `alreadyComplete` and cannot replace the password.
 - `account-committed`: first claim is closed permanently. Missing or corrupt account files require authorized recovery, never another anonymous claim.
 - `legacy-provisioning` / `migrated`: private legacy installer provisioning and existing accounts retain their working verifier. Authenticated password replacement commits the new verifier before retiring `setup-password`; the account fingerprint rejects old sessions.
-- `recovery-authorized`: the local-root, terminal-only `sudo nixlab-admin reset-password` command has authorized a supplied replacement. It returns to `migrated` after publication; it never opens first-claim enrollment.
+- `recovery-authorized`: the local-root, terminal-only `sudo nixus-admin reset-password` command has authorized a supplied replacement. It returns to `migrated` after publication; it never opens first-claim enrollment.
 
 A preexisting opt-in `web-enrollment` marker without the new authority needs fresh console approval; an old approval file alone is insufficient. Existing valid accounts remain usable. Unknown future versions, malformed authority, and symlinks fail closed. Preserve the files and restore a supported version from the encrypted recovery kit rather than deleting account state to force enrollment. Unsupported authority also blocks automatic password/state rewrites; a compatible runtime or deliberate operator repair is required.
 
-The encrypted secrets recovery kit includes the claim authority with account verifiers. It excludes reusable browser approval material; any in-flight proof within the authority remains bound to its original boot and expiry. The PAM/bootstrap experience remains tracked in #63 and browser recovery approval in #67; this state authority does not enable opt-in web enrollment by default.
+The encrypted secrets recovery kit includes the claim authority with account verifiers. It excludes reusable browser approval material; any in-flight proof within the authority remains bound to its original boot and expiry. The PAM/bootstrap experience remains tracked in OmarDardery/nixlab#63 and browser recovery approval in #28; this state authority does not enable opt-in web enrollment by default.
 
 
 ### Verify this machine before first-admin creation
 
-On a genuinely unclaimed host installed with `--wizard --web-enrollment`, the HTTPS portal offers **Verify this machine**. Verify the management CA first. Enter an existing local Linux administrator's username and password. The root broker runs the dedicated `nixlab-enrollment` PAM service for password and account checks, then asks sudo's policy whether that identity may run an argument-free root Bash shell. Wheel membership or permission for an unrelated limited command alone is insufficient. Locked, expired, missing, noninteractive or nonadministrator accounts and missing PAM support are denied. No Linux user or password is changed. The service uses NixOS PAM rule generation, with root and null-password shortcuts disabled. Additional authentication policy can be configured through that PAM service; challenges that cannot complete through its bounded password input fail closed and require console approval.
+On a genuinely unclaimed host installed with `--wizard --web-enrollment`, the HTTPS portal offers **Verify this machine**. Verify the management CA first. Enter an existing local Linux administrator's username and password. The root broker runs the dedicated `nixus-enrollment` PAM service for password and account checks, then asks sudo's policy whether that identity may run an argument-free root Bash shell. Wheel membership or permission for an unrelated limited command alone is insufficient. Locked, expired, missing, noninteractive or nonadministrator accounts and missing PAM support are denied. No Linux user or password is changed. The service uses NixOS PAM rule generation, with root and null-password shortcuts disabled. Additional authentication policy can be configured through that PAM service; challenges that cannot complete through its bounded password input fail closed and require console approval.
 
 The host password exists only in the HTTPS request and a protected helper stdin pipe; it is never passed in argv, stored, or returned. The helper's output is discarded. Verification is bounded by helper deadlines, a two-helper concurrency limit, five attempts per source address and twenty globally in five minutes. Bootstrap session creation is also bounded. Rate records and hashed browser session metadata survive a broker/web restart.
 
-Approval belongs to one `__Host-nixlab_bootstrap` Secure/HttpOnly/SameSite=Strict cookie, its source address and HTTPS origin, with a separate CSRF token and a fixed ten-minute monotonic lifetime. Reload can resume that browser's approval. A broker/web restart does not extend it; reboot invalidates it. Copying the displayed console approval code cannot claim from a different browser, and the legacy unbound HTTPS claim route no longer works.
+Approval belongs to one `__Host-nixus_bootstrap` Secure/HttpOnly/SameSite=Strict cookie, its source address and HTTPS origin, with a separate CSRF token and a fixed ten-minute monotonic lifetime. Reload can resume that browser's approval. A broker/web restart does not extend it; reboot invalidates it. Copying the displayed console approval code cannot claim from a different browser, and the legacy unbound HTTPS claim route no longer works.
 
-For SSH-key-only administrators, open a private host terminal and run `sudo nixlab-admin approve-enrollment`. Enter the displayed browser code at the non-echoing prompt; the command refuses non-root/non-terminal/echo-fallback input and prints no token or password. This approves that same bounded browser, not a reusable password. If PAM verification is unavailable, use this fallback rather than weakening PAM or sudo policy.
+For SSH-key-only administrators, open a private host terminal and run `sudo nixus-admin approve-enrollment`. Enter the displayed browser code at the non-echoing prompt; the command refuses non-root/non-terminal/echo-fallback input and prints no token or password. This approves that same bounded browser, not a reusable password. If PAM verification is unavailable, use this fallback rather than weakening PAM or sudo policy.
 
-After approval, choose a unique lower-case NixLab username and a new 16–256 character portal password. The existing single-claim authority commits one verifier and invalidates every bootstrap browser. The winning browser receives an ordinary NixLab session; host proof is not ordinary portal authentication. Named first administrators use the existing `users.json` format; selecting `admin` uses the existing reserved `auth.json` format. Previously installed accounts retain their login and no new first-claim path opens for them. Local `reset-password` still resets the reserved recovery administrator `admin`, preserving other named accounts.
+After approval, choose a unique lower-case Nixus username and a new 16–256 character portal password. The existing single-claim authority commits one verifier and invalidates every bootstrap browser. The winning browser receives an ordinary Nixus session; host proof is not ordinary portal authentication. Named first administrators use the existing `users.json` format; selecting `admin` uses the existing reserved `auth.json` format. Previously installed accounts retain their login and no new first-claim path opens for them. Local `reset-password` still resets the reserved recovery administrator `admin`, preserving other named accounts.
 
 This adds no password synchronization with Linux, Cockpit, Incus or Arcane. Default installer enrollment remains release-gated; do not remove a working legacy path or switch an established host without fresh-install/upgrade qualification. Browser bootstrap session metadata (`bootstrap-sessions.json`, root-only mode 0600) is bounded and contains hashes, scope, deadlines and rate counters, not reusable cookie values or host credentials. It is intentionally excluded from recovery kits; portable account verifiers and the existing claim authority remain included.

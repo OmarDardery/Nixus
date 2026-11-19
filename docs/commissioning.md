@@ -6,7 +6,7 @@ mode, CPU, NICs, disks, exact source revision, results and relevant redacted log
 
 ## Record evidence
 
-**Clock qualification:** `sudo nixlab doctor` and the portal's Operations
+**Clock qualification:** `sudo nixus doctor` and the portal's Operations
 health panel distinguish `synchronized`, `plausible-but-unsynchronized` and
 `invalid-clock`. A new `clock` automated commissioning check passes only
 when the host reports a plausible, synchronized clock. Missing or outdated clock
@@ -21,13 +21,13 @@ Routine collection runs fixed, bounded read-only probes; it never installs an ap
 reboots, stops a guest, exports data or runs a disruptive test. It checks local
 management, the KVM ioctl, a running unprivileged container and (when enabled) the
 real apps VM agent/Docker plus authentication using existing Arcane credentials.
-It writes only its own report/lock under `/var/lib/nixlab-admin/commissioning`.
+It writes only its own report/lock under `/var/lib/nixus-admin/commissioning`.
 No raw command output or credentials enter that report. Changed Arcane passwords
 must be supplied through the existing supported credential mechanism, not a report.
 
 ```sh
-sudo nixlab commissioning collect --mode fresh
-sudo nixlab commissioning status --mode fresh
+sudo nixus commissioning collect --mode fresh
+sudo nixus commissioning status --mode fresh
 ```
 
 Use `--mode upgrade` to keep upgrade evidence separate. Run collect again after each
@@ -38,7 +38,7 @@ documented access checks were completed. The command itself never reboots.
 After actually completing a procedure below, record its outcome explicitly:
 
 ```sh
-sudo nixlab commissioning record --mode fresh \
+sudo nixus commissioning record --mode fresh \
   --check install-resume --status passed --acknowledge
 ```
 
@@ -59,7 +59,7 @@ checklist and release review. For a host with no apps VM, app checks are optiona
 and the report qualifies only the core profile.
 
 ```sh
-sudo nixlab commissioning export --mode fresh > fresh-report.json
+sudo nixus commissioning export --mode fresh > fresh-report.json
 ```
 
 Export refreshes the current context; changed inputs/settings/source/kernel/storage
@@ -84,7 +84,7 @@ See the [qualification matrix](qualification.md) for publication and limits.
   browser enrollment and Arcane authentication. Verify URLs match the assigned
   address and the console CA fingerprint before trusting the management CA.
 - Reboot twice with delayed DHCP if applicable, without manual service restarts.
-  Run `sudo nixlab doctor`; check `nixlab-management-health.service`, Cockpit
+  Run `sudo nixus doctor`; check `nixus-management-health.service`, Cockpit
   socket/service, apps VM, proxy and usable credentials after each boot.
 - Test explicit key-only SSH with a client public key and console recovery available.
   Check trusted source CIDRs and absence of public management ingress.
@@ -146,7 +146,7 @@ See the [qualification matrix](qualification.md) for publication and limits.
 - Select a real USB serial identity, create a stable alias, then attach it using Incus.
   Verify guest user/group permissions, disconnect/reconnect, host reboot and an actual
   workload. No particular peripheral or guest application is assumed.
-- Run `sudo nixlab-helpers doctor --project lab`, then qualify each selected helper
+- Run `sudo nixus-helpers doctor --project lab`, then qualify each selected helper
   through create, application health, reboot, update, backup, independent restore and
   cleanup. Record host generation, Incus version, source revisions, image/application
   versions and project/storage/network choices. The shipped targets are unverified;

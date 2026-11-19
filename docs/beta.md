@@ -2,12 +2,12 @@
 
 Source version: **0.1.0-beta.1**. This is a candidate for homelab enthusiasts,
 not a published or physically qualified beta release. The [qualification matrix](qualification.md)
-and [roadmap](https://github.com/OmarDardery/nixlab/issues/19) record the missing evidence.
+and [roadmap](https://github.com/OmarDardery/Nixus/issues/13) record the missing evidence.
 No tag, release or passed hardware result is implied by this version string.
 
-NixLab is a NixOS hypervisor integration: NixOS owns the host; Incus owns guests,
+Nixus is a NixOS hypervisor integration: NixOS owns the host; Incus owns guests,
 networks, volumes and snapshots; optional Arcane owns Docker/Compose workloads.
-Cockpit supplies host administration. NixLab connects these tools and coordinates
+Cockpit supplies host administration. Nixus connects these tools and coordinates
 reviewed configuration, host updates and independent recovery. See [credits](projects.md).
 
 ## The console

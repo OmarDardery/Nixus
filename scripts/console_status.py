@@ -48,7 +48,7 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
     if address:
         yield 'Management: ' + clean(interface) + '  ' + address
         for section, label, port in (
-            ('setup', 'NixLab', 'port'), ('cockpit', 'Cockpit', 'port')):
+            ('setup', 'Nixus', 'port'), ('cockpit', 'Cockpit', 'port')):
             option = settings.get(section, {})
             if option.get('enable') and type(option.get(port)) is int:
                 yield f'{label}: https://{address}:{option[port]}'
@@ -58,7 +58,7 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
         yield 'Management: ' + clean(interface or 'not configured') + ' — no unambiguous configured IPv4 address'
         if link.get('master'):
             yield 'Address belongs on bridge ' + clean(link['master']) + '; review management interface'
-    labels = [('incus.service', 'Incus'), ('nixlab-ui.service', 'Web'), ('nginx.service', 'Proxy')]
+    labels = [('incus.service', 'Incus'), ('nixus-ui.service', 'Web'), ('nginx.service', 'Proxy')]
     states = []
     for name, label in labels:
         unit = units.get(name, {})
@@ -66,7 +66,7 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
         states.append(label + '=' + clean(state))
     yield 'Services: ' + '  '.join(states)
     if settings.get('backup', {}).get('enable'):
-        backup = units.get('restic-backups-nixlab.service', {})
+        backup = units.get('restic-backups-nixus.service', {})
         timestamp = backup.get('ExecMainExitTimestamp')
         if timestamp and backup.get('LoadState') == 'loaded':
             yield 'Backup last run: ' + clean(timestamp) + '  result=' + clean(backup.get('Result', 'unknown'))
@@ -82,7 +82,7 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
         yield 'Boot: unknown'
     if kernel and booted and kernel != booted:
         yield 'Reboot: a different kernel is running'
-    yield 'Check endpoints: sudo nixlab doctor | Update: nixlab-update'
+    yield 'Check endpoints: sudo nixus doctor | Update: nixus-update'
 
 
 def target(path):
@@ -92,19 +92,19 @@ def target(path):
 
 def main():
     try:
-        settings = json.loads(Path('/etc/nixlab/effective-settings.json').read_text())
+        settings = json.loads(Path('/etc/nixus/effective-settings.json').read_text())
         if not isinstance(settings, dict): raise ValueError('Invalid settings')
     except (OSError, ValueError):
-        print('NixLab: configuration unavailable; run sudo nixlab doctor')
+        print('Nixus: configuration unavailable; run sudo nixus doctor')
         return
     try:
         links = json.loads(command(['ip', '-j', 'address', 'show']))
         if not isinstance(links, list): links = []
     except ValueError:
         links = []
-    names = ['incus.service', 'nixlab-ui.service', 'nginx.service']
+    names = ['incus.service', 'nixus-ui.service', 'nginx.service']
     if settings.get('backup', {}).get('enable'):
-        names.append('restic-backups-nixlab.service')
+        names.append('restic-backups-nixus.service')
     for line in lines(settings, links, services(names),
                       target('/run/current-system'), target('/nix/var/nix/profiles/system'),
                       target('/run/current-system/kernel'), target('/run/booted-system/kernel')):

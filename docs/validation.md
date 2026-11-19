@@ -2,7 +2,7 @@
 
 The supported installation target is a conventional installed x86_64 NixOS server.
 The pinned Nixpkgs revision is recorded in `flake.lock`. Use the latest successful
-[validation run](https://github.com/OmarDardery/nixlab/actions/workflows/validate.yml)
+[validation run](https://github.com/OmarDardery/Nixus/actions/workflows/validate.yml)
 for the exact source revision being installed.
 
 ## Automated checks

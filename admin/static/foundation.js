@@ -70,7 +70,7 @@ function guestNetwork() {
 function hostOverview() {
   const s = state.status.effectiveSettings || state.status.settings;
   const health = operationView.health;
-  const required = ["incus.service", "nixlab-admin-backend.service", "nixlab-ui.service",
+  const required = ["incus.service", "nixus-admin-backend.service", "nixus-ui.service",
     ...(s.cockpit?.enable ? ["cockpit.socket"] : []), ...(s.apps?.enable ? ["nginx.service"] : [])];
   const fresh = freshObservation(health);
   const degraded = required.filter(id => !(health?.services || []).some(unit => unit.Id === id && unit.LoadState === "loaded" && unit.ActiveState === "active"));
@@ -170,7 +170,7 @@ function hostHardware() {
     title(
       "HARDWARE & DISKS",
       "Hardware & disks",
-      "Nixlab handles stable host identities and prerequisites. Assign devices and guest permissions in Incus.",
+      "Nixus handles stable host identities and prerequisites. Assign devices and guest permissions in Incus.",
     ) +
     card(
       "USB serial devices",
@@ -195,7 +195,7 @@ function hostHardware() {
     ) +
     card(
       "Use the device in Incus",
-      '<p>An alias such as <code>/dev/nixlab/serial-device</code> identifies one selected device. In Incus, add a unix-char device with that source, an appropriate guest path, <code>required=false</code>, and the application’s guest UID/GID and mode.</p><p>Do not pass all of /dev or make the container privileged. Reconnect and reboot behavior must be tested with the actual device. No application-specific service is bundled.</p><a href="/docs/hardware.md">Attachment and hardware qualification guide</a>',
+      '<p>An alias such as <code>/dev/nixus/serial-device</code> identifies one selected device. In Incus, add a unix-char device with that source, an appropriate guest path, <code>required=false</code>, and the application’s guest UID/GID and mode.</p><p>Do not pass all of /dev or make the container privileged. Reconnect and reboot behavior must be tested with the actual device. No application-specific service is bundled.</p><a href="/docs/hardware.md">Attachment and hardware qualification guide</a>',
     ) +
     storage()
   );
@@ -214,7 +214,7 @@ function integrations() {
     '<details class="card"><summary>Optional provisioning tools</summary>' +
     card(
       "Community Scripts",
-      `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><p>The upstream interactive wizard selects resources, storage and network. Its guests remain Incus-managed. Nothing on this page executes a script.</p><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><p>Proxmox-specific host/VM scripts requiring pct, qm or /etc/pve are unsupported. Upstream Incus scripts are available; Nixlab verification is recorded separately.</p><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixlab" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/helpers.md">Runner, prerequisites and compatibility</a>`,
+      `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><p>The upstream interactive wizard selects resources, storage and network. Its guests remain Incus-managed. Nothing on this page executes a script.</p><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><p>Proxmox-specific host/VM scripts requiring pct, qm or /etc/pve are unsupported. Upstream Incus scripts are available; Nixus verification is recorded separately.</p><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixus" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/helpers.md">Runner, prerequisites and compatibility</a>`,
     ) +
     '</details>' +
     '<p class="note">Looking for commands or upstream resources? <button class="small" data-go="commands">Help →</button></p>'
@@ -224,7 +224,7 @@ function integrations() {
 function backupSettings() {
   return card(
     "Scheduled off-host backup",
-    `${toggle("Enable independent restic backups", "backup.enable")}<div class="fields">${field("Repository", "backup.repository", { full: true })}${field("Schedule", "backup.schedule", { hint: "systemd calendar, for example daily or *-*-* 03:00:00" })}${field("Free staging reserve, MiB", "backup.reserveMiB", { type: "number" })}${secret("Repository password", "resticPassword")}${secret("Cloud credential environment as JSON", "resticEnvironment", "Runtime credentials stay outside the Nix store.", true)}${field("Maintenance exclusions: project/guest", "backup.exclude", { list: true, type: "textarea", full: true })}<label class="field full"><span>Additional consistency groups</span><textarea id="backup-groups" placeholder="lab/database, lab/frontend">${esc((state.draft.backup.groups || []).map((g) => g.join(", ")).join("\n"))}</textarea><small>One group per line. Shared writable volumes automatically join their consumers.</small></label></div>${toggle("Initialize a new repository", "backup.initialize")}<p>Guests stop one group at a time and immediately recover their original state. Incus guests tagged <code>user.nixlab.backup=manual</code> are excluded with their consistency group. Coverage exclusions stay visible and do not refresh the full-host success indicator.</p><p class="note">Allow space for two retained complete generations plus a full new export and overhead. Preflight estimates exports from observed usage and previous archives plus a reserve; unknown estimates stay explicit. Estimates cannot guarantee future growth or compression. External bind mounts and raw disks require independent protection. Restic keeps 7 daily, 4 weekly and 6 monthly snapshots. Staging contains root-only plaintext credentials; choose its filesystem on Hardware & Disks.</p>`,
+    `${toggle("Enable independent restic backups", "backup.enable")}<div class="fields">${field("Repository", "backup.repository", { full: true })}${field("Schedule", "backup.schedule", { hint: "systemd calendar, for example daily or *-*-* 03:00:00" })}${field("Free staging reserve, MiB", "backup.reserveMiB", { type: "number" })}${secret("Repository password", "resticPassword")}${secret("Cloud credential environment as JSON", "resticEnvironment", "Runtime credentials stay outside the Nix store.", true)}${field("Maintenance exclusions: project/guest", "backup.exclude", { list: true, type: "textarea", full: true })}<label class="field full"><span>Additional consistency groups</span><textarea id="backup-groups" placeholder="lab/database, lab/frontend">${esc((state.draft.backup.groups || []).map((g) => g.join(", ")).join("\n"))}</textarea><small>One group per line. Shared writable volumes automatically join their consumers.</small></label></div>${toggle("Initialize a new repository", "backup.initialize")}<p>Guests stop one group at a time and immediately recover their original state. Incus guests tagged <code>user.nixus.backup=manual</code> are excluded with their consistency group. Coverage exclusions stay visible and do not refresh the full-host success indicator.</p><p class="note">Allow space for two retained complete generations plus a full new export and overhead. Preflight estimates exports from observed usage and previous archives plus a reserve; unknown estimates stay explicit. Estimates cannot guarantee future growth or compression. External bind mounts and raw disks require independent protection. Restic keeps 7 daily, 4 weekly and 6 monthly snapshots. Staging contains root-only plaintext credentials; choose its filesystem on Hardware & Disks.</p>`,
   );
 }
 

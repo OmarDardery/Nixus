@@ -30,7 +30,7 @@ class RecoveryTests(unittest.TestCase):
         self.hashes = {}
         for name, kind, member in (('config', 'configuration', 'config/flake.nix'), ('secrets', 'secrets', 'runtime/password')):
             stream = io.BytesIO(); recovery.write_archive(stream, {member: payload}, kind)
-            self.archive('nixlab-' + name + '.tar.gz', stream.getvalue())
+            self.archive('nixus-' + name + '.tar.gz', stream.getvalue())
         self.archive('instance-' + 'a' * 64 + '.tar.gz', b'guest archive')
         self.archive('volume-' + 'b' * 64 + '.tar.gz', b'volume archive')
         self.inventory = {'format': 2, 'created': 100, 'archiveSHA256': self.hashes,
@@ -115,7 +115,7 @@ class RecoveryTests(unittest.TestCase):
         stream = io.BytesIO()
         with patch.object(recovery.upgrades, 'metadata', return_value={'revision': 'a' * 40}):
             recovery.write_archive(stream, {'config/flake.lock': lock}, 'configuration')
-        self.archive('nixlab-config.tar.gz', stream.getvalue()); self.write_inventory()
+        self.archive('nixus-config.tar.gz', stream.getvalue()); self.write_inventory()
         result = self.plan()
         from commissioning import digest
         self.assertEqual(result['sourceRevision'], 'a' * 40)
@@ -162,7 +162,7 @@ class RecoveryTests(unittest.TestCase):
         self.crash_import = False
         with self.assertRaisesRegex(ValueError, 'operator verification'): r.resume(True)
         self.assertEqual(len([call for call in self.calls if call[:3] == ('storage', 'volume', 'import')]), 1)
-        next(iter(self.volumes.values()))['config']['user.nixlab.recovery-id'] = r.status()['id']
+        next(iter(self.volumes.values()))['config']['user.nixus.recovery-id'] = r.status()['id']
         self.assertEqual(r.resume(True)['phase'], 'isolated')
 
     def test_mapping_and_source_changes_cannot_resume(self):
@@ -200,7 +200,7 @@ class RecoveryTests(unittest.TestCase):
 class RecoveryGuardTests(unittest.TestCase):
     def test_restart_recovery_cannot_start_guests_while_replacement_recovery_is_active(self):
         import backup
-        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'NIXLAB_STATE': folder}), \
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'NIXUS_STATE': folder}), \
                 patch.object(recovery_guard, 'MODE', Path(folder) / 'mode'), \
                 patch.object(backup, 'PENDING', Path(folder) / 'pending.json'), patch.object(backup, 'incus') as incus:
             rt.write_json(backup.PENDING, [{'project': 'lab', 'name': 'apps'}])
@@ -209,7 +209,7 @@ class RecoveryGuardTests(unittest.TestCase):
             incus.assert_not_called()
 
     def test_incomplete_or_corrupt_journal_blocks_automation_after_mode_removal(self):
-        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'NIXLAB_STATE': folder}), \
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'NIXUS_STATE': folder}), \
                 patch.object(recovery_guard, 'MODE', Path(folder) / 'mode'):
             recovery_guard.require_normal()
             path = Path(folder) / 'replacement-recovery.json'

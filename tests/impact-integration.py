@@ -7,11 +7,11 @@ import subprocess
 import impact
 import runtime as rt
 
-before = json.loads(Path('/etc/nixlab-impact-fixture.json').read_text())
+before = json.loads(Path('/etc/nixus-impact-fixture.json').read_text())
 after = copy.deepcopy(before)
 profile = next(p for p in after['preseed']['profiles'] if p['name'] == 'base' and p.get('project') == 'lab')
 profile['config']['limits.cpu'] = '3'
-directory = Path('/tmp/nixlab-impact-test')
+directory = Path('/tmp/nixus-impact-test')
 directory.mkdir(mode=0o700)
 (directory / 'system').symlink_to('/run/current-system')
 rt.write_json(directory / 'job.json', {'status': 'ready'})
