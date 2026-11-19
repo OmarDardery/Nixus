@@ -27,7 +27,7 @@ class BootstrapTransactionTests(unittest.TestCase):
         self.state = Path(self.temp.name) / 'state'
         self.settings = initial()
         # A genuine first wizard has not selected any guest addresses yet.
-        for name in ('cidr', 'gatewayCIDR', 'dhcpRange', 'appsAddress'):
+        for name in ('cidr', 'gatewayCIDR', 'dhcpRange'):
             self.settings['guests'][name] = ''
         rt.atomic(self.root / 'flake.nix', '{}')
         rt.write_json(self.root / '.nixlab-files.json', ['flake.nix'])
@@ -160,7 +160,7 @@ class BootstrapTransactionTests(unittest.TestCase):
         request.assert_called_once_with('192.0.2.10', self.settings['setup']['port'], '/')
 
     def test_bootstrap_validation_preserves_access_and_rejects_optional_activation(self):
-        for section in ('apps', 'cockpit', 'backup', 'tunnel'):
+        for section in ('cockpit', 'backup', 'tunnel'):
             changed = copy.deepcopy(self.settings)
             changed[section]['enable'] = True
             with self.subTest(section=section), self.assertRaises(ValueError):

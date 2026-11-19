@@ -39,31 +39,23 @@ def main():
     sub.add_parser("install-plan")
     sub.add_parser("commissioning").add_argument("arguments", nargs=argparse.REMAINDER)
     sub.add_parser("enroll-key").add_argument("file", type=Path)
-    arcane = sub.add_parser("arcane")
-    arcane.add_argument("operation", choices=["reset-password"])
-    for action in ("exec", "exec-many", "restart", "backup", "deploy", "update", "logs", "down", "project-restart", "action"):
+    for action in ("exec", "exec-many", "restart", "backup", "action"):
         q = sub.add_parser(action)
         q.add_argument("target")
         if action in ("exec", "exec-many", "action"):
             q.add_argument("command", nargs=argparse.REMAINDER)
     args = p.parse_args()
-    if args.action in ("doctor", "enroll-key", "arcane", "commissioning", "install-plan"):
+    if args.action in ("doctor", "enroll-key", "commissioning", "install-plan"):
         if os.geteuid() != 0:
             p.error('Run this host administration command with sudo')
         command = ["nixlab-admin", args.action]
         if args.action == "enroll-key": command += [str(args.file)]
-        if args.action == "arcane": command += [args.operation]
         if args.action == "commissioning": command += args.arguments
         return execute(command, args.action, "host")
     prefix = ["incus", "--project", args.project]
     if args.action == "list":
         return execute(prefix + ["list", args.remote + ":"], "list", args.project)
     target = args.target
-    if args.action in ("deploy", "update", "logs", "down", "project-restart"):
-        name(target)
-        vm = name(cfg.get("appsInstance", "apps"))
-        action = "restart" if args.action == "project-restart" else args.action
-        return execute(prefix + ["exec", args.remote + ":" + vm, "--", "nixlab-project", action, target], args.action, target)
     targets = target.split(",") if args.action == "exec-many" else [target]
     failed = 0
     for target in targets:

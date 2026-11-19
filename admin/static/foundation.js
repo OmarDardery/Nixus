@@ -159,7 +159,7 @@ function hostConnectivity() {
     ) +
     card(
       "Bootstrap guest network",
-      `<p>The initial private network is source-managed. Existing address space requires a migration, not a casual edit in either UI.</p><div class="fields">${field("Subnet", "guests.cidr")}${field("Bridge address/prefix", "guests.gatewayCIDR")}${field("DHCP range", "guests.dhcpRange")}${field("Reserved apps address", "guests.appsAddress")}</div><button data-action="suggest">Suggest an unused subnet</button><p class="note">LAN bridges use your Ethernet network’s DHCP/router. Switch trunks and router routes are configured on that equipment. Wi-Fi cannot be bridged as an Ethernet port.</p><a href="/docs/networking.md">Network ownership and examples</a>`,
+      `<p>The initial private network is source-managed. Existing address space requires a migration, not a casual edit in either UI.</p><div class="fields">${field("Subnet", "guests.cidr")}${field("Bridge address/prefix", "guests.gatewayCIDR")}${field("DHCP range", "guests.dhcpRange")}</div><button data-action="suggest">Suggest an unused subnet</button><p class="note">LAN bridges use your Ethernet network’s DHCP/router. Switch trunks and router routes are configured on that equipment. Wi-Fi cannot be bridged as an Ethernet port.</p><a href="/docs/networking.md">Network ownership and examples</a>`,
     )
   );
 }

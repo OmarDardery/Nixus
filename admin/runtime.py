@@ -34,8 +34,6 @@ def public_error(error):
 SECRET_PATHS = {
     'cockpitPassword': Path('/var/lib/nixlab-secrets/cockpit-operator-password'),
     'wifiPassword': Path('/var/lib/nixlab-secrets/wifi.env'),
-    'arcanePassword': Path('/run/nixlab-secrets/apps-arcane-password'),
-    'demoPassword': Path('/var/lib/nixlab-secrets/apps-demo-password'),
     'resticPassword': Path('/var/lib/nixlab-secrets/restic-password'),
     'resticEnvironment': Path('/var/lib/nixlab-secrets/restic-environment'),
     'tunnelCredentials': Path('/var/lib/nixlab-secrets/cloudflared.json'),
@@ -613,7 +611,7 @@ def encode_secrets(values, settings):
     result = {}
     if not isinstance(values, dict) or set(values) - set(SECRET_PATHS):
         raise ValueError('Unknown secret field')
-    if settings['secrets']['enable'] and set(values) - {'arcanePassword'}:
+    if settings['secrets']['enable'] and values:
         raise ValueError('sops-nix owns secret provisioning on this installation')
     for field, value in values.items():
         if value in ('', None):
@@ -636,11 +634,6 @@ def encode_secrets(values, settings):
             value = hashed.stdout.strip() + '\n'
             if not value.startswith('$6$'):
                 raise ValueError('Failed to encode the local account password')
-        elif field == 'arcanePassword':
-            if (not 16 <= len(value) <= 256 or any(ord(c) < 32 or ord(c) == 127 for c in value)
-                    or not any(c.isupper() for c in value) or not any(c.islower() for c in value)
-                    or not any(c.isdigit() for c in value) or not any(not c.isalnum() and not c.isspace() for c in value)):
-                raise ValueError('Arcane passwords require 16–256 characters with uppercase, lowercase, a number and a symbol')
         elif field == 'resticEnvironment':
             credentials = json.loads(value)
             if not isinstance(credentials, dict) or set(credentials) - ENV_KEYS:
@@ -684,8 +677,6 @@ def issue_tls(address, hostname):
             atomic(STATE / (prefix + '.key'), (temp / 'key').read_bytes())
             atomic(STATE / (prefix + '.crt'), (temp / 'crt').read_bytes() + ca_crt.read_bytes(), mode=0o644)
     leaf('tls', hostname, f'IP:{address},IP:127.0.0.1,DNS:localhost,DNS:{hostname}')
-    if not (STATE / 'apps-tls.key').exists():
-        leaf('apps-tls', 'apps.internal', 'DNS:apps.internal')
 
 
 def pending_access(job_id, record):

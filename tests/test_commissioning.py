@@ -17,7 +17,7 @@ def context():
     return dict(revision='a' * 40, version='0.1.0-rc1', sourceDigest='b' * 64,
                 inputsDigest='c' * 64, settingsDigest='d' * 64, system='/nix/store/fixture-system',
                 kernel='7.0', incus='e' * 64, hardwareDigest='f' * 64, scope='physical-host',
-                architecture='x86_64', apps=True, hardwareDevices=False, mode='fresh', environment='installed-host')
+                architecture='x86_64', hardwareDevices=False, mode='fresh', environment='installed-host')
 
 
 def report(complete=False):
@@ -52,7 +52,7 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(self.summary(result)['qualification'], 'unqualified')
 
     def test_clock_collection_fails_closed_but_keeps_other_probes(self):
-        ctx = dict(context(), apps=False)
+        ctx = context()
         for state, expected in [('synchronized', 'passed'),
                                 ('plausible-but-unsynchronized', 'unknown'),
                                 ('invalid-clock', 'failed')]:
@@ -62,12 +62,10 @@ class CommissioningTests(unittest.TestCase):
                      patch('diagnostics.clock_status', return_value={'state': state}) as observed, \
                      patch.object(c, 'command', return_value='[]'), \
                      patch('builtins.open', side_effect=FileNotFoundError):
-                    c.collect(result, ctx, {'apps': {'enable': False}})
+                    c.collect(result, ctx, {})
                 observed.assert_called_once_with()
                 outcomes = {e['check']: e['status'] for e in result['evidence']}
                 self.assertEqual(outcomes['clock'], expected)
-                self.assertEqual(outcomes['apps-vm'], 'skipped')
-                self.assertEqual(outcomes['apps-auth'], 'skipped')
                 self.assertEqual(outcomes['kvm'], 'unsupported')
 
     def test_complete_physical_attestations_require_review_not_certification(self):
@@ -123,18 +121,6 @@ class CommissioningTests(unittest.TestCase):
             c.record(result, result['context'], check, 'passed', 'automated-probe' if check in c.AUTOMATIC else 'manual-attestation', NOW, '1' * 64)
         self.assertEqual(self.summary(result)['qualification'], 'unqualified')
 
-    def test_disabled_apps_are_optional_but_enabled_apps_require_evidence(self):
-        result = report(True)
-        result['context']['apps'] = False
-        for item in result['evidence']:
-            item['contextDigest'] = c.digest(result['context'])
-            if item['check'].startswith('apps-'): item['status'] = 'skipped'
-        self.assertEqual(self.summary(result)['qualification'], 'ready-for-review')
-        self.assertEqual(self.summary(result)['profile'], 'core')
-        result['context']['apps'] = True
-        for item in result['evidence']: item['contextDigest'] = c.digest(result['context'])
-        self.assertEqual(self.summary(result)['qualification'], 'unqualified')
-
     def test_configured_hardware_needs_reconnect_evidence(self):
         result = report(True)
         result['context']['hardwareDevices'] = True
@@ -174,8 +160,8 @@ class CommissioningTests(unittest.TestCase):
 
     def test_capture_contains_no_response_bodies_credentials_or_host_addresses(self):
         result = report()
-        settings = {'apps': {'enable': False}}
-        ctx = dict(context(), apps=False)
+        settings = {}
+        ctx = context()
         with patch('diagnostics.probe', return_value={'ok': True, 'address': 'private-address'}), \
              patch.object(c, 'command', side_effect=lambda args: '\n'.join(['active'] * (len(args) - 2)) if args[0] == 'systemctl' else '[]'), \
              patch('builtins.open', side_effect=FileNotFoundError('SECRET-PATH')), \
@@ -186,22 +172,6 @@ class CommissioningTests(unittest.TestCase):
         self.assertNotIn('private-address', exported)
         states = {e['check']: e['status'] for e in result['evidence']}
         self.assertEqual(states['kvm'], 'unsupported')
-        self.assertEqual(states['apps-auth'], 'skipped')
         self.assertEqual(states['container'], 'failed')
-
-    def test_read_only_capture_checks_existing_apps_without_resetting_credentials(self):
-        result = report()
-        def probe(args):
-            if 'is-active' in args: return 'active'
-            if 'list' in args: return '[{"type":"container","status":"Running"}]'
-            return '{"type":"virtual-machine","status":"Running"}'
-        with patch('diagnostics.probe', return_value={'ok': True}), patch.object(c, 'command', side_effect=probe) as run, \
-             patch('builtins.open', side_effect=OSError('unavailable')), \
-             patch('arcane.authentication_ready', return_value=True), patch('arcane.reset') as reset:
-            c.collect(result, context(), {'apps': {'enable': True}})
-        reset.assert_not_called()
-        self.assertNotIn('SECRET', json.dumps(result))
-        self.assertTrue(all(not set(args[0]) & {'stop', 'start', 'restart', 'reboot', 'delete', 'import'} for args, _ in run.call_args_list))
-
 
 if __name__ == '__main__': unittest.main()

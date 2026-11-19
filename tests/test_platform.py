@@ -261,8 +261,7 @@ class NetworkTests(unittest.TestCase):
     def setUp(self):
         self.site = {'management': {'interface': 'eth0', 'address': '192.0.2.10', 'prefixLength': 24,
             'trustedCIDRs': ['192.0.2.0/24'], 'configure': False},
-            'guests': {'cidr': '10.77.0.0/24', 'gatewayCIDR': '10.77.0.1/24',
-                'appsAddress': '10.77.0.10', 'dhcpRange': '10.77.0.100-10.77.0.199'},
+            'guests': {'cidr': '10.77.0.0/24', 'gatewayCIDR': '10.77.0.1/24', 'dhcpRange': '10.77.0.100-10.77.0.199'},
             'storage': {'driver': 'dir', 'source': '/var/lib/incus/storage-pools/guests'}}
 
     def test_documentation_fixture_valid(self):
@@ -273,12 +272,13 @@ class NetworkTests(unittest.TestCase):
         with self.assertRaises(ValueError): preflight.validate(self.site)
 
     def test_static_ip_inside_dhcp_range_refused(self):
-        self.site['guests']['appsAddress'] = '10.77.0.110'
+        self.site['instances'] = [{'name': 'dynamic', 'project': 'lab', 'devices': {
+            'eth0': {'network': 'incusbr0', 'ipv4.address': '10.77.0.110'}}}]
         with self.assertRaises(ValueError): preflight.validate(self.site)
 
     def test_duplicate_guest_static_address_refused(self):
-        self.site['instances'] = [{'name': 'duplicate', 'project': 'lab', 'devices': {
-            'eth0': {'network': 'incusbr0', 'ipv4.address': '10.77.0.10'}}}]
+        self.site['instances'] = [{'name': name, 'project': 'lab', 'devices': {
+            'eth0': {'network': 'incusbr0', 'ipv4.address': '10.77.0.10'}}} for name in ('first', 'duplicate')]
         with self.assertRaises(ValueError): preflight.validate(self.site)
 
     def test_zfs_raw_device_refused(self):

@@ -21,7 +21,7 @@ MAX_BYTES = 2 * 1024 * 1024
 BLOCKING = {'migration-required', 'ownership-conflict'}
 RECOVERY_BOUNDARIES = [
     'OS rollback restores host code/settings, not guest disks, databases or Incus schema.',
-    'Incus owns native guests, consoles, networks and volumes; Arcane or declared source owns stacks.',
+    'Incus owns native guests, consoles, networks and volumes; declared project source owns stacks.',
     'Router routes, external DNS, Cloudflare accounts and physical switches require separate review.',
     'Unit changes may reload or restart services; exact activation behavior remains in dry-activation output.',
     'The plan covers modeled declarations and observed consumers; arbitrary Nix code can have additional effects.',
@@ -344,12 +344,10 @@ def make_plan(before, after, snapshot, unit_changes=None, opaque=False, transiti
         add('host', 'effective-settings', 'restart-required', 'Host service, access or maintenance settings change.', fields=settings_fields)
     for unit in unit_changes or []:
         add('service', unit, 'restart-required', 'Unit definition added, changed or removed; activation may reload/restart it.')
-    if after['settings'].get('apps', {}).get('enable') and set(unit_changes or []) & {'nixlab-apps-onboarding.service', 'nixlab-instances.service'}:
-        add('guest', 'lab/apps', 'restart-required', 'Application VM initialization or OS deployment may run; existing disks are retained and application migrations need separate recovery.', ['lab/apps'])
     if opaque:
         add('source', 'Nix-modules/platform', 'unknown', 'Arbitrary Nix code and package effects are not completely modeled. Review code and dry-activation output.')
     ownership += [
-        {'identity': 'applications', 'owner': 'Arcane or declared Compose source', 'fields': [], 'consumers': []},
+        {'identity': 'applications', 'owner': 'Declared Incus project or Compose source', 'fields': [], 'consumers': []},
         {'identity': 'external-network-and-data', 'owner': 'Router, DNS, Cloudflare and application administrators', 'fields': [], 'consumers': []},
     ]
     return {'format': VERSION, 'generatedAt': int(time.time()), 'runtimeDigest': fingerprint(snapshot),

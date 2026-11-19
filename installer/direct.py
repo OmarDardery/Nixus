@@ -23,11 +23,11 @@ def guest_network(routes, requested=None):
             continue
         prefix = str(net.network_address).rsplit('.', 1)[0]
         return {'cidr': str(net), 'gatewayCIDR': prefix + '.1/24',
-                'appsAddress': prefix + '.10', 'dhcpRange': prefix + '.100-' + prefix + '.199'}
+                'dhcpRange': prefix + '.100-' + prefix + '.199'}
     raise ValueError('No non-overlapping guest subnet; select an unused --guest-subnet')
 
 
-def prepare(settings, overview, host, key_files=(), subnet=None, apps=False, previous_guests=None,
+def prepare(settings, overview, host, key_files=(), subnet=None, previous_guests=None,
             remote=False, password_login=None):
     candidate = copy.deepcopy(settings)
     keys = list(candidate['adminKeys']) + overview.get('adminKeys', [])
@@ -50,10 +50,7 @@ def prepare(settings, overview, host, key_files=(), subnet=None, apps=False, pre
     else:
         candidate['guests'].update(guest_network(host['routes'], subnet))
     if not settings['ready']:
-        if apps:
-            raise ValueError('Docker/Arcane apps VM is retired for new installations; use Incus OCI or Incus Compose instead')
         candidate['cockpit']['enable'] = True
-        candidate['apps']['enable'] = False
         candidate['maintenance']['laptopMode'] = True
     # Preserve current addressing, accounts and mounts. No disk/bridge migration.
     if not settings['ready']:
@@ -88,8 +85,6 @@ def activate(candidate, manager=None, effective=None, staged_source=None, expect
     from controller import Manager
     manager = manager or Manager()
     effective = effective or candidate
-    if effective['apps']['enable'] or effective['apps']['enableDemo']:
-        raise ValueError('Legacy applications VM is not supported by the Incus-native installer; migrate data explicitly')
     if effective['cockpit']['enable'] and effective['cockpit']['managePassword']:
         import local_access
         local_access.ensure_operator_password()

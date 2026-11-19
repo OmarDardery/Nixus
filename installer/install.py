@@ -101,7 +101,6 @@ def parser_args():
     ssh.add_argument('--no-ssh-password-login', action='store_false', dest='ssh_password_login', help='Disable SSH password login; remote installs need a client public key')
     parser.set_defaults(ssh_password_login=True)
     parser.add_argument('--guest-subnet', help='Unused private IPv4 /24')
-    parser.add_argument('--no-apps', action='store_true', help='Compatibility flag; no Docker/Arcane VM on new installations')
     parser.add_argument('--adopt-incus', action='store_true', help='Back up existing Incus guests and add an isolated Nixlab namespace')
     parser.add_argument('--no-update', action='store_true', help='Keep the current platform source on retry')
     interaction = parser.add_mutually_exclusive_group()
@@ -219,7 +218,7 @@ def main():
         parser.error('--interactive requires a terminal; use --answers for unattended provisioning')
     selected_flags = any((args.workloads, args.access_mode, args.guest_network,
                           args.laptop_mode, args.no_monitoring,
-                          args.guest_subnet, args.no_apps))
+                          args.guest_subnet))
     if args.plan_only and not sys.stdin.isatty() and args.answers is None and not selected_flags:
         parser.error('--plan-only without a terminal requires --answers or explicit CLI selections')
     if args.answers and args.interactive:
@@ -336,10 +335,9 @@ def main():
             draft = rt.STATE / 'installer-intent-draft.json'
             chosen = intent.load(args.answers) if args.answers else intent.defaults()
             if existing and default['ready'] and not args.answers:
-                # Re-running the interview must never silently disable an
-                # existing apps VM, host metrics, or laptop lid policy.
-                chosen.update(workloads='both' if default['apps']['enable'] else 'containers',
-                              laptop=default['maintenance']['laptopMode'],
+                # Re-running the interview must never silently disable
+                # existing host metrics or the laptop lid policy.
+                chosen.update(laptop=default['maintenance']['laptopMode'],
                               monitoring=default['monitoring']['collection'])
             interview_mode = args.interactive or (not existing and sys.stdin.isatty() and
                                                   not args.non_interactive and not args.answers)
@@ -352,11 +350,7 @@ def main():
                         rt.write_json(draft, value)
                 chosen = intent.interview(existing=chosen, on_answer=checkpoint)
             chosen.update(flags)  # Explicit CLI flags override an answers file.
-            # Legacy --no-apps remains an explicit override.
-            if args.no_apps: chosen['workloads'] = 'containers'
             chosen = intent.normalize(chosen)
-            if existing and default['ready'] and ((chosen['workloads'] != 'containers') != default['apps']['enable']):
-                raise ValueError('Do not change existing apps VM ownership via the installer; use the reviewed Changes page')
             proposal = intent.plan(chosen, host, default, remote=remote)
             intent.preview(proposal)
             if args.plan_only:
@@ -386,7 +380,6 @@ def main():
         if args.switch:
             candidate = direct.prepare(default, overview, host, args.ssh_key,
                 proposal['guestSubnet'] if proposal else args.guest_subnet,
-                False,
                 previous_guests=previous_guests, remote=remote,
                 password_login=args.ssh_password_login)
             if proposal:

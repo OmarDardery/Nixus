@@ -18,7 +18,6 @@ from credential_fixtures import SECRETS, assert_public_clean, credential_exposur
 import accounts
 import main
 from main import Auth
-import arcane
 import recovery
 import runtime as rt
 import worker
@@ -51,22 +50,12 @@ class CredentialContractTests(unittest.TestCase):
             assert_public_clean(self, {'error': SECRETS['private-key']})
         self.assertNotIn(SECRETS['private-key'], str(error.exception))
 
-    def test_failed_arcane_command_does_not_return_helper_output(self):
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output), \
-                patch.object(arcane.subprocess, 'run', return_value=subprocess.CompletedProcess(
-                    ['incus'], 1, stdout=SECRETS['arcane'], stderr=SECRETS['private-key'])):
-            with self.assertRaises(ValueError) as error:
-                arcane.incus('exec', 'apps')
-        assert_public_clean(self, {'stdout-stderr': output.getvalue(), 'error': str(error.exception)})
-
     def test_first_run_and_legacy_install_summary_never_print_credentials(self):
         settings = initial()
-        settings['ready'] = settings['apps']['enable'] = settings['cockpit']['enable'] = True
+        settings['ready'] = settings['cockpit']['enable'] = True
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
                 patch.object(installer, 'run', return_value=Mock(stdout='SHA256 Fingerprint=public')), \
-                patch('diagnostics.management_address', return_value='192.0.2.20'), \
-                patch.object(arcane, 'authentication_ready', return_value=True):
+                patch('diagnostics.management_address', return_value='192.0.2.20'):
             for enrollment in (True, False):
                 if enrollment:
                     rt.atomic(rt.STATE / 'web-enrollment', '{}')
@@ -102,22 +91,6 @@ class CredentialContractTests(unittest.TestCase):
     def test_legacy_arcane_cli_is_not_exposed(self):
         self.assertFalse(hasattr(main, 'reset_arcane'))
 
-    def test_arcane_success_has_status_only_and_protected_private_delivery(self):
-        cfg = initial(); cfg['apps']['enable'] = True
-        with patch.object(arcane.sys.stdin, 'isatty', return_value=True), patch.object(arcane.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, patch('diagnostics.management_address', return_value='192.0.2.20'):
-            result = arcane.reset(cfg)
-        self.assertEqual(set(result), {'url'})
-        args = run.call_args.args[0]
-        self.assertIn('interactive', args); self.assertIn('reset-password', args)
-        self.assertNotIn('capture_output', run.call_args.kwargs)
-        assert_public_clean(self, [args, result])
-
-    def test_arcane_failure_and_restart_error_do_not_copy_exception_text(self):
-        cfg = initial(); cfg['apps']['enable'] = True
-        with patch.object(arcane.sys.stdin, 'isatty', return_value=True), patch.object(arcane.subprocess, 'run', side_effect=OSError(SECRETS['arcane'])):
-            with self.assertRaises(ValueError) as error: arcane.reset(cfg)
-        assert_public_clean(self, str(error.exception))
-
     def test_worker_failure_records_and_journal_exception_are_clean(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), patch.object(rt, 'audit'):
             directory = rt.STATE / 'jobs' / ('a' * 32)
@@ -146,7 +119,7 @@ class CredentialContractTests(unittest.TestCase):
             directory = manager.state / 'jobs' / ('a' * 32)
             rt.write_json(directory / 'job.json', {'id': directory.name, 'status': 'failed',
                                                   'error': SECRETS['staged'], 'rollbackError': SECRETS['operator']})
-            rt.atomic(directory / 'build.log', SECRETS['arcane'] + '\nHost command started\n')
+            rt.atomic(directory / 'build.log', SECRETS['application'] + '\nHost command started\n')
             result = manager.job(directory.name)
             self.assertEqual(result['log'], 'Host command started\n')
             assert_public_clean(self, result)
@@ -181,7 +154,7 @@ class CredentialContractTests(unittest.TestCase):
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 with self.assertRaises(ValueError) as error:
-                    Auth().login(SECRETS['arcane'], '192.0.2.44')
+                    Auth().login(SECRETS['application'], '192.0.2.44')
             assert_public_clean(self, {
                 'accounts': accounts.list_users(), 'authRecord': rt.read_json(rt.STATE / 'auth.json'),
                 'namedAccounts': rt.read_json(rt.STATE / 'users.json'),
@@ -203,7 +176,7 @@ class CredentialContractTests(unittest.TestCase):
                 (handler.do_POST, '/apply', manager.return_value.apply, OSError(SECRETS['staged']), 500),
                 (handler.do_POST, '/apply', manager.return_value.apply, KeyError(SECRETS['operator']), 400),
                 (handler.do_GET, '/status', manager.return_value.status, ValueError(SECRETS['setup']), 400),
-                (handler.do_POST, '/apply', manager.return_value.apply, ValueError(SECRETS['arcane']), 400),
+                (handler.do_POST, '/apply', manager.return_value.apply, ValueError(SECRETS['application']), 400),
             ):
                 with self.subTest(path=path, exception=type(error)):
                     handler.path = path
@@ -219,7 +192,7 @@ class CredentialContractTests(unittest.TestCase):
             rt.atomic(root / 'flake.nix', '{}')
             rt.atomic(state / 'ca.key', SECRETS['private-key'])
             rt.atomic(state / 'setup-password', SECRETS['setup'])
-            rt.write_json(state / 'jobs' / ('a' * 32) / 'secrets.json', {'arcanePassword': SECRETS['staged']})
+            rt.write_json(state / 'jobs' / ('a' * 32) / 'secrets.json', {'wifiPassword': SECRETS['staged']})
             with patch.object(rt, 'ROOT', root), patch.object(rt, 'STATE', state):
                 response = recovery.download()
             self.assertEqual(set(response['files']), {'nixlab-config.tar.gz'})
@@ -258,8 +231,8 @@ class CredentialContractTests(unittest.TestCase):
             directory = manager.state / 'jobs' / ('a' * 32)
             directory.mkdir()
             rt.write_json(directory / 'job.json', {'id': directory.name, 'status': 'ready',
-                                                  'secretChanges': ['arcanePassword']})
-            rt.write_json(directory / 'secrets.json', {'arcanePassword': SECRETS['staged']})
+                                                  'secretChanges': ['wifiPassword']})
+            rt.write_json(directory / 'secrets.json', {'wifiPassword': SECRETS['staged']})
             with patch.object(rt, 'STATE', manager.state):
                 result = manager.cancel(directory.name)
             self.assertFalse((directory / 'secrets.json').exists())

@@ -27,7 +27,6 @@
       installer = import ./installer/package.nix { inherit pkgs; };
       pkgs = import nixpkgs { system = "x86_64-linux"; };
       ethernetSite = testSite // {
-        apps = testSite.apps // { enable = false; };
         management = testSite.management // { interface = "br-lan"; configure = true; };
         connectivity = testSite.connectivity // {
           bridges = [ { name = "br-lan"; interfaces = [ "eth0" ]; } { name = "br-apps"; interfaces = [ "vlan20" ]; } ];
@@ -56,12 +55,12 @@
         hypervisor = mkHost site [ ];
         inherit bootstrap;
         # Evaluation fixtures, never an installation target.
-        validation-minimal = mkHost (testSite // { apps = testSite.apps // { enable = false; }; }) [ ./tests/hardware.nix ];
+        validation-minimal = mkHost testSite [ ./tests/hardware.nix ];
         validation-recovery = mkHost (testSite // { setup = testSite.setup // { enable = true; }; })
           [ ./tests/hardware.nix { nixlab.recovery.enable = true; } ];
         validation-file-disk = mkHost testSite
           ([ ./tests/hardware.nix ] ++ (import ./lib/site-modules.nix ./tests/module-tree));
-        validation-recipes = mkHost (testSite // { apps = testSite.apps // { enable = false; }; })
+        validation-recipes = mkHost testSite
           ([ ./tests/hardware.nix { nixlab.notifications.enable = true; } ] ++ map
             (path: builtins.toFile "nixlab-recipe.nix" (builtins.fromJSON (builtins.readFile path)).module)
             [ ./admin/recipes/laptop.json ./admin/recipes/disk-health.json ./admin/recipes/private-access.json ]);
@@ -145,8 +144,7 @@
       in {
         onlyLoopbackTrusted = c.networking.firewall.trustedInterfaces == [ "lo" ];
         listenerInventory = inventory.firewallManaged && !inventory.ipv6TrustedIngress
-          && actualLocalPorts == [ 9091 9100 ]
-          && !(lib.any (item: item.service == "Arcane proxy") inventory.listeners);
+          && actualLocalPorts == [ 9091 9100 ];
         scopedRuleExcludesMetrics = lib.hasInfix "tcp dport" c.networking.firewall.extraInputRules
           && !(lib.hasInfix "9091" c.networking.firewall.extraInputRules)
           && !(lib.hasInfix "9443" c.networking.firewall.extraInputRules)
@@ -164,21 +162,6 @@
           && c.services.prometheus.port == 9091
           && c.services.prometheus.port != c.nixlab.settings.cockpit.port;
         hostDockerDisabled = !c.virtualisation.docker.enable;
-        freshDoesNotCreateLegacyAppsVM = !(lib.any (instance:
-          instance.name == "apps" && instance.project == "lab")
-          self.nixosConfigurations.validation-minimal.config.nixlab.incus.desiredInstances);
-        disabledAppsNeverIssuesShutdown = !(lib.any (instance:
-          instance.name == "apps" && (instance.stop or false))
-          self.nixosConfigurations.validation-minimal.config.nixlab.incus.desiredInstances);
-        freshHasNoLegacyArcaneServices = let
-          fresh = self.nixosConfigurations.validation-minimal.config;
-        in !(fresh.systemd.services ? nixlab-apps-onboarding)
-          && !(fresh.systemd.services ? nixlab-arcane-secret-expire)
-          && !(fresh.systemd.timers ? nixlab-arcane-secret-expire)
-          && !(fresh.services.nginx.virtualHosts ? nixlab-arcane)
-          && !fresh.virtualisation.docker.enable;
-        noLegacyProxy = !(c.services.nginx.virtualHosts ? nixlab-arcane);
-        noLegacyOnboarding = !(c.systemd.services ? nixlab-apps-onboarding);
         noLegacyExposedPorts = !(lib.any (item: builtins.elem item.port [ 9441 9443 ]) inventory.listeners);
         lidClosedOperation = c.services.logind.settings.Login.HandleLidSwitch == "ignore";
       };
@@ -216,7 +199,6 @@
           touch $out
         '';
         startup = import ./tests/startup-vm.nix { inherit pkgs; };
-        management = import ./tests/management-vm.nix { inherit pkgs; };
         clock-readiness = import ./tests/clock-readiness-vm.nix { inherit pkgs; };
         project-evaluator = import ./tests/project-evaluator-vm.nix { inherit pkgs; };
         installer-runtime = self.packages.x86_64-linux.installer.tests.recovery-guard;

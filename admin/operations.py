@@ -194,8 +194,8 @@ class Operations:
         if action in ('snapshot', 'snapshot-copy'): parameters['snapshot'] = name(request.get('snapshot'))
         if action in ('restore', 'snapshot-copy'):
             parameters['target'] = name(request.get('target'))
-            if parameters['target'] == guest or (project == 'lab' and parameters['target'] == 'apps'):
-                raise ValueError('Restore to a new, unreserved instance name')
+            if parameters['target'] == guest:
+                raise ValueError('Restore to a new instance name')
         if action == 'restore':
             archive_id = request.get('archive')
             known = next((a for a in self.archives() if a['id'] == archive_id), None)

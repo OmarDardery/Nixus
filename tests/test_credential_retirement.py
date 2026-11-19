@@ -22,7 +22,6 @@ import accounts
 import direct
 import local_access
 import main
-import arcane
 import runtime as rt
 import workflow
 from credential_fixtures import SECRETS, assert_public_clean
@@ -55,7 +54,7 @@ class RetirementTests(unittest.TestCase):
                 output = io.StringIO()
                 with patch.object(network_repair, 'DROPIN', root / 'dropin'), \
                         patch.object(repair, 'native_identity', side_effect=ValueError(SECRETS['staged'])), \
-                        patch.object(repair, 'validate_live', side_effect=ValueError(SECRETS['arcane'])), \
+                        patch.object(repair, 'validate_live', side_effect=ValueError(SECRETS['application'])), \
                         patch.object(network_repair, 'check_profiles'), patch.object(network_repair, 'profiles', return_value=[]), \
                         contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                     if success:
@@ -66,35 +65,17 @@ class RetirementTests(unittest.TestCase):
 
     def test_summary_refuses_the_retired_password_argument_before_any_output(self):
         output = io.StringIO()
-        with patch.object(installer, 'run') as command, patch.object(arcane, 'authentication_ready') as probe, \
+        with patch.object(installer, 'run') as command, \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             with self.assertRaises(ValueError) as caught:
                 installer.summarize(initial(), SECRETS['setup'])
-        command.assert_not_called(); probe.assert_not_called()
+        command.assert_not_called()
         self.assertEqual(output.getvalue(), '')
         assert_public_clean(self, str(caught.exception))
 
     def test_plaintext_retrieval_helpers_are_retired(self):
-        self.assertFalse(hasattr(arcane, 'credentials'))
         self.assertFalse(hasattr(local_access, 'operator_password'))
         self.assertFalse(hasattr(installer, 'setup_password'))
-
-    def test_arcane_readiness_needs_no_retained_password(self):
-        with patch.object(arcane,'credential_status',return_value={'state':'initialized'}), \
-                patch.object(arcane,'guest',return_value=json.dumps({'ok':True})) as request:
-            result=arcane.authentication_ready(initial())
-            assert_public_clean(self,result)
-            self.assertIs(result,True)
-            self.assertEqual(request.call_args.args,('nixlab-arcane-credentials','verified'))
-
-    def test_unexpected_arcane_response_shapes_are_not_authentication(self):
-        with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
-                patch.dict(rt.SECRET_PATHS, arcanePassword=Path(folder) / 'password'), \
-                patch('diagnostics.management_address', return_value='192.0.2.20'):
-            rt.atomic(rt.SECRET_PATHS['arcanePassword'], SECRETS['arcane'])
-            for body in (b'not-json', b'[]', b'null', b'{"jwt": true}', b'{"jwt": ""}'):
-                with self.subTest(body=body), patch('diagnostics.request', return_value=(200, body)):
-                    self.assertIs(arcane.authentication_ready(initial()), False)
 
     def test_existing_private_bootstrap_input_is_not_regenerated_or_returned(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
@@ -143,7 +124,7 @@ class RetirementTests(unittest.TestCase):
             rt.atomic(root / 'build.log', SECRETS['setup'] + '\nHost command started\n')
             manager = Mock()
             manager.job_path.return_value = root
-            manager.job.return_value = {'status': 'failed', 'error': SECRETS['arcane'], 'rollbackError': SECRETS['operator']}
+            manager.job.return_value = {'status': 'failed', 'error': SECRETS['application'], 'rollbackError': SECRETS['operator']}
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 with self.assertRaises(ValueError) as failed: direct.wait_for(manager, 'a' * 32, {'ready'}, timeout=1)

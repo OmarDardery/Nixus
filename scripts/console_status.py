@@ -48,7 +48,7 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
     if address:
         yield 'Management: ' + clean(interface) + '  ' + address
         for section, label, port in (
-            ('setup', 'NixLab', 'port'), ('cockpit', 'Cockpit', 'port'), ('apps', 'Arcane', 'arcanePort')):
+            ('setup', 'NixLab', 'port'), ('cockpit', 'Cockpit', 'port')):
             option = settings.get(section, {})
             if option.get('enable') and type(option.get(port)) is int:
                 yield f'{label}: https://{address}:{option[port]}'
@@ -59,8 +59,6 @@ def lines(settings, links, units, current=None, default=None, kernel=None, boote
         if link.get('master'):
             yield 'Address belongs on bridge ' + clean(link['master']) + '; review management interface'
     labels = [('incus.service', 'Incus'), ('nixlab-ui.service', 'Web'), ('nginx.service', 'Proxy')]
-    if settings.get('apps', {}).get('enable'):
-        labels.append(('nixlab-apps-onboarding.service', 'Apps setup'))
     states = []
     for name, label in labels:
         unit = units.get(name, {})
@@ -104,7 +102,7 @@ def main():
         if not isinstance(links, list): links = []
     except ValueError:
         links = []
-    names = ['incus.service', 'nixlab-ui.service', 'nginx.service', 'nixlab-apps-onboarding.service']
+    names = ['incus.service', 'nixlab-ui.service', 'nginx.service']
     if settings.get('backup', {}).get('enable'):
         names.append('restic-backups-nixlab.service')
     for line in lines(settings, links, services(names),

@@ -55,7 +55,6 @@ in {
         after = [ "incus-preseed.service" "nixlab-instances.service" ];
         requires = [ "incus.service" ];
         environment.NIXLAB_EXPORT_DIRECTORY = site.backup.stagingDirectory;
-        environment.NIXLAB_DEMO_BACKUP = if site.apps.enableDemo then "1" else "0";
         environment.NIXLAB_RECOVERY_TOOL = "${admin}/bin/nixlab-admin";
         environment.NIXLAB_BACKUP_POLICY = pkgs.writeText "nixlab-backup-policy.json" (builtins.toJSON {
           inherit (site.backup) groups exclude reserveMiB;

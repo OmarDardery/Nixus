@@ -3,7 +3,6 @@ let
   lib = pkgs.lib;
   base = import ./site.nix;
   site = base // {
-    apps = base.apps // { enable = false; };
     management = base.management // { interface = "eth1"; configure = true; };
     connectivity = base.connectivity // { trustedLANAccess = true; };
   };

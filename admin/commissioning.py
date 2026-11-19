@@ -31,8 +31,6 @@ CHECKS = {
     'management': 'Local management endpoints and service health',
     'kvm': 'Usable KVM API',
     'container': 'Running unprivileged Incus container',
-    'apps-vm': 'Real applications VM with agent and Docker',
-    'apps-auth': 'Authenticated Arcane access',
     'install-resume': 'Installation or upgrade and interrupted retry',
     'management-auth': 'Authenticated remote SSH, Cockpit and Incus access',
     'reboots': 'Healthy management across two deliberate reboots',
@@ -40,11 +38,11 @@ CHECKS = {
     'offhost-restore': 'Independent off-host restore with verified application data',
     'hardware-reconnect': 'Configured physical device disconnect/reconnect',
 }
-AUTOMATIC = {'clock', 'management', 'kvm', 'container', 'apps-vm', 'apps-auth'}
+AUTOMATIC = {'clock', 'management', 'kvm', 'container'}
 MANUAL = set(CHECKS) - AUTOMATIC
 CONTEXT_FIELDS = {'revision', 'version', 'sourceDigest', 'inputsDigest', 'settingsDigest',
                   'system', 'kernel', 'incus', 'hardwareDigest', 'scope', 'architecture',
-                  'apps', 'hardwareDevices', 'mode', 'environment'}
+                  'hardwareDevices', 'mode', 'environment'}
 ENVIRONMENTS = {'installed-host', 'automated-fixture', 'nested-integration'}
 
 
@@ -113,7 +111,6 @@ def context(settings, mode, environment='installed-host'):
         'system': str(Path('/run/current-system').resolve()) if Path('/run/current-system').exists() else 'unknown',
         'kernel': platform.release(), 'incus': incus,
         'hardwareDigest': digest(hardware), 'scope': scope(), 'architecture': platform.machine(),
-        'apps': bool(settings.get('apps', {}).get('enable')),
         'hardwareDevices': bool(settings.get('hardware', {}).get('serialAliases')),
         'mode': mode, 'environment': environment,
     }
@@ -131,9 +128,8 @@ def validate(report):
     ctx = report['context']
     if not isinstance(ctx, dict) or set(ctx) != CONTEXT_FIELDS:
         raise ValueError('Invalid commissioning context')
-    for key in ('apps', 'hardwareDevices'):
-        if type(ctx[key]) is not bool: raise ValueError('Invalid capability')
-    for key in CONTEXT_FIELDS - {'apps', 'hardwareDevices'}:
+    if type(ctx['hardwareDevices']) is not bool: raise ValueError('Invalid capability')
+    for key in CONTEXT_FIELDS - {'hardwareDevices'}:
         if not isinstance(ctx[key], str) or not re.fullmatch(r'[a-zA-Z0-9/_.:+-]{1,256}', ctx[key]):
             raise ValueError('Invalid context value')
     if ctx['scope'] not in SCOPES or ctx['mode'] not in ('fresh', 'upgrade') or ctx['environment'] not in ENVIRONMENTS:
@@ -179,7 +175,6 @@ def collect(report, ctx, settings):
         result = diagnostics.probe(settings)  # unlike doctor(), does not save diagnostics
         if not result['ok']: return False
         units = ['incus.service', 'nixlab-instances.service', 'nixlab-management-health.service']
-        if ctx['apps']: units.append('nixlab-apps-onboarding.service')
         return command(['systemctl', 'is-active', *units]).splitlines() == ['active'] * len(units)
 
     def clock():
@@ -203,29 +198,14 @@ def collect(report, ctx, settings):
                    and g.get('expanded_config', g.get('config', {})).get('security.privileged', 'false') != 'true'
                    for g in guests)
 
-    def apps_vm():
-        guest = json.loads(command(['incus', '--force-local', 'query', '/1.0/instances/apps?project=lab']))
-        if guest.get('type') != 'virtual-machine' or guest.get('status') != 'Running': return False
-        return command(['incus', '--force-local', 'exec', 'apps', '--project', 'lab', '--',
-                        'systemctl', 'is-active', 'docker.service']) == 'active'
-
-    def apps_auth():
-        import arcane
-        # Use existing credentials only; never reset/enroll anything during collection.
-        return arcane.authentication_ready(settings)
-
-    probes = {'clock': clock, 'management': management, 'kvm': kvm, 'container': container,
-              'apps-vm': apps_vm, 'apps-auth': apps_auth}
+    probes = {'clock': clock, 'management': management, 'kvm': kvm, 'container': container}
     for check, probe in probes.items():
-        if check.startswith('apps-') and not ctx['apps']:
-            status = 'skipped'
-        else:
-            try:
-                status = 'passed' if probe() else 'failed'
-            except FileNotFoundError:
-                status = 'unsupported'
-            except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError, http.client.HTTPException):
-                status = 'unknown'
+        try:
+            status = 'passed' if probe() else 'failed'
+        except FileNotFoundError:
+            status = 'unsupported'
+        except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError, http.client.HTTPException):
+            status = 'unknown'
         record(report, ctx, check, status, 'automated-probe')
     return report
 
@@ -237,7 +217,7 @@ def summarize(report, current=None, now=None, revision=None):
     fingerprint = digest(ctx)
     rows = []
     for check, title in CHECKS.items():
-        required = not (check.startswith('apps-') and not ctx['apps']) and not (check == 'hardware-reconnect' and not ctx['hardwareDevices'])
+        required = not (check == 'hardware-reconnect' and not ctx['hardwareDevices'])
         items = [e for e in report['evidence'] if e['check'] == check]
         # The latest observation wins, including failed/unknown observations.
         latest = items[-1] if items else None
@@ -258,7 +238,7 @@ def summarize(report, current=None, now=None, revision=None):
                 and ctx['incus'] != 'unknown' and (revision is None or ctx['revision'] == revision)
                 and all(r['status'] == 'passed' for r in rows if r['required']))
     return {'format': VERSION, 'revision': ctx['revision'], 'mode': ctx['mode'],
-            'scope': ctx['scope'], 'environment': ctx['environment'], 'profile': 'apps' if ctx['apps'] else 'core',
+            'scope': ctx['scope'], 'environment': ctx['environment'], 'profile': 'core',
             'qualification': 'ready-for-review' if eligible else 'unqualified', 'checks': rows}
 
 

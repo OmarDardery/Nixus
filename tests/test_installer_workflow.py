@@ -16,7 +16,6 @@ BASE = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(BASE / name) for name in ('installer', 'admin', 'scripts')]
 import diagnostics
 import direct
-import arcane
 import runtime as rt
 import worker
 import workflow
@@ -288,22 +287,8 @@ class ReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no usable address'):
                 diagnostics.management_address(cfg)
 
-    def test_legacy_apps_settings_do_not_probe_a_retired_arcane_port(self):
-        cfg = initial(); cfg['ready'] = True; cfg['apps']['enable'] = True
-        calls = []
-        def response(address, port, path):
-            calls.append((port, path))
-            return (503 if port == cfg['apps']['arcanePort'] else 200), b'{}'
-        with patch('diagnostics.management_address', return_value='192.0.2.20'), \
-             patch('diagnostics.request', side_effect=response), \
-             patch('diagnostics.http_entry', return_value=(308, True)):
-            report = diagnostics.probe(cfg)
-        self.assertTrue(report['ok'], report)
-        self.assertFalse(any(port == cfg['apps']['arcanePort'] for port, _ in calls))
-        self.assertTrue(any(path == '/1.0' for _, path in calls))
-
-    def test_incus_health_failures_remain_blocking_when_old_app_flags_exist(self):
-        cfg = initial(); cfg['ready'] = True; cfg['apps']['enable'] = True
+    def test_incus_health_failures_remain_blocking(self):
+        cfg = initial(); cfg['ready'] = True
         calls = []
         def response(address, port, path):
             calls.append((port, path))
@@ -314,7 +299,6 @@ class ReadinessTests(unittest.TestCase):
             report = diagnostics.probe(cfg)
         self.assertFalse(report['ok'])
         self.assertEqual([item['name'] for item in report['checks'] if not item['ok']], ['Incus API'])
-        self.assertFalse(any(port == cfg['apps']['arcanePort'] for port, _ in calls))
 
     def test_resume_checks_health_but_cannot_confirm_remote_access(self):
         manager = Mock()
@@ -330,29 +314,6 @@ class ReadinessTests(unittest.TestCase):
             manager.reset_mock()
             with self.assertRaises(ValueError): direct.resume(manager, awaiting)
             manager.confirm.assert_not_called()
-
-    def test_stored_password_is_never_presented_without_authentication(self):
-        with tempfile.TemporaryDirectory() as folder:
-            password = Path(folder) / 'password'; password.write_text('bootstrap-only')
-            with patch.dict(rt.SECRET_PATHS, arcanePassword=password), patch.object(rt, 'STATE', Path(folder)), \
-                 patch('diagnostics.management_address', return_value='192.0.2.20'), \
-                 patch('diagnostics.request', return_value=(422, b'{}')):
-                self.assertIs(arcane.authentication_ready(initial()), False)
-
-    def test_arcane_recovery_refuses_nonterminal_before_guest_mutation(self):
-        cfg = initial(); cfg['apps']['enable'] = True
-        with patch.object(arcane.sys.stdin, 'isatty', return_value=False), patch.object(arcane.subprocess, 'run') as run:
-            with self.assertRaises(ValueError): arcane.reset(cfg)
-            run.assert_not_called()
-
-    def test_arcane_recovery_uses_upstream_command_without_reset_container_or_service_stop(self):
-        cfg = initial(); cfg['apps']['enable'] = True
-        with patch.object(arcane.sys.stdin, 'isatty', return_value=True), patch.object(arcane.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, patch('diagnostics.management_address', return_value='192.0.2.20'):
-            result = arcane.reset(cfg)
-        self.assertEqual(set(result), {'url'})
-        args = run.call_args.args[0]
-        self.assertIn('/app/arcane', args); self.assertIn('admin', args)
-        self.assertNotIn('stop', args); self.assertNotIn('helper-reset-password', ' '.join(args))
 
     def test_rollback_restarts_only_loaded_units(self):
         results = [subprocess.CompletedProcess([], 0, 'not-found\n'), subprocess.CompletedProcess([], 0, 'loaded\n')]

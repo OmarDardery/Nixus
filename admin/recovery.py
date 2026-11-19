@@ -15,7 +15,7 @@ import upgrades
 
 UNITS = ['incus.service', 'incus-preseed.service', 'nixlab-kvm-check.service', 'nixlab-instances.service',
          'cockpit.socket', 'cockpit.service', 'nginx.service',
-         'nixlab-admin-backend.service', 'nixlab-ui.service', 'nixlab-apps-onboarding.service',
+         'nixlab-admin-backend.service', 'nixlab-ui.service',
          'restic-backups-nixlab.service', 'nixlab-storage.target', 'nixlab-rollback-guard.service', 'smartd.service']
 
 
@@ -27,7 +27,7 @@ def health():
         process = subprocess.run(['systemctl', 'show', unit, '--property=Id,LoadState,ActiveState,SubState,Result,ExecMainStatus'],
                                  capture_output=True, text=True, timeout=10)
         result['services'].append(dict(line.split('=', 1) for line in process.stdout.splitlines() if '=' in line))
-    for filename in ('tls.crt', 'apps-tls.crt', 'ca.crt'):
+    for filename in ('tls.crt', 'ca.crt'):
         path = rt.STATE / filename
         if not path.is_file():
             result['certificates'][filename] = {'present': False}; continue
@@ -100,14 +100,6 @@ def coverage():
         browser_registry = rt.STATE / 'browser-certificates.json'
         if browser_registry.exists() or browser_registry.is_symlink():
             required['browser-identity-ownership'] = browser_registry
-        if configured.get('apps', {}).get('enable'):
-            # Account metadata is created only by an explicit password reset.
-            # A fresh bootstrap uses admin and legitimately has no such file.
-            for name in ('apps-tls.key', 'apps-tls.crt'):
-                required['apps-' + name] = rt.STATE / name
-            account = rt.STATE / 'arcane-account.json'
-            if account.exists() or account.is_symlink():
-                required['apps-account'] = account
     files = secret_files()
     archived = set(files.values())
     missing = [name for name, path in required.items() if secret_source(path) is None or secret_source(path) not in archived]
@@ -117,11 +109,11 @@ def coverage():
 
 def secret_files():
     files = {}
-    for name in ('auth.json', 'users.json', 'bootstrap-state.json', 'setup-password', 'operator-password', 'arcane-account.json', 'browser-certificates.json',
-                 'ca.key', 'ca.crt', 'tls.key', 'tls.crt', 'apps-tls.key', 'apps-tls.crt'):
+    for name in ('auth.json', 'users.json', 'bootstrap-state.json', 'setup-password', 'operator-password', 'browser-certificates.json',
+                 'ca.key', 'ca.crt', 'tls.key', 'tls.crt'):
         files['admin/' + name] = rt.STATE / name
     for name, path in rt.SECRET_PATHS.items():
-        if name != 'arcanePassword': files['runtime/' + name] = path
+        files['runtime/' + name] = path
     configured = settings()
     for section, key in (('backup', 'passwordFile'), ('backup', 'environmentFile'), ('tunnel', 'credentialsFile')):
         value = configured.get(section, {}).get(key)
@@ -131,7 +123,6 @@ def secret_files():
     key = Path(configured.get('secrets', {}).get('ageKeyFile', '/var/lib/sops-nix/key.txt'))
     if key.is_file(): files['sops/age-key.txt'] = key
     for path in Path('/var/lib/nixlab-secrets').rglob('*'):
-        if path.name == 'apps-arcane-password': continue
         if path.is_file() and not any(p.is_symlink() for p in (path, *path.parents)):
             files['runtime-files/' + str(path.relative_to('/var/lib/nixlab-secrets'))] = path
     for parent in (Path('/etc/NetworkManager/system-connections'), Path('/run/NetworkManager/system-connections')):

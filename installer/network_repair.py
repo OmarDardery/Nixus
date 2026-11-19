@@ -309,7 +309,7 @@ class Repair:
         # units that were active, so an optional disabled service stays disabled.
         names = ['incus.service', 'incus-startup.service', 'incus-preseed.service', 'nixlab-instances.service',
                  'nixlab-admin-backend.service', 'nixlab-ui.service', 'nginx.service',
-                 'cockpit.service', 'nixlab-apps-onboarding.service']
+                 'cockpit.service']
         # Optional units may be absent. Require an Incus observation rather than
         # treating a failed/empty query as an empty set of dependent services.
         observed = run(['systemctl', 'show', '--property=Id,ActiveState', *names],

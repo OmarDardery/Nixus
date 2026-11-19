@@ -31,7 +31,5 @@ in {
   config.assertions = [
     { assertion = builtins.length identities == builtins.length (lib.unique identities);
       message = "Instance project/name identities must be unique across machine files and legacy inventory."; }
-    { assertion = !(builtins.elem "lab/apps" identities);
-      message = "lab/apps is reserved for the applications VM."; }
   ];
 }

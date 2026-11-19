@@ -327,8 +327,6 @@ def backend():
                         else:
                             raise rt.PublicError('Unknown secrets action')
                 elif self.path == '/review':
-                    if 'reuseArcanePassword' in body or 'arcaneCurrent' in body:
-                        raise rt.PublicError('Legacy application-manager credentials are unsupported by Incus-native')
                     secret_values = body.get('secrets', {})
                     result = manager.review(body['settings'], secret_values, body.get('updateInputs', False), body.get('modules', {}), body.get('revision'), principal=actor)
                 elif self.path == '/apply':
@@ -1052,10 +1050,8 @@ def renew():
     settings = rt.read_json(Path('/etc/nixlab/effective-settings.json'), rt.read_json(rt.machine_path(rt.ROOT, 'settings')))
     import subprocess
     checks = [subprocess.run(['openssl', 'x509', '-checkend', '2592000', '-noout', '-in', str(rt.STATE / name)], capture_output=True).returncode
-              for name in ('tls.crt', 'apps-tls.crt')]
+              for name in ('tls.crt',)]
     if any(checks):
-        if checks[1]:
-            (rt.STATE / 'apps-tls.key').unlink(missing_ok=True)
         import diagnostics
         rt.issue_tls(diagnostics.management_address(settings), settings['hostName'])
         services = ['nixlab-ui.service']
@@ -1063,8 +1059,6 @@ def renew():
             services += ['incus.service']
             if settings.get('cockpit', {}).get('enable'):
                 services += ['cockpit.service']
-            if settings['apps']['enable']:
-                services += ['nginx.service', 'nixlab-apps-onboarding.service']
         subprocess.run(['systemctl', 'try-restart', *services], check=True)
 
 
@@ -1211,14 +1205,6 @@ if __name__ == '__main__':
     elif action == 'recovery' and os.geteuid() == 0:
         import recovery
         recovery.cli(sys.argv[2:])
-    elif action == 'legacy-apps' and os.geteuid() == 0:
-        if sys.argv[2:] != ['inventory']:
-            sys.exit('Usage: sudo nixlab-admin legacy-apps inventory')
-        import legacy_apps
-        try:
-            print(json.dumps(legacy_apps.inventory(), indent=2))
-        except (ValueError, OSError, RuntimeError, subprocess.SubprocessError):
-            sys.exit('Legacy apps inventory unavailable or incomplete; inspect Incus and the guest locally')
     elif action == 'install-plan' and os.geteuid() == 0:
         installation = rt.read_json(rt.machine_path(rt.ROOT, 'installation'), {})
         print(json.dumps({'intent': installation.get('intent'),
@@ -1267,5 +1253,5 @@ if __name__ == '__main__':
     elif action == 'reset-password' and os.geteuid() == 0:
         reset_portal_password()
     else:
-        sys.exit('Usage: nixlab-admin {doctor|identity|enroll-key|legacy-apps inventory|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|disk prepare}')
+        sys.exit('Usage: nixlab-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|disk prepare}')
 

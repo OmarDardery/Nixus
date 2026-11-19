@@ -7,8 +7,8 @@
     { assertion = builtins.elem site.cpuVendor [ "intel" "amd" ]; message = "Set cpuVendor from the bare-metal host."; }
     { assertion = site.management.interface != "" && site.management.address != "" && site.management.trustedCIDRs != [ ];
       message = "Management interface, address and trusted source CIDRs must be explicit."; }
-    { assertion = site.guests.cidr != "" && site.guests.gatewayCIDR != "" && site.guests.appsAddress != "" && site.guests.dhcpRange != "";
-      message = "Choose a non-overlapping guest subnet, bridge address, DHCP range and reserved apps IP."; }
+    { assertion = site.guests.cidr != "" && site.guests.gatewayCIDR != "" && site.guests.dhcpRange != "";
+      message = "Choose a non-overlapping guest subnet, bridge address, and DHCP range."; }
   ];
   networking.hostName = lib.mkForce site.hostName;
   time.timeZone = lib.mkForce site.maintenance.timeZone;
@@ -18,7 +18,7 @@
     (import ./scripts/homelab.nix { inherit pkgs; }) pkgs.jq pkgs.git pkgs.curl
   ];
   environment.etc."nixlab/client.json".text = builtins.toJSON {
-    remote = "local"; project = "lab"; appsInstance = "apps";
+    remote = "local"; project = "lab";
     exportDirectory = site.backup.stagingDirectory;
   };
   system.stateVersion = lib.mkDefault "26.05";

@@ -49,22 +49,16 @@ class DirectPlanningTests(unittest.TestCase):
         self.assertEqual(current, original)
         self.assertTrue(value['ready'])
         self.assertTrue(value['cockpit']['enable'])
-        self.assertFalse(value['apps']['enable'])
-        self.assertEqual(value['apps']['arcanePort'], 9441)
         self.assertEqual(value['management'], current['management'])
         self.assertEqual(value['mounts'], [])
         self.assertEqual(value['adminKeys'], [KEY])
 
-    def test_explicit_legacy_vm_request_cannot_create_arcane(self):
-        with self.assertRaisesRegex(ValueError, 'retired for new installations'):
-            direct.prepare(initial(), {}, inventory(), apps=True)
-
-    def test_explicit_key_and_no_apps_do_not_require_a_guest_vm(self):
+    def test_explicit_key_and_subnet_are_used(self):
         with tempfile.TemporaryDirectory() as folder:
             key = Path(folder) / 'admin.pub'
             key.write_text(KEY + '\n')
-            value = direct.prepare(initial(), {}, inventory(), [key], '10.78.0.0/24', apps=False)
-        self.assertFalse(value['apps']['enable'])
+            value = direct.prepare(initial(), {}, inventory(), [key], '10.78.0.0/24')
+        self.assertEqual(value['adminKeys'], [KEY])
         self.assertEqual(value['guests']['cidr'], '10.78.0.0/24')
 
     def test_completed_install_retains_static_address_and_custom_ports(self):
@@ -72,12 +66,11 @@ class DirectPlanningTests(unittest.TestCase):
         current['ready'] = True
         current['management']['configure'] = True
         current['management']['dns'] = ['192.0.2.1']
-        current['apps'].update(enable=True, arcanePort=19443)
-        current['cockpit']['enable'] = True
+        current['cockpit'].update(enable=True, port=19090)
         current['guests'].update(direct.guest_network([]))
         value = direct.prepare(current, {'adminKeys': [KEY]}, inventory(), previous_guests=current['guests'])
         self.assertTrue(value['management']['configure'])
-        self.assertEqual(value['apps']['arcanePort'], 19443)
+        self.assertEqual(value['cockpit']['port'], 19090)
 
     def test_password_ssh_is_default_with_explicit_key_only_policy(self):
         self.assertEqual(direct.prepare(initial(), {}, inventory())['adminKeys'], [])
@@ -114,19 +107,13 @@ class DirectActivationTests(unittest.TestCase):
         self.manager.review.return_value = {'id': 'a' * 32}
         self.manager.job_path.return_value = self.root
         self.candidate = initial()
-        self.candidate['apps']['enable'] = False
-        self.secret_patch = patch.dict(rt.SECRET_PATHS, arcanePassword=self.root / 'arcane-password')
-        self.secret_patch.start()
-        self.addCleanup(self.secret_patch.stop)
 
-    def test_no_legacy_secret_and_leave_access_confirmation_pending(self):
+    def test_no_secret_values_and_leave_access_confirmation_pending(self):
         with patch('direct.wait_for', side_effect=[{'status': 'ready'}, {'status': 'awaiting-confirmation'}]), patch('builtins.print'):
             record = direct.activate(self.candidate, self.manager)
         self.assertEqual(record, {'status': 'awaiting-confirmation'})
         args, kwargs = self.manager.review.call_args
-        self.assertFalse(args[0]['apps']['enable'])
         self.assertEqual(kwargs['secret_values'], {})
-        self.assertFalse(rt.SECRET_PATHS['arcanePassword'].exists())
         self.assertEqual([call[0] for call in self.manager.method_calls], ['review', 'apply'])
         self.manager.confirm.assert_not_called()
 
@@ -150,22 +137,6 @@ class DirectActivationTests(unittest.TestCase):
                 direct.activate(self.candidate, self.manager)
         self.manager.apply.assert_called_once()
         self.manager.confirm.assert_not_called()
-
-    def test_existing_legacy_secret_is_never_touched_or_reused(self):
-        # The root broker must never overwrite old credentials or silently migrate a guest.
-        rt.SECRET_PATHS['arcanePassword'].write_text('existing-secret')
-        with patch('direct.wait_for', return_value={'status': 'awaiting-confirmation'}), patch('builtins.print'):
-            direct.activate(self.candidate, self.manager)
-        self.assertEqual(rt.SECRET_PATHS['arcanePassword'].read_text(), 'existing-secret')
-        self.assertEqual(self.manager.review.call_args.kwargs['secret_values'], {})
-
-    def test_legacy_file_owned_apps_fail_before_any_privileged_mutation(self):
-        effective = copy.deepcopy(self.candidate)
-        effective['apps']['enable'] = True
-        with self.assertRaisesRegex(ValueError, 'Legacy applications VM'):
-            direct.activate(self.candidate, self.manager, effective=effective)
-        self.manager.review.assert_not_called()
-        self.manager.apply.assert_not_called()
 
     def test_failed_worker_status_is_reported_with_log_path(self):
         self.manager.job.return_value = {'status': 'failed', 'error': 'fixture build failure'}

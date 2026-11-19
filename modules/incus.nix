@@ -15,8 +15,6 @@ let
   };
   declared = site.instances ++ map (i: lib.filterAttrs (_: value: value != null) i)
     (builtins.attrValues config.nixlab.incus.instances);
-  # Do not adopt, create or delete the retired Docker/Arcane apps VM.
-  # Existing legacy guests remain untouched until an explicit data migration.
   instances = declared;
   inventory = pkgs.writeText "inventory.json" (builtins.toJSON (site // { instances = declared; }));
   desired = pkgs.writeText "instances.json" (builtins.toJSON instances);

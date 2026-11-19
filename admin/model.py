@@ -100,7 +100,7 @@ def validate_bootstrap(settings, host):
     """Validate initial portal access without requiring a chosen guest topology."""
     if settings['ready'] or settings['management']['configure'] or not settings['setup']['enable']:
         raise ValueError('Initial onboarding must preserve networking and keep the portal enabled on an unconfigured host')
-    if any(settings[section]['enable'] for section in ('apps', 'cockpit', 'backup', 'tunnel')) or settings['mounts']:
+    if any(settings[section]['enable'] for section in ('cockpit', 'backup', 'tunnel')) or settings['mounts']:
         raise ValueError('Initial onboarding cannot activate optional host services or mounts; use the full guarded installer')
     if settings['system'] != host['architecture'] + '-linux' or settings['cpuVendor'] != host['cpuVendor']:
         raise ValueError('Bootstrap inventory does not match this host')
@@ -172,13 +172,8 @@ def validate_settings(candidate, current, host, require_devices=True):
     zone = Path('/etc/zoneinfo', candidate['maintenance']['timeZone'])
     if require_devices and not zone.exists() and not Path('/usr/share/zoneinfo', candidate['maintenance']['timeZone']).exists():
         raise ValueError('Time zone is not installed on this host')
-    # Freeze new Arcane adoption but never invalidate an existing legacy host.
-    # Actual migration, volume export and deletion remain separate explicit work.
-    if candidate['apps']['enable'] and not current['apps']['enable']:
-        raise ValueError('Docker/Arcane apps VM is retired for new installations; use Incus/Incus Compose. Existing workloads need an explicit migration.')
     listeners = [('setup', candidate['setup']['port'])]
     if candidate['cockpit']['enable']: listeners.append(('Cockpit', candidate['cockpit']['port']))
-    if candidate['apps']['enable']: listeners.append(('Arcane', candidate['apps']['arcanePort']))
     used = {22, 53, 67, 8080, 8443, 9100}
     for name, port in listeners:
         if type(port) is not int or not 1024 <= port <= 65535 or port in used:
@@ -188,13 +183,6 @@ def validate_settings(candidate, current, host, require_devices=True):
         raise ValueError('Activation confirmation must allow 5–30 minutes')
     if not candidate['setup']['enable']:
         raise ValueError('The setup service cannot disable its own recovery/access path')
-    if not re.fullmatch(r'[1-9][0-9]*', candidate['apps']['cpu']):
-        raise ValueError('VM CPU allocation must be a positive count')
-    for k in ('memory', 'disk'):
-        if not re.fullmatch(r'[1-9][0-9]*(?:MiB|GiB)', candidate['apps'][k]):
-            raise ValueError('VM ' + k + ' must use MiB/GiB units')
-    if not re.fullmatch(r'[A-Za-z0-9./_:@-]+', candidate['apps']['arcaneImage']):
-        raise ValueError('Invalid Arcane image reference')
     mounts = candidate['mounts']
     uuids, paths, names = set(), set(), set()
     available = {}
@@ -258,7 +246,7 @@ def validate_settings(candidate, current, host, require_devices=True):
         for hostname, target in candidate['tunnel']['ingress'].items():
             if not re.fullmatch(r'[A-Za-z0-9*.-]+', hostname) or not isinstance(target, str) or not target.startswith(('http://', 'https://')):
                 raise ValueError('Tunnel ingress must map hostnames to HTTP application endpoints')
-            blocked_ports = {22, 8443, 9090, 9100, 9440, 9441, 9443, candidate['setup']['port'], candidate['cockpit']['port'], candidate['apps']['arcanePort']}
+            blocked_ports = {22, 8443, 9090, 9100, 9440, 9441, 9443, candidate['setup']['port'], candidate['cockpit']['port']}
             origin = urlsplit(target)
             if origin.username or origin.password or not origin.hostname or origin.port in blocked_ports:
                 raise ValueError('Management endpoints cannot be public tunnel origins')

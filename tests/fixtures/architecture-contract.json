@@ -4,7 +4,6 @@
   "flakeAttributes": [
     "nixosModules",
     "nixosConfigurations.hypervisor",
-    "nixosConfigurations.apps",
     "nixosConfigurations.bootstrap",
     "packages.x86_64-linux.installer",
     "packages.x86_64-linux.admin",
@@ -109,7 +108,6 @@
     "tests/test_platform.py",
     "tests/test_release.py",
     "tests/settings-checks.nix",
-    "tests/management-vm.nix",
     "tests/foundation-vm.nix"
   ]
 }

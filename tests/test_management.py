@@ -40,26 +40,11 @@ class ManagementTests(unittest.TestCase):
                     ops.perform({'action': 'release-restore', 'project': 'lab', 'name': 'restored'})
                 self.assertEqual(incus.call_count, 1)
 
-    def test_new_arcane_apps_vm_cannot_be_enabled_by_portal(self):
-        current = settings()
-        self.assertFalse(current['apps']['enable'])
-        candidate = copy.deepcopy(current)
-        candidate['apps']['enable'] = True
-        with self.assertRaisesRegex(ValueError, 'retired for new installations'):
-            model.validate_settings(candidate, current, HOST, require_devices=False)
-        # A previously configured installation can still receive routine
-        # unrelated updates while its data awaits explicit migration.
-        current['apps']['enable'] = True
-        candidate = copy.deepcopy(current)
-        candidate['monitoring']['history'] = True
-        model.validate_settings(candidate, current, HOST, require_devices=False)
-
     def test_listener_collisions_and_custom_private_ports(self):
-        cfg = settings(); cfg['cockpit']['enable'] = True; cfg['apps']['enable'] = True
-        cfg['apps']['arcanePort'] = 9443
+        cfg = settings(); cfg['cockpit'].update(enable=True, port=19090)
         model.validate_settings(copy.deepcopy(cfg), cfg, HOST, require_devices=False)
-        for port in (9440, 8443, 9090, 9100, True, 65536):
-            candidate = copy.deepcopy(cfg); candidate['apps']['arcanePort'] = port
+        for port in (9440, 8443, 9100, True, 65536):
+            candidate = copy.deepcopy(cfg); candidate['cockpit']['port'] = port
             with self.assertRaises(ValueError): model.validate_settings(candidate, cfg, HOST, require_devices=False)
 
     def test_custom_management_ports_are_not_public_tunnel_origins(self):

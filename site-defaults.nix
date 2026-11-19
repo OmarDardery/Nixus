@@ -22,7 +22,6 @@
     cidr = "";
     gatewayCIDR = "";
     dhcpRange = ""; # e.g. 10.77.0.100-10.77.0.199 (not an actual LAN)
-    appsAddress = "";
   };
   storage = {
     pool = "guests";
@@ -32,16 +31,6 @@
     hostId = ""; # eight hexadecimal characters, required for ZFS
   };
   cockpit = { enable = false; port = 9090; managePassword = false; };
-  apps = {
-    enable = false; # opt in to Docker/Arcane; no idle VM on a hypervisor-only host
-    cpu = "2";
-    memory = "2GiB";
-    disk = "64GiB";
-    # Official Arcane v3.0.1 multi-architecture OCI index, resolved 2026-11-16.
-    arcaneImage = "ghcr.io/getarcaneapp/manager@sha256:80a2f71c60bc1bff3e618e6e71efec98ad365ba4f0395aa76e234d8ba75e5a99";
-    arcanePort = 9441; # retained for existing hosts; homelab recipe selects 9443
-    enableDemo = false; # requires /var/lib/nixlab-secrets/demo-db-password in the VM
-  };
   # Additional instances: { name; project = "lab"; image = "images:<fingerprint>";
   # type = "container"; profiles = [ "base" ]; config = {}; devices = {}; }
   instances = [ ];
@@ -73,7 +62,7 @@
     enable = false;
     uuid = "";
     credentialsFile = "/var/lib/nixlab-secrets/cloudflared.json";
-    ingress = { }; # "app.example.com" = "http://<appsAddress>:8080";
+    ingress = { }; # "app.example.com" = "http://<guest address>:8080";
   };
   backup = {
     enable = false;

@@ -3,15 +3,6 @@
     "sshPasswordLogin": true
   },
   "adminKeys": [],
-  "apps": {
-    "cpu": "2",
-    "disk": "64GiB",
-    "enable": false,
-    "enableDemo": false,
-    "memory": "2GiB",
-    "arcaneImage": "ghcr.io/getarcaneapp/manager@sha256:80a2f71c60bc1bff3e618e6e71efec98ad365ba4f0395aa76e234d8ba75e5a99",
-    "arcanePort": 9441
-  },
   "backup": {
     "enable": false,
     "environmentFile": "/var/lib/nixlab-secrets/restic-environment",
@@ -41,7 +32,6 @@
   },
   "cpuVendor": "",
   "guests": {
-    "appsAddress": "",
     "bridge": "incusbr0",
     "cidr": "",
     "dhcpRange": "",

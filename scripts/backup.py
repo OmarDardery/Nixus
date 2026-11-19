@@ -285,8 +285,6 @@ def backup(with_recovery=False):
     progress('preflight', coverage=coverage, capacity=capacity)
     if not capacity['sufficientForEstimate']:
         raise ValueError('Insufficient free backup staging space for estimated exports plus reserve; no guests stopped')
-    if os.environ.get('NIXLAB_DEMO_BACKUP') == '1' and any(g['project'] == 'lab' and g['name'] == 'apps' for g in selected_guests):
-        incus('exec', 'apps', '--project', 'lab', '--', 'nixlab-project', 'backup', 'demo')
     generation = str(time.time_ns()) + '-' + uuid.uuid4().hex
     incomplete = ROOT / '.incomplete'; incomplete.mkdir(mode=0o700, exist_ok=True)
     published = ROOT / 'generations'; published.mkdir(mode=0o700, exist_ok=True)

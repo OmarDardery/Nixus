@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'admin'))
 import commissioning
 
 WORKFLOWS = {'validate': 'validate.yml', 'installer': 'installer.yml', 'portal': 'portal-entry.yml',
-             'apps': 'guest-deployments.yml', 'commissioning': 'commissioning.yml', 'website': 'pages.yml'}
+             'website': 'pages.yml'}
 
 
 def version(tag, version_file):
@@ -28,9 +28,9 @@ def physical_reports(paths, revision, release_version, inputs, now=None):
     for report in reports:
         summary = commissioning.summarize(report, revision=revision, now=now)
         context = report['context']
-        if (summary['qualification'] != 'ready-for-review' or summary['profile'] != 'apps'
+        if (summary['qualification'] != 'ready-for-review' or summary['profile'] != 'core'
                 or context['version'] != release_version or context['inputsDigest'] != inputs):
-            raise ValueError('Require current physical apps-profile fresh/upgrade evidence for this exact source, version and inputs')
+            raise ValueError('Require current physical fresh/upgrade evidence for this exact source, version and inputs')
         hardware.add(context['hardwareDigest']); modes.add(context['mode'])
     if len(hardware) != 1 or modes != {'fresh', 'upgrade'}:
         raise ValueError('Require fresh and upgrade reports on the same reference hardware')
@@ -56,8 +56,6 @@ def ci_run(key, run, jobs, revision, repository):
             if step.get('status') != 'completed' or step.get('conclusion') != 'success':
                 raise ValueError('A required CI step failed or was skipped: ' + key)
             observed.append(step['name'])
-    if key == 'apps' and 'Three independent real apps VM update and recovery trials' not in observed:
-        raise ValueError('Require the three-trial dedicated KVM lane, not an older apps fixture')
     if key == 'website' and 'Deploy to GitHub Pages' not in observed:
         raise ValueError('Website validation alone is not successful Pages publication')
     return run['html_url']

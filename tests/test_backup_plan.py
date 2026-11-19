@@ -95,24 +95,6 @@ class CoverageTests(unittest.TestCase):
         with patch.object(recovery, 'settings', return_value={'secrets': {'enable': True, 'ageKeyFile': '/nonexistent-key'}}):
             self.assertIn('sops-age-key', recovery.coverage()['missing'])
 
-    def test_fresh_apps_bootstrap_does_not_require_optional_password_reset_metadata(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            for name in ('ca.key', 'ca.crt', 'tls.key', 'tls.crt', 'auth.json', 'apps-tls.key', 'apps-tls.crt', 'bootstrap'):
-                (root / name).write_text('fixture')
-            configured = {'setup': {'enable': True}, 'apps': {'enable': True}}
-            with patch.object(recovery, 'settings', return_value=configured), patch.object(rt, 'STATE', root), \
-                    patch.object(rt, 'SECRET_PATHS', {'arcanePassword': root / 'bootstrap'}):
-                self.assertTrue(recovery.coverage()['complete'])
-                self.assertFalse((root / 'arcane-account.json').exists())
-                account = root / 'arcane-account.json'; account.write_text('{}')
-                self.assertTrue(recovery.coverage()['complete'])
-                account.chmod(0o666)
-                self.assertIn('apps-account', recovery.coverage()['missing'])
-                account.unlink(); account.symlink_to(root / 'missing-account')
-                self.assertIn('apps-account', recovery.coverage()['missing'])
-
-
 class CapacityTests(unittest.TestCase):
     def test_estimates_include_retained_space_reserve_and_recovery_kits(self):
         result = backup_plan.capacity([('guest', 100, 200), ('volume', 400, None)], 1000, 100, 200)

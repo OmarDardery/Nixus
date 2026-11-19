@@ -90,9 +90,6 @@ def plan(answers, host, settings, *, remote=False):
     m = settings["management"]
     net = ipaddress.ip_interface(str(m["address"]) + "/" + str(m["prefixLength"])).network
     wireless = any(i["name"] == m["interface"] and i.get("wireless") for i in host.get("interfaces", []))
-    # Docker/Arcane apps-VM provisioning is retired for new installations.
-    # Compose intent remains recorded for future Incus Compose projects only.
-    apps = False
     if a["network"] != "nat" and wireless:
         raise ValueError("Wi-Fi uplinks cannot be enslaved to an Ethernet bridge/VLAN. Use NAT and configure LAN access separately")
     if a["network"] != "nat" and remote:
@@ -125,7 +122,7 @@ def plan(answers, host, settings, *, remote=False):
         pending.append("Review an existing Ethernet bridge/VLAN and switch configuration in Connectivity; no host NIC is modified by this installer")
     pending.append("Create and manage workload-agnostic Incus guests using Incus UI or reviewed helper scripts; configure persistent storage and resource limits separately")
     if a["workloads"] in ("compose", "both"):
-        pending.append("Use Incus OCI and a qualified Incus Compose project after setup; Docker/Arcane apps VM is not installed; verify data persistence and an independent restore")
+        pending.append("Use Incus OCI and a qualified Incus Compose project after setup; verify data persistence and an independent restore")
     pending.append("For guests needing physical USB/serial devices, inspect stable device IDs and explicitly review Incus passthrough; do not assume a particular peripheral")
     pending.append("For LAN-facing services such as DNS, validate stable guest reachability and firewall rules before changing router or client settings")
     if a["access"] == "private":
@@ -142,14 +139,14 @@ def plan(answers, host, settings, *, remote=False):
     reasons = [
         "Existing management addressing, host uplink, users and disks are preserved",
         "Private Incus NAT is the safe initial guest topology",
-        "Cockpit and Incus are the host management tools; no Docker/Arcane VM is created",
+        "Cockpit and Incus are the host management tools",
         "No secrets, router DNS settings or community scripts are applied automatically",
     ]
     if a["network"] != "nat":
         reasons[1] = "Requested LAN networking is deferred for guarded local-console review; initial guest topology stays NAT"
     if a["network"] == "nat":
         reasons.append("NAT guests do not automatically expose services to LAN clients; review port forwarding, routing or a separate LAN network as needed")
-    return dict(version=VERSION, answers=a, apps=apps, laptop=a["laptop"],
+    return dict(version=VERSION, answers=a, laptop=a["laptop"],
                 monitoring=a["monitoring"], guestSubnet=a["guestSubnet"],
                 reasons=reasons, pending=pending, networkRequiresReview=deferred_network,
                 estimatedAppMemoryMiB=0,
@@ -161,13 +158,12 @@ def apply(candidate, proposal):
     value = copy.deepcopy(candidate)
     value["maintenance"]["laptopMode"] = proposal["laptop"]
     value["monitoring"]["collection"] = proposal["monitoring"]
-    # direct.prepare has already selected apps and collision-safe private NAT.
+    # direct.prepare has already selected collision-safe private NAT.
     return value
 
 
 def preview(proposal, output=print):
     output("\nNixLab proposed configuration (review before activation)")
-    output("  Legacy Docker/Arcane apps VM: not provisioned")
     output("  Host metrics: " + ("enabled" if proposal["monitoring"] else "disabled"))
     output("  Laptop policy: " + ("always-on" if proposal["laptop"] else "standard server"))
     output("  Guest network: private NAT " + proposal["guestCidr"] + " (existing host LAN unchanged)")

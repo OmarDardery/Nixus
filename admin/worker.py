@@ -181,7 +181,7 @@ def save_recovery(directory):
              (rt.machine_path(rt.ROOT, 'installation'), 'installation.json'),
              (rt.STATE / 'platform-baseline.json', 'platform-baseline.json'),
              (rt.ROOT / 'flake.lock', 'flake.lock')]
-    files += [(path, 'secret-' + key) for key, path in rt.SECRET_PATHS.items() if key != 'arcanePassword']
+    files += [(path, 'secret-' + key) for key, path in rt.SECRET_PATHS.items()]
     files += [(rt.STATE / name, name) for name in ('tls.crt', 'tls.key')]
     manifest = []
     for path, name in files:
@@ -227,7 +227,6 @@ def restore_files(directory):
     for item in manifest['files']:
         # A credential consumed by first boot cannot become live again through
         # an older OS transaction's recovery manifest. Database auth is durable.
-        if item.get('name') == 'secret-arcanePassword': continue
         target = Path(item['path'])
         if item['existed']:
             rt.atomic(target, (recovery / item['name']).read_bytes(), mode=item['mode'])

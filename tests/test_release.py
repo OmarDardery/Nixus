@@ -122,7 +122,7 @@ class ReleaseTests(unittest.TestCase):
             args = (paths, 'a' * 40, '0.1.0-beta.1', 'c' * 64)
             self.assertEqual(release.physical_reports(*args, now=NOW)['modes'], ['fresh', 'upgrade'])
             for change in ({'scope': 'virtual-machine'}, {'environment': 'nested-integration'}, {'revision': 'b' * 40},
-                           {'inputsDigest': 'e' * 64}, {'apps': False}, {'hardwareDigest': '1' * 64}):
+                           {'inputsDigest': 'e' * 64}, {'hardwareDigest': '1' * 64}):
                 with self.subTest(change=change):
                     path = self.physical(folder, 'fresh'); result = c.load(path); result['context'].update(change)
                     for item in result['evidence']: item['contextDigest'] = c.digest(result['context'])
@@ -135,7 +135,7 @@ class ReleaseTests(unittest.TestCase):
         run = {'head_sha': 'a' * 40, 'status': 'completed', 'conclusion': 'success',
                'path': '.github/workflows/' + release.WORKFLOWS[key], 'event': 'push',
                'repository': {'full_name': 'OmarDardery/nixlab'}, 'html_url': 'https://github.com/example/run'}
-        name = 'Three independent real apps VM update and recovery trials' if key == 'apps' else 'Deploy to GitHub Pages' if key == 'website' else 'Required test'
+        name = 'Deploy to GitHub Pages' if key == 'website' else 'Required test'
         jobs = [{'status': 'completed', 'conclusion': 'success', 'steps': [{'name': name, 'status': 'completed', 'conclusion': 'success'}]}]
         return run, jobs
 
@@ -149,8 +149,8 @@ class ReleaseTests(unittest.TestCase):
                 candidate, checks = copy.deepcopy(run), copy.deepcopy(jobs); mutate(candidate, checks)
                 with self.assertRaises(ValueError): release.ci_run(key, candidate, checks, 'a' * 40, 'OmarDardery/nixlab')
 
-    def test_old_apps_lane_and_build_only_website_are_not_release_qualification(self):
-        for key in ('apps', 'website'):
+    def test_build_only_website_is_not_release_qualification(self):
+        for key in ('website',):
             run, jobs = self.run_evidence(key); jobs[0]['steps'][0]['name'] = 'Earlier fixture'
             with self.assertRaises(ValueError): release.ci_run(key, run, jobs, 'a' * 40, 'OmarDardery/nixlab')
 

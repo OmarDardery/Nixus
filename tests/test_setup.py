@@ -36,9 +36,8 @@ def settings():
     value['setup']['enable'] = True
     value['management'].update(interface='eth0', address='192.0.2.10', prefixLength=24,
                                trustedCIDRs=['192.0.2.0/24'], gateway='192.0.2.1', dns=['192.0.2.1'])
-    value['guests'].update(cidr='10.77.0.0/24', gatewayCIDR='10.77.0.1/24', appsAddress='10.77.0.10', dhcpRange='10.77.0.100-10.77.0.199')
+    value['guests'].update(cidr='10.77.0.0/24', gatewayCIDR='10.77.0.1/24', dhcpRange='10.77.0.100-10.77.0.199')
     value['maintenance']['timeZone'] = 'UTC'
-    value['apps']['enable'] = False
     return value
 
 HOST = {'architecture':'x86_64','cpuVendor':'intel','kvm':True,
@@ -203,7 +202,7 @@ class MachineLayoutTests(SettingsFixture):
 
 class ModelTests(unittest.TestCase):
     def test_lightweight_defaults_and_monitoring_limits(self):
-        self.assertFalse(DEFAULTS['apps']['enable'])
+        self.assertNotIn('apps', DEFAULTS)
         self.assertFalse(DEFAULTS['monitoring']['history'])
         current = settings()
         proposed = copy.deepcopy(current)

@@ -16,25 +16,22 @@ def validate(site):
     management = ipaddress.ip_interface(f"{m['address']}/{m['prefixLength']}")
     subnet = ipaddress.ip_network(g['cidr'], strict=True)
     bridge = ipaddress.ip_interface(g['gatewayCIDR'])
-    app = ipaddress.ip_address(g['appsAddress'])
     if management.version != 4 or subnet.version != 4 or bridge.version != 4:
         raise ValueError('The default topology requires explicit IPv4 inventory')
     if management.network.overlaps(subnet):
         raise ValueError('Guest subnet overlaps the host management subnet')
     if bridge.network != subnet or bridge.ip in (subnet.network_address, subnet.broadcast_address):
         raise ValueError('Bridge must have a usable address inside the guest subnet')
-    if app not in subnet or app in (bridge.ip, subnet.network_address, subnet.broadcast_address):
-        raise ValueError('Apps IP must be usable and distinct from the bridge')
     low, high = map(ipaddress.ip_address, g['dhcpRange'].split('-'))
     if low not in subnet or high not in subnet or int(low) > int(high):
         raise ValueError('Invalid DHCP range')
-    if any(int(low) <= int(ip) <= int(high) for ip in (bridge.ip, app, subnet.network_address, subnet.broadcast_address)):
+    if any(int(low) <= int(ip) <= int(high) for ip in (bridge.ip, subnet.network_address, subnet.broadcast_address)):
         raise ValueError('DHCP range overlaps a reserved address')
-    reservations = {bridge.ip, app}
+    reservations = {bridge.ip}
     identities = set()
     for instance in site.get('instances', []):
         identity = (instance['project'], instance['name'])
-        if identity in identities or (site.get('apps', {}).get('enable', False) and identity == ('lab', 'apps')):
+        if identity in identities:
             raise ValueError('Duplicate declared instance name/project')
         identities.add(identity)
         for device in instance.get('devices', {}).values():

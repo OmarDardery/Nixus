@@ -21,9 +21,7 @@ let collecting = site.monitoring.collection || site.monitoring.history; in {
     };
     scrapeConfigs = [
       { job_name = "host-and-incus"; static_configs = [ { targets = [ "127.0.0.1:9100" ]; } ]; }
-    ] ++ lib.optional site.apps.enable {
-      job_name = "apps-vm"; static_configs = [ { targets = [ "${site.guests.appsAddress}:9100" ]; } ];
-    };
+    ];
     rules = [ ''
       groups:
         - name: nixlab

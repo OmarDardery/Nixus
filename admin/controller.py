@@ -117,7 +117,7 @@ class Manager:
         if suggestion:
             prefix = str(suggestion.network_address).rsplit('.', 1)[0]
             data['suggestedGuests'] = {'cidr': str(suggestion), 'gatewayCIDR': prefix + '.1/24',
-                                       'dhcpRange': prefix + '.100-' + prefix + '.199', 'appsAddress': prefix + '.10'}
+                                       'dhcpRange': prefix + '.100-' + prefix + '.199'}
         data['secretPresent'] = {key: path.exists() for key, path in rt.SECRET_PATHS.items()}
         return data
 
@@ -193,10 +193,6 @@ class Manager:
             if candidate['radios']['wifi']['manageProfile'] and candidate['radios']['wifi']['enable']:
                 if 'wifiPassword' not in encoded and not rt.SECRET_PATHS['wifiPassword'].exists():
                     raise ValueError('Provide the WPA password for the managed Wi-Fi profile')
-            if candidate['apps']['enable'] or candidate['apps']['enableDemo']:
-                raise ValueError('Legacy applications VM cannot be managed from the Incus-native broker; migrate data explicitly')
-            if 'arcanePassword' in (secret_values or {}) or 'demoPassword' in (secret_values or {}):
-                raise ValueError('Retired application-manager secrets cannot be staged')
             if candidate['backup']['enable'] and not candidate['secrets']['enable']:
                 if 'resticPassword' not in encoded and not rt.SECRET_PATHS['resticPassword'].exists():
                     raise ValueError('Provide the restic repository password')

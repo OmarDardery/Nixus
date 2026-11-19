@@ -4,12 +4,11 @@ let
   settings = defaults // {
     ready = true; hostName = "nixlab-startup"; cpuVendor = "intel";
     setup = defaults.setup // { enable = true; };
-    apps = defaults.apps // { enable = true; arcanePort = 19443; };
     cockpit = defaults.cockpit // { enable = true; };
     management = defaults.management // {
       interface = "eth1"; address = "192.0.2.10"; trustedCIDRs = [ "192.0.2.0/24" ];
     };
-    guests = defaults.guests // { appsAddress = "127.0.0.2"; cidr = "10.77.0.0/24"; };
+    guests = defaults.guests // { cidr = "10.77.0.0/24"; };
   };
   fixture = pkgs.writeText "management-backend.py" ''
     import http.server, ssl, json
@@ -18,28 +17,14 @@ let
     import sys
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            if port == 9443 and self.path == '/api/status':
-                self.send_error(404)
-                return
             self.send_response(200)
-            if self.path == '/cookie-probe':
-                self.send_header('Set-Cookie', 'nixlab_session=guest-value; Path=/; Secure; HttpOnly')
-                self.send_header('Set-Cookie', 'arcane_auth=native-auth; Path=/; Secure; HttpOnly; SameSite=Strict')
             self.end_headers()
-            if self.path == '/cookie-probe':
-                self.wfile.write(json.dumps({
-                    'portalLeaked': 'nixlab_session=' in self.headers.get('Cookie', ""),
-                    'nativeCookie': 'arcane_auth=native-auth' in self.headers.get('Cookie', ""),
-                    'bearerPreserved': self.headers.get('Authorization') == 'Bearer test-native-jwt',
-                }).encode())
-                return
             self.wfile.write(b'{"fixture":"NIXLAB_PROXY_READY"}')
         def log_message(self, *args): pass
     port = int(sys.argv[1])
-    server = http.server.HTTPServer(('127.0.0.2' if port == 9443 else '0.0.0.0', port), Handler)
+    server = http.server.HTTPServer(('0.0.0.0', port), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    prefix = 'apps-tls' if port == 9443 else 'tls'
-    context.load_cert_chain(rt.STATE / (prefix + '.crt'), rt.STATE / (prefix + '.key'))
+    context.load_cert_chain(rt.STATE / 'tls.crt', rt.STATE / 'tls.key')
     server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
   '';
@@ -61,7 +46,7 @@ in pkgs.testers.runNixOSTest {
     environment.systemPackages = [ pkgs.curl pkgs.openssh pkgs.sshpass ];
   };
   nodes.machine = { lib, ... }: {
-    imports = [ ../modules/networking.nix ../modules/admin-ui.nix ../modules/apps-onboarding.nix ../modules/cockpit.nix ../modules/security.nix ../modules/quality-of-life.nix ../modules/console.nix ];
+    imports = [ ../modules/networking.nix ../modules/admin-ui.nix ../modules/cockpit.nix ../modules/security.nix ../modules/quality-of-life.nix ../modules/console.nix ];
     _module.args.site = settings;
     virtualisation.memorySize = 1536;
     networking.useDHCP = false;
@@ -95,20 +80,6 @@ in pkgs.testers.runNixOSTest {
       serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
       script = ''PYTHONPATH=${../admin}:${../scripts} ${pkgs.python3}/bin/python ${./portal-fixture.py}'';
     };
-    # Controlled TLS backends exercise the real nginx configuration with apps enabled.
-    # VM deployment/reconciliation is covered independently by the foundation tests.
-    systemd.services.nixlab-apps-onboarding = lib.mkForce {
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
-      script = "true";
-    };
-    systemd.services.fixture-arcane = {
-      wantedBy = [ "multi-user.target" ];
-      requires = [ "nixlab-management-identity.service" ];
-      after = [ "nixlab-management-identity.service" ];
-      environment.PYTHONPATH = "${../admin}:${../scripts}";
-      serviceConfig.ExecStart = "${pkgs.python3}/bin/python ${fixture} 9443";
-    };
     systemd.services.fixture-incus = {
       wantedBy = [ "multi-user.target" ];
       requires = [ "nixlab-management-identity.service" ];
@@ -128,7 +99,6 @@ in pkgs.testers.runNixOSTest {
         machine.wait_for_unit("nixlab-management-identity.service")
         machine.wait_for_unit("cockpit.socket")
         machine.wait_for_unit("nginx.service")
-        machine.wait_for_unit("fixture-arcane.service")
         machine.wait_for_unit("fixture-incus.service")
         addresses = json.loads(machine.succeed("ip -j -4 address show dev eth1"))
         address = next(a["local"] for link in addresses for a in link["addr_info"] if a["scope"] == "global")
@@ -142,12 +112,6 @@ in pkgs.testers.runNixOSTest {
         assert "NixLab" in fetch and address in fetch, fetch
         if boot == 0:
             machine.succeed("python3 /etc/nixlab-console-client.py", timeout=30)
-        machine.wait_until_succeeds(f"curl --fail --silent --show-error --max-time 5 --cacert /var/lib/nixlab-admin/ca.crt https://{address}:19443/api/health | grep NIXLAB_PROXY_READY", timeout=90)
-        probe = json.loads(machine.succeed(f"curl --fail --silent --show-error --max-time 5 --cacert /var/lib/nixlab-admin/ca.crt -D /tmp/cookie-headers -H 'Cookie: nixlab_session=host-secret; arcane_auth=native-auth; nixlab_session=second-secret' -H 'Authorization: Bearer test-native-jwt' https://{address}:19443/cookie-probe"))
-        assert probe == {"portalLeaked": False, "nativeCookie": True, "bearerPreserved": True}, probe
-        headers = machine.succeed("cat /tmp/cookie-headers").lower()
-        assert "nixlab_session=" not in headers, headers
-        assert "set-cookie: arcane_auth=native-auth; path=/; secure; httponly; samesite=strict" in headers, headers
         lan.wait_until_succeeds(f"curl --fail --silent --show-error --max-time 5 --insecure https://{address}:9090/ping", timeout=90)
         redirect = lan.succeed(f"curl --silent --show-error --max-time 5 -I http://{address}/")
         assert " 308 " in redirect and f"https://{address}:9440/" in redirect, redirect

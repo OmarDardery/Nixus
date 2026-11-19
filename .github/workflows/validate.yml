@@ -105,7 +105,6 @@ jobs:
       # Fail native lifecycle/network recovery early, before larger guest images.
       - name: Report Incus-native source migration progress
         run: python3 scripts/incus_native_audit.py
-      # The retired Arcane runtime is deliberately not a release qualification.
       - name: Verify real restic integrity checks and corruption detection
         run: |
           nix build .#checks.x86_64-linux.backup-verification --no-link -L
@@ -126,7 +125,6 @@ jobs:
       - name: Verify management services and native Incus isolation
         run: |
           nix eval .#nixosConfigurations.validation-management.config.system.build.toplevel.drvPath
-          nix build .#checks.x86_64-linux.management --no-link -L
       - name: Verify NixOS clock readiness without NTP
         run: nix build .#checks.x86_64-linux.clock-readiness --no-link -L
       - name: Evaluate configuration variants
@@ -150,7 +148,6 @@ jobs:
           test "$(nix eval --json '.#nixosConfigurations.validation-minimal.config.systemd.services' --apply 'services: builtins.hasAttr "nixlab-metrics" services')" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.nginx.enable)" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.virtualisation.docker.enable)" = "false"
-          test "$(nix eval --json '.#nixosConfigurations.validation-minimal.config.systemd.services' --apply 'services: builtins.hasAttr "nixlab-apps-onboarding" services')" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.enable)" = "true"
           test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.exporters.node.enable)" = "true"
       - name: Verify typed inventory migration
