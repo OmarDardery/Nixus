@@ -306,6 +306,12 @@ def main():
             default = evaluate(stage, 'nixusDefaults')
             default.update(system='x86_64-linux', cpuVendor=host['cpuVendor'], hostName=socket.gethostname().split('.')[0])
             default['setup']['enable'] = True
+            # Host credentials are SOPS/age ciphertext from the first activation.
+            import host_secrets
+            if not args.plan_only:
+                host_secrets.ensure_identity(Path(default['secrets']['ageKeyFile']))
+                host_secrets.initialize(stage, Path(default['secrets']['ageKeyFile']))
+            default['secrets'].update(enable=True, hostFile=host_secrets.RELATIVE)
             wireless = Path('/sys/class/net', interface, 'wireless').exists()
             default['radios']['wifi'].update(enable=wireless, interface=interface if wireless else '')
             zone = str(Path('/etc/localtime').resolve())

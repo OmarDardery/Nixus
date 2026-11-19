@@ -32,6 +32,7 @@ jobs:
         run: |
           nix develop .#secrets-test -c python3 tests/test_native_secrets_crypto.py
           nix develop .#secrets-test -c python3 tests/test_native_recovery_crypto.py
+          nix develop .#secrets-test -c python3 -m unittest tests/test_host_secrets.py
       - name: Build and verify one-command update entrypoint
         run: |
           nix run .#update -- --help
@@ -155,6 +156,8 @@ jobs:
         run: |
           nix eval --json .#nixusFoundationChecks > /tmp/nixus-foundation.json
           python3 -c 'import json; checks=json.load(open("/tmp/nixus-foundation.json")); assert checks and all(checks.values()), checks'
+          nix eval --json .#nixusSecretsChecks > /tmp/nixus-secrets.json
+          python3 -c 'import json; checks=json.load(open("/tmp/nixus-secrets.json")); assert checks and all(checks.values()), checks'
           nix eval --json .#nixusManagementChecks > /tmp/nixus-management.json
           python3 -c 'import json; checks=json.load(open("/tmp/nixus-management.json")); assert checks and all(checks.values()), checks'
           test "$(nix eval --raw .#nixosConfigurations.validation-file-disk.config.time.timeZone)" = "UTC"

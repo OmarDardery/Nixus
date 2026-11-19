@@ -86,6 +86,15 @@
           tunnel = testSite.tunnel // { enable = true; uuid = "00000000-0000-4000-8000-000000000001";
             ingress."app.example.invalid" = "http://10.77.0.10:8080"; };
         }) [ ./tests/hardware.nix ];
+        # Fresh-install shape: every host credential is SOPS/age ciphertext.
+        validation-sops = mkHost (testSite // {
+          secrets = testSite.secrets // { enable = true; hostFile = "tests/fixtures/host-secrets.yaml"; };
+          cockpit = testSite.cockpit // { enable = true; managePassword = true; };
+          backup = testSite.backup // { enable = true; repository = "sftp:backup@example.invalid:/nixus"; };
+          tunnel = testSite.tunnel // { enable = true; uuid = "00000000-0000-4000-8000-000000000001";
+            ingress."app.example.invalid" = "http://10.77.0.10:8080"; };
+          radios = testSite.radios // { wifi = { enable = true; interface = "wlan0"; ssid = "FIXTURE-ONLY"; manageProfile = true; }; };
+        }) [ ./tests/hardware.nix { networking.networkmanager.enable = true; } ];
         validation-bootstrap = nixpkgs.lib.nixosSystem {
           system = testSite.system;
           specialArgs = { inventory = testSite // { setup = testSite.setup // { enable = true; }; }; installedBase = ./tests/installed-base.nix; };
@@ -124,6 +133,20 @@
       apps.x86_64-linux.install = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-install"; };
       apps.x86_64-linux.update = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-update"; };
       nixusMigrationChecks = import ./tests/settings-checks.nix { lib = nixpkgs.lib; };
+      # Fresh installs keep every host credential in SOPS ciphertext.
+      nixusSecretsChecks = let
+        c = self.nixosConfigurations.validation-sops.config;
+        plain = self.nixosConfigurations.validation-services.config;
+      in {
+        hostFileIsDefault = toString c.sops.defaultSopsFile == toString ./tests/fixtures/host-secrets.yaml;
+        operatorFromSops = c.users.users.operator.hashedPasswordFile == c.sops.secrets.cockpit-operator-password.path
+          && c.sops.secrets.cockpit-operator-password.neededForUsers;
+        wifiFromSops = c.sops.secrets.wifi-env.path == "/var/lib/nixus-secrets/wifi.env";
+        resticFromSops = c.sops.secrets.restic-password.path == c.nixus.settings.backup.passwordFile
+          && c.sops.secrets.restic-environment.path == c.nixus.settings.backup.environmentFile;
+        tunnelFromSops = c.sops.secrets.cloudflared.path == c.nixus.settings.tunnel.credentialsFile;
+        disabledDeclaresNothing = plain.sops.secrets == { };
+      };
       nixusManagementChecks = let
         c = self.nixosConfigurations.validation-management.config;
         lib = nixpkgs.lib;

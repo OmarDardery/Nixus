@@ -171,6 +171,7 @@ class SourceTests(unittest.TestCase):
                  patch.object(installer, 'evaluate', side_effect=evaluate), patch.object(installer, 'run', side_effect=run),
                  patch.object(installer, 'read_settings', reader),
                  patch.object(installer, 'validate_kvm'), patch.object(installer, 'ensure_portal_account'),
+                 patch('host_secrets.ensure_identity'), patch('host_secrets.initialize'),
                  patch.object(installer, 'publish_etc'), patch.object(installer, 'summarize'),
                  patch.object(rt, 'issue_tls'), patch.object(rt, 'prepare_state_access'),
                  patch('local_access.cockpit_accounts', return_value=['existing']),

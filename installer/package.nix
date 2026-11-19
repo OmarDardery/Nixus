@@ -18,7 +18,7 @@ let
     cp -r ${../installer} $out/installer
     cp -r ${import ../admin/source.nix { inherit pkgs; }} $out/admin
   '';
-  runtimeInputs = with pkgs; [ python3 git openssl openssh shadow nix nixos-rebuild iproute2 util-linux kmod coreutils systemd networkmanager incus-lts.client ];
+  runtimeInputs = with pkgs; [ python3 git openssl openssh shadow nix nixos-rebuild iproute2 util-linux kmod coreutils systemd networkmanager incus-lts.client age sops ];
   install = pkgs.writeShellApplication {
   name = "nixus-install";
   inherit runtimeInputs;

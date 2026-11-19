@@ -17,7 +17,11 @@ import runtime as rt
 
 MAGIC = b"NIXUS-SECRETS-RECOVERY-V1"
 MAX_KIT = 256 * 1024
+# The host age identity is always exported: without it machine/secrets/host.yaml
+# cannot be decrypted on a replacement host. Restic material is opt-in.
+ALWAYS = {"host-age-identity"}
 FILES = {
+    "host-age-identity": Path("/var/lib/sops-nix/key.txt"),
     "restic-password": Path("/var/lib/nixus-secrets/restic-password"),
     "restic-environment": Path("/var/lib/nixus-secrets/restic-environment"),
 }
@@ -97,8 +101,8 @@ class RecoveryKit:
         if not ns.PRIVATE_KEY.fullmatch(private):
             raise ValueError("Private age identity is invalid")
         saved = {}
-        if include_backup:
-            for label, path in sorted(self.files.items()):
+        for label, path in sorted(self.files.items()):
+            if include_backup or label in ALWAYS:
                 if path.exists() or path.is_symlink():
                     ns._dir(path.parent, private=True)
                     saved[label] = _b64(ns._regular(path, 32768, private=True))

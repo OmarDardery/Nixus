@@ -611,8 +611,6 @@ def encode_secrets(values, settings):
     result = {}
     if not isinstance(values, dict) or set(values) - set(SECRET_PATHS):
         raise ValueError('Unknown secret field')
-    if settings['secrets']['enable'] and values:
-        raise ValueError('sops-nix owns secret provisioning on this installation')
     for field, value in values.items():
         if value in ('', None):
             continue

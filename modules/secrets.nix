@@ -2,13 +2,17 @@
 {
   assertions = [ { assertion = !site.secrets.enable || site.secrets.hostFile != "";
     message = "sops-nix requires an encrypted host secrets file."; } ];
+  # Host credentials are SOPS/age ciphertext in the reviewed machine source
+  # (machine/secrets/host.yaml), written by the Web UI and decrypted here.
   sops = lib.mkIf site.secrets.enable {
     defaultSopsFile = ../. + "/${site.secrets.hostFile}";
     age.keyFile = site.secrets.ageKeyFile;
-    secrets = (lib.optionalAttrs site.cockpit.managePassword {
+    secrets = (lib.optionalAttrs (site.cockpit.enable && site.cockpit.managePassword) {
       cockpit-operator-password.neededForUsers = true;
+    }) // (lib.optionalAttrs (site.radios.wifi.enable && site.radios.wifi.manageProfile) {
+      wifi-env = { path = "/var/lib/nixus-secrets/wifi.env"; restartUnits = [ "NetworkManager-ensure-profiles.service" ]; };
     }) // (lib.optionalAttrs site.tunnel.enable {
-      cloudflared = { key = "cloudflared"; path = site.tunnel.credentialsFile;
+      cloudflared = { path = site.tunnel.credentialsFile;
         restartUnits = [ "cloudflared-tunnel-${site.tunnel.uuid}.service" ]; };
     }) // (lib.optionalAttrs site.backup.enable {
       restic-password = { path = site.backup.passwordFile; };
