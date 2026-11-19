@@ -226,8 +226,8 @@ def main():
             assert page.get_by_text('Incus-native applications', exact=True).count() == 1
             assert page.locator('[data-path="apps.enable"]').count() == 0
             assert page.locator('[data-secret="arcanePassword"]').count() == 0
-            status['settings']['apps']['enable'] = True  # Old host data must not revive legacy UI.
-            status['effectiveSettings']['apps']['enable'] = True
+            status['settings']['apps'] = {'enable': True}  # Stale retired data must not revive legacy UI.
+            status['effectiveSettings']['apps'] = {'enable': True}
             page.evaluate('(value) => { state.status=value; shell(); }', status)
             assert page.locator('[data-path="apps.enable"]').count() == 0
             assert page.locator('[data-path="apps.arcanePort"]').count() == 0
