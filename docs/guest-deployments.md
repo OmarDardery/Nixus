@@ -1,11 +1,7 @@
 # Update existing NixOS guests
 
-> **Experimental (Phase 1).** The container guest rollout and recovery suite passed,
-> but the real apps-VM/Arcane end-to-end qualification has **not** passed on
-> hosted nested KVM. This feature is disabled by default. Do not enable
-> `nixus.deployment.apps.enable` for production workloads until the apps-VM
-> boot, authentication, deployment, and rollback checks are qualified.
-> Track the blocker in [issue #14](https://github.com/OmarDardery/Nixus/issues/14).
+> **Experimental.** The container guest rollout and recovery suite passes; VM guest
+> rollouts are not yet qualified on nested KVM (see #14).
 
 Image imports update future creations. A guest deployment updates the OS on an
 existing disk through local authenticated Incus exec; it never recreates the guest.
@@ -50,15 +46,7 @@ run inside the guest against explicit IPv4 loopback endpoints, require HTTP 200,
 discard bodies and do not follow redirects. Do not put credentials in URLs or Nix
 source. An active unit does not prove an application login or LAN reachability.
 
-For the built-in apps VM, set `nixus.deployment.apps.enable = true`. It adds the
-`apps` target from the same evaluated guest configuration as the image, checks
-`docker-arcane.service`, and disables the older automatic OS deployment in
-onboarding. Credential/TLS provisioning stays in onboarding. Before opting in, set
-`nixus.settings.apps.arcaneImage` to an image reference with a verified
-`@sha256:` digest (or an immutable local `sha256:` image ID with a declared
-image archive). Mutable tags and the unpinned example demo are refused in this
-mode. Pin images in other Nix-owned guest workloads too. Arcane/helper-owned
-stacks retain their native update tooling.
+Pin images in Nix-owned guest workloads to immutable digests.
 
 ## Review, activate and deploy
 

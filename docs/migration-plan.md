@@ -1,37 +1,49 @@
 # NixLab → Nixus migration plan
 
+Tracker: [#1](https://github.com/OmarDardery/Nixus/issues/1).
+
 ## Sources
+
 | Source | Ref | Role |
 |---|---|---|
-| `nixlab@incus-native` | `0242743` | Code baseline (ported without history) |
+| `nixlab@incus-native` | `0242743` | Code baseline, ported without history |
 | `nixlab@archive/pre-incus-native-main-2026-11-17` | `c12dcd8` | Previous Docker/Arcane project; reference only |
-| `nixlab/docs/incus-native-plan.md` | — | Phase checklist carried over below |
+| [Rebuild execution plan](incus-native-plan.md) | — | Phase checklist; issue references are remapped to Nixus |
 
 ## Rules
-- Each change: one Nixus issue → one PR into `main`.
-- Clean slate: no Arcane, Portainer, Docker applications VM or legacy-data migration paths.
-- Renamed from NixLab to Nixus. Identifiers, paths (`/srv/nixus`), CLI (`nixus-admin`) and options (`nixus.*`) change too.
-- A check counts as passing only when it actually ran. VM, KVM, physical-host and USB evidence is listed separately.
-- References like `nixlab#N` point to the original repository.
+
+- Each change gets one Nixus issue and one PR into `main`.
+- Clean slate: no Arcane, Portainer, Docker applications VM or legacy-data migration path.
+- NixLab is renamed to Nixus everywhere: options (`nixus.*`), CLI (`nixus-admin`), paths (`/srv/nixus`), units and flake outputs.
+- A check counts only if it actually ran. VM, nested-KVM, physical-host and USB evidence is reported separately.
+- `OmarDardery/nixlab#N` links point to closed issues or PRs in the original repository.
+
+## Issue map
+
+Open NixLab issues were copied as Nixus #3–#47 (nixlab #8 → #3 … nixlab #139 → #47).
+Each copy links back to its original, which holds the full specification.
 
 ## Phases
-### M0 — Repository
+
+### M0: Repository
 - [x] Seed `main`.
-- [ ] Copy open NixLab issues with back-links.
+- [x] Copy the 45 open NixLab issues with back-links.
 
-### M1 — Port and rebrand
-- [ ] Import the incus-native tree, renamed to Nixus.
-- [ ] Retire Arcane, Portainer and the apps VM (nixlab#126).
-- [ ] Host baseline: flake evaluation, unit tests and browser tests pass.
-- [ ] CI workflows adapted.
+### M1: Port and rename (#2)
+- [x] Import the incus-native tree.
+- [x] Retire Arcane, Portainer and the apps VM (#40).
+- [x] Rename NixLab to Nixus.
+- [x] Host baseline: all `validation-*` configurations, all `checks.x86_64-linux` derivations and the boolean check sets evaluate; unit and Node UI tests pass; the website builds with link checking.
+- [ ] Rewrite the remaining docs that still describe the Arcane apps VM (#48).
 
-### M2 — Feature parity (from the incus-native plan, phases 1–3)
-- [ ] Projects: reviewed publication, deploy, logs and revisions (nixlab#128, nixlab#133).
-- [ ] Isolated OCI builder and Compose preflight (nixlab#139; NixLab PRs nixlab#152 and nixlab#154 are pending).
-- [ ] SOPS/age delivery and rotation (nixlab#134; NixLab PR nixlab#153 is a draft).
-- [ ] Zero-secret output and credential work: nixlab#61, nixlab#62, nixlab#67, nixlab#68.
+### M2: Feature parity (incus-native plan, phases 1–3)
+- [ ] Projects: reviewed publication, deploy, logs and revisions (#41, #45).
+- [ ] Isolated OCI builder and Compose preflight (#47; NixLab PRs OmarDardery/nixlab#152 and OmarDardery/nixlab#154 are pending).
+- [ ] SOPS/age delivery and rotation (#46; NixLab draft PR OmarDardery/nixlab#153).
+- [ ] Zero-secret output and credential work: #26, #27, #28, #29.
 
-### M3 — Qualification (phase 4)
-- [ ] Encrypted off-host backups (nixlab#129, nixlab#130).
-- [ ] Independent host-replacement test, including USB guests (nixlab#131).
-- [ ] Installer, Web UI, CLI, Incus, OCI and recovery CI all green; first release.
+### M3: Qualification (phase 4)
+- [ ] Encrypted off-host backups (#42, #43).
+- [ ] Independent host-replacement test, including USB guests (#44, #34).
+- [ ] VM qualification on nested KVM (#14).
+- [ ] Installer, Web UI, CLI, Incus, OCI and recovery CI all green; first release (#3, #21).

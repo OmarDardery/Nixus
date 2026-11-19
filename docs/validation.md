@@ -51,15 +51,6 @@ Follow [commissioning](commissioning.md) on a recoverable host. Record the exact
 source revision, installed hardware, reboot results and redacted failure reports.
 The installer is not run against a production machine from this development workspace.
 
-The optional **Real apps commissioning** workflow runs a separate nested-KVM test
-with an actual Incus applications VM, Docker and Arcane. It resolves the configured
-Arcane tag to a digest, stages an OCI archive before building, and checks real
-authentication on three boots (two deliberate reboots). The test requires usable
-nested KVM; an unavailable prerequisite fails the job rather than passing a mock.
-This test path is not itself evidence of a successful run. Its report is labeled
-`nested-integration` and cannot qualify physical hardware. See
-[release qualification](qualification.md) for review and publication.
-
 The manual `hypervisor` output deliberately refuses incomplete inventory. Never
 install a `validation-*` configuration: its addresses, keys and hardware are fixtures.
 OS rollback does not roll back guest data or the Incus database schema.
@@ -67,11 +58,5 @@ OS rollback does not roll back guest data or the Incus database schema.
 The `guest-deployments` check boots two real NixOS Incus containers and tests
 ordered in-place OS updates, preserved data, health rollback, dependency failure,
 a killed export/import worker, and resume after rebooting the controller. It does
-not establish apps-VM/KVM or authenticated Arcane qualification.
+not establish VM/KVM qualification.
 
-The separate **Real apps guest deployment** workflow checks nested KVM on the
-runner that executes the test. When supported, it resolves and archives an actual
-Arcane image, deploys a new OS to the existing apps VM and a second NixOS
-guest, verifies preserved data/identities, and authenticates against real
-Arcane before and after. An unsupported runner skips the integration step;
-that is not a successful apps-VM qualification.

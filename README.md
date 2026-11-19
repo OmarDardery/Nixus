@@ -1,19 +1,44 @@
-# NixLab — Incus-native rebuild (work in progress)
+# Nixus
 
-**This branch is not installable as a supported release. Do not deploy it to a production host or run an update from reset `main`.**
+A declarative, Incus-native NixOS hypervisor for homelabs: Incus projects, OCI
+containers, system containers and VMs, reviewed host transactions, encrypted
+secrets, backups and restores, all managed from one Web UI. There is no Docker
+daemon, Portainer or Arcane.
 
-NixLab aims to provide a single Web UI for a fully Incus-native NixOS homelab: Incus projects, OCI containers, system containers and VMs, privileged reviewed transactions, encrypted secrets, backups, restoration, and safe raw Dockerfile/Compose source import **without Portainer, Arcane, or a Docker daemon**.
+> **Pre-release.** Nixus is not yet qualified for installation. Do not deploy it
+> to a production host. See [what is tested](docs/validation.md) and the
+> [migration plan](docs/migration-plan.md).
 
-The pre-Portainer ancestor is `3e3280e6`; the old maintained code and deployment history are preserved at [`archive/pre-incus-native-main-2026-11-17`](https://github.com/OmarDardery/nixlab/tree/archive/pre-incus-native-main-2026-11-17). The default `main` branch was reset to the ancestor by maintainer request and **currently contains no functional installer**.
+## Origin
 
-## Source of truth
-- [Target architecture](docs/incus-native-architecture.md)
-- [Repository and runtime layout](docs/incus-native-structure.md)
-- [Phased execution and safety gates](docs/incus-native-plan.md)
-- [Every legacy file: copy, translate or remove](docs/incus-native-file-inventory.md)
-- [Draft integration PR #142](https://github.com/OmarDardery/nixlab/pull/142)
+Nixus is a fresh rewrite of [NixLab](https://github.com/OmarDardery/nixlab),
+built from NixLab's `incus-native` rebuild (`0242743`) without its git history.
+The Docker/Arcane applications VM was removed rather than migrated, and the
+project was renamed throughout (`nixus.*` options, `nixus-admin`, `/srv/nixus`).
+Open NixLab issues were copied here with links back to the originals.
 
-## Implementation status
-The old source has been imported for selective translation, **not approved for production**. The portal has Incus-native project navigation, read-only observed project lists, an authenticated read-only broker view of declarative project metadata, and browser-local SHA-256 source preflight. No uploaded file is currently persisted, built or deployed. Most legacy backend and module code remains to be removed or translated. CI and physical-host qualification are release blockers.
+## Documentation
 
-Existing Incus guests, VM disks, databases and external volumes are never destroyed merely because Git branches or configuration modules change. Perform a verified off-host backup and explicit migration/restore drill before retiring the legacy applications VM on an existing installation.
+- [Migration plan and status](docs/migration-plan.md)
+- [Architecture contract](docs/incus-native-architecture.md)
+- [Repository and host layout](docs/incus-native-structure.md)
+- [Rebuild execution plan](docs/incus-native-plan.md)
+- [OCI source uploads and build safety](docs/oci-source-intake.md)
+- [Declarative secrets UI](docs/incus-native-secrets-ui.md)
+
+## Development checks
+
+```sh
+python3 -m unittest discover -s tests
+nix eval .#nixusFoundationChecks --json
+```
+
+`nixosConfigurations.hypervisor` and `bootstrap` intentionally fail evaluation
+until `site.nix` is filled from real hardware; use the `validation-*` fixtures.
+
+CI runs the full set in [`.github/workflows/validate.yml`](.github/workflows/validate.yml).
+VM, nested-KVM and physical-host qualification are tracked separately.
+Passing unit tests do not prove that backups restore or that USB passthrough works.
+
+Existing Incus guests, disks and volumes are never destroyed because Git
+branches or configuration modules change.
