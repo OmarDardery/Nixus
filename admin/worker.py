@@ -320,6 +320,8 @@ def apply(directory):
         # Live secrets are separate from the immutable, reviewed Nix snapshot.
         for key, data in rt.read_staged_secrets(directory, job.get('secretChanges', [])).items():
             rt.atomic(rt.SECRET_PATHS[key], data)
+            if key == 'cockpitPassword':
+                rt.durable_unlink(rt.STATE / 'operator-password-unset')
         rt.remove_staged_secrets(directory)
         if job.get('platformRevision') or job.get('sourcePlatformUpdated'):
             import upgrades

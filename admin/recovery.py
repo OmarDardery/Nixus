@@ -109,7 +109,7 @@ def coverage():
 
 def secret_files():
     files = {}
-    for name in ('auth.json', 'users.json', 'bootstrap-state.json', 'setup-password', 'operator-password', 'browser-certificates.json',
+    for name in ('auth.json', 'users.json', 'bootstrap-state.json', 'browser-certificates.json',
                  'ca.key', 'ca.crt', 'tls.key', 'tls.crt'):
         files['admin/' + name] = rt.STATE / name
     for name, path in rt.SECRET_PATHS.items():

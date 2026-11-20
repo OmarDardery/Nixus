@@ -224,7 +224,7 @@ class AtomicEnrollmentTests(unittest.TestCase):
 
     def test_missing_legacy_auth_on_a_host_with_jobs_requires_recovery(self):
         rt.write_json(self.state / 'jobs' / ('f' * 32) / 'job.json', {'status': 'confirmed'})
-        with self.assertRaises(ValueError): enrollment.ensure_legacy_account()
+        with self.assertRaises(ValueError): enrollment.ensure_web_enrollment()
         self.assertEqual(accounts.enrollment_status(), {'available': False, 'recoveryRequired': True})
         self.assertFalse((self.state / 'auth.json').exists())
         self.assertFalse(accounts.enrollment_open())

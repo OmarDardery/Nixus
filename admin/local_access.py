@@ -1,10 +1,13 @@
 """Inspect local login readiness without exposing shadow hashes in output."""
 import grp
 import pwd
-import secrets
 import subprocess
 
 import runtime as rt
+
+
+def operator_unset_marker():
+    return rt.STATE / 'operator-password-unset'
 
 
 def shadow(username):
@@ -33,12 +36,14 @@ def cockpit_accounts():
 
 
 def ensure_operator_password():
-    plain = rt.STATE / 'operator-password'
+    """Lock the managed operator account until the administrator sets a password.
+
+    Writes the hash of a random password that is discarded immediately; no
+    plaintext is stored. The Web UI replaces it and clears the unset marker.
+    """
     encoded = rt.SECRET_PATHS['cockpitPassword']
+    rt.durable_unlink(rt.STATE / 'operator-password')  # Retire any legacy plaintext.
     if not encoded.exists():
-        if not plain.exists():
-            rt.atomic(plain, secrets.token_urlsafe(24) + '\n')
-        password = plain.read_text().strip()
-        result = subprocess.run(['openssl', 'passwd', '-6', '-stdin'], input=password + '\n',
-                                capture_output=True, text=True, check=True, timeout=30)
-        rt.atomic(encoded, result.stdout)
+        import host_secrets
+        rt.atomic(encoded, host_secrets.locked_password_hash())
+        rt.atomic(operator_unset_marker(), '1\n')
