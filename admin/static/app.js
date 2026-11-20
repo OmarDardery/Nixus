@@ -451,7 +451,8 @@ function formatBytes(v) {
 function login(message = "") {
   clearInterval(state.timer);
   state.timer = null;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><p>Use your Nixus portal account. Hosts with browser enrollment enabled will show console approval here. If you need a new portal password, use <code>sudo nixus-admin reset-password</code> from an authorized host terminal.</p><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">SSH and Cockpit use separate identities from the Nixus portal. Verify the local CA fingerprint before signing in. <a href="/ca.crt">Download the management CA</a>.</p></section></main>`;
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><p>Use your Nixus portal account. Hosts with browser enrollment enabled will show console approval here. If you need a new portal password, use <code>sudo nixus-admin reset-password</code> from an authorized host terminal.</p><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note"><button type="button" class="link" id="recover-access">Forgot your password? Recover access</button></p><p class="note">SSH and Cockpit use separate identities from the Nixus portal. Verify the local CA fingerprint before signing in. <a href="/ca.crt">Download the management CA</a>.</p></section></main>`;
+  document.querySelector("#recover-access").onclick = () => showRecovery();
   document.querySelector("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const button = e.target.querySelector("button");
@@ -474,6 +475,50 @@ function login(message = "") {
     if (available) showEnrollment();
     else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixus-admin reset-password from a private host terminal or restore supported account state.";
   }).catch(() => {});
+}
+
+// Recovery: this browser holds a private request cookie; the host approves its ID.
+async function showRecovery() {
+  let request;
+  try { request = await api("recovery"); }
+  catch (err) { document.querySelector("#login-error").textContent = err.message; return; }
+  state.csrf = request.csrf;
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Recover access</h1>
+    <p>On the host, open Cockpit's terminal, SSH or the physical console and run:</p>
+    <pre class="command"><code id="recovery-command">sudo nixus-admin recovery approve ${esc(request.requestId)}</code></pre>
+    <p class="note" id="recovery-status">Waiting for approval. This request expires in five minutes and only works in this browser.</p>
+    <form id="recovery-form" hidden><label class="field"><span>New portal password</span><input name="password" type="password" minlength="16" autocomplete="new-password" required></label>
+    <p class="error" id="recovery-error"></p><button class="primary">Set password and sign in →</button></form>
+    <p class="note"><button type="button" class="link" id="recovery-cancel">Back to sign in</button></p></section></main>`;
+  const form = document.querySelector("#recovery-form");
+  const update = (current) => {
+    if (!form.isConnected) return;
+    if (current.approved) {
+      form.hidden = false;
+      document.querySelector("#recovery-status").textContent = `Approved for ${current.username}. Choose a new password (16–256 characters).`;
+    }
+  };
+  update(request);
+  const timer = setInterval(async () => {
+    if (!form.isConnected || !form.hidden) return clearInterval(timer);
+    try { update(await api("recovery")); }
+    catch { clearInterval(timer); document.querySelector("#recovery-status").textContent = "This request expired. Start again from the sign-in page."; }
+  }, 3000);
+  document.querySelector("#recovery-cancel").onclick = () => { clearInterval(timer); login(); };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("button");
+    button.disabled = true;
+    try {
+      state.principal = await api("recovery/complete", Object.fromEntries(new FormData(e.target)), state.csrf);
+      state.csrf = state.principal.csrf;
+      clearInterval(timer);
+      await load();
+    } catch (err) {
+      document.querySelector("#recovery-error").textContent = err.message;
+      button.disabled = false;
+    }
+  };
 }
 
 async function showEnrollment() {

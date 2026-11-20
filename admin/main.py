@@ -260,6 +260,13 @@ def backend():
                         result = bootstrap.verify(*shared, body.get('hostUsername'), body.get('hostPassword'))
                     else:
                         result = bootstrap.claim(*shared, body.get('username'), body.get('password'))
+                elif self.path in ('/recovery-start', '/recovery-complete'):
+                    import browser_recovery as recovery_requests
+                    if self.path == '/recovery-start':
+                        result = recovery_requests.start(body.get('token'), body.get('address'), body.get('origin'))
+                    else:
+                        result = recovery_requests.complete(body.get('token'), body.get('csrf'), body.get('address'),
+                                                            body.get('origin'), body.get('password'))
                 elif self.path == '/enrollment':
                     # Local root compatibility only. The HTTPS gateway never
                     # forwards an unbound browser claim to this legacy route.
@@ -627,10 +634,14 @@ def require_fresh_web_confirmation(session, job, address):
     return True
 
 
-def bootstrap_cookie(header):
+def bootstrap_cookie(header, name='__Host-nixus_bootstrap'):
     values = [part.strip().split('=', 1)[1] for part in header.split(';')
-              if part.strip().startswith('__Host-nixus_bootstrap=')]
+              if part.strip().startswith(name + '=')]
     return values[0] if len(values) == 1 else None
+
+
+def recovery_cookie(header):
+    return bootstrap_cookie(header, '__Host-nixus_recovery')
 
 
 def tls_context(certfile, keyfile):
@@ -707,6 +718,13 @@ def web():
                         'address': self.client_address[0], 'origin': 'https://' + host})
                     token = result.pop('token')
                     return reply(self, 200, result, extra={'Set-Cookie': '__Host-nixus_bootstrap=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=600'})
+                if path == '/api/recovery':
+                    host = self.access()
+                    result = broker_request('POST', '/recovery-start', {
+                        'token': recovery_cookie(self.headers.get('Cookie', '')),
+                        'address': self.client_address[0], 'origin': 'https://' + host})
+                    token = result.pop('token')
+                    return reply(self, 200, result, extra={'Set-Cookie': '__Host-nixus_recovery=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=300'})
                 session = self.session()
                 if path.startswith('/docs/'):
                     import html
@@ -782,6 +800,23 @@ def web():
                     return reply(self, 200, {'csrf': session_csrf, 'username': username, 'role': principal['role']}, extra=[
                         ('Set-Cookie', 'nixus_session=' + ordinary + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'),
                         ('Set-Cookie', '__Host-nixus_bootstrap=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')])
+                if self.path == '/api/recovery/complete':
+                    body = json_body(self)
+                    token = recovery_cookie(self.headers.get('Cookie', ''))
+                    csrf = self.headers.get('X-Nixus-CSRF', '')
+                    if not token or not csrf:
+                        raise PermissionError('Recovery browser session and request token required')
+                    result = broker_request('POST', '/recovery-complete', {
+                        'token': token, 'csrf': csrf, 'address': self.client_address[0],
+                        'origin': 'https://' + host, 'password': body.get('password')})
+                    username = result['username']
+                    with auth.lock:
+                        auth.failures.pop(self.client_address[0], None)
+                    ordinary, session_csrf = auth.login(body.get('password'), self.client_address[0], username)
+                    principal = auth.get('nixus_session=' + ordinary)
+                    return reply(self, 200, {'csrf': session_csrf, 'username': username, 'role': principal['role']}, extra=[
+                        ('Set-Cookie', 'nixus_session=' + ordinary + '; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800'),
+                        ('Set-Cookie', '__Host-nixus_recovery=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0')])
                 if self.path == '/api/login':
                     body = json_body(self)
                     username = body.get('username', 'admin')

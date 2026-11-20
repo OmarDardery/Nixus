@@ -34,6 +34,7 @@ def main():
     published_source = []
     submitted = []; errors = []; authenticated = [False]; requests = []
     certificate_records = []; certificate_pending = [False]; bootstrap_approved = [False]
+    recovery_state = {'csrf': 'recovery-fixture-csrf', 'requestId': 'AB12-CD34', 'approved': False, 'username': None, 'expiresIn': 300}
     def step(name, page, done, required=True):
         return {'id': name, 'title': 'Step ' + name, 'detail': 'Fixture detail', 'page': page, 'required': required, 'done': done}
     setup_progress = {'version': 1, 'completed': 1, 'total': 3, 'complete': False, 'items': [
@@ -111,6 +112,11 @@ def main():
                     if endpoint == 'bootstrap/claim':
                         authenticated[0] = True
                         route.fulfill(json={'csrf': 'example', 'username': body['username'], 'role': 'admin'}); return
+                    if endpoint == 'recovery/complete':
+                        assert recovery_state['approved'] and body == {'password': 'recovered-portal-password-1'}
+                        assert route.request.headers.get('x-nixus-csrf') == 'recovery-fixture-csrf'
+                        authenticated[0] = True
+                        route.fulfill(json={'csrf': 'example', 'username': 'admin', 'role': 'admin'}); return
                     if endpoint == 'login': authenticated[0] = True
                     if endpoint == 'review':
                         status['job'] = {'id': 'a'*32, 'status': 'building', 'settings': copy.deepcopy(body['settings']),
@@ -133,6 +139,7 @@ def main():
                                 'project-sources': {'available': True, 'sourceHash': 'a'*64, 'fileCount': 3, 'bytes': 412, 'projects': [{'name': 'sample', 'entrypoint': 'sample/default.nix', 'moduleCount': 1}]},
                                 'project-imports': {'projects': published_source},
                                 'main-revision': {'revision': 'b' * 40},
+                                'recovery': recovery_state,
                                 'setup-progress': setup_progress,
                                 'browser-certificates': {'certificates': certificate_records},
                                 'operations': {'jobs': [], 'archives': [], 'generations': [], 'backupStatus': {}},
@@ -179,6 +186,24 @@ def main():
             assert page.locator('.banner', has_text='Setup').count() == 0
             claim = next(body for endpoint, body in submitted if endpoint == 'bootstrap/claim')
             assert claim['username'] == 'portalowner' and 'hostPassword' not in claim
+            authenticated[0] = False
+            page.reload()
+            page.get_by_role('heading', name='Sign in to your host.', exact=True).wait_for()
+
+            # Forgotten password: browser-bound request approved from the host (#28).
+            page.get_by_role('button', name='Forgot your password? Recover access').click()
+            page.get_by_role('heading', name='Recover access', exact=True).wait_for()
+            assert page.locator('#recovery-command').text_content() == 'sudo nixus-admin recovery approve AB12-CD34'
+            assert page.locator('#recovery-form').is_hidden()
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            recovery_state.update(approved=True, username='admin')
+            page.locator('#recovery-form').wait_for(state='visible', timeout=10000)
+            assert 'Approved for admin' in page.locator('#recovery-status').text_content()
+            page.locator('#recovery-form [name="password"]').fill('recovered-portal-password-1')
+            page.get_by_role('button', name='Set password and sign in →').click()
+            page.wait_for_function('state.principal?.username === "admin" && state.csrf === "example"')
+            assert 'recovered-portal-password-1' not in page.content()
+            assert 'recovered-portal-password-1' not in page.evaluate('JSON.stringify(state)')
             authenticated[0] = False
             page.reload()
             page.get_by_role('heading', name='Sign in to your host.', exact=True).wait_for()

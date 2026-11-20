@@ -98,9 +98,21 @@ every visit, so you can close the browser or reboot and continue later:
 
 Until the required steps are done, every page shows a **Continue setup** banner.
 
-For forgotten portal access, an authorized administrator runs
-`sudo nixus-admin reset-password` from a private local/SSH/Cockpit terminal and
-chooses a new password. This is rotation, not retrieval; old sessions are rejected.
+### Forgotten portal password
+
+1. On the sign-in page choose **Forgot your password? Recover access**. The page
+   shows a request ID such as `AB12-CD34` and keeps a private cookie for this
+   browser only.
+2. As a Linux administrator, open Cockpit's terminal, SSH or the physical
+   console and run `sudo nixus-admin recovery approve AB12-CD34`. With several
+   portal accounts, add `--user NAME`. It prints only "Approved; return to the browser".
+3. Back in the same browser, choose a new password within five minutes. The
+   request is single-use, other browsers cannot use it, approvals do not survive
+   a reboot, and the account's existing sessions stop working.
+
+Nothing is ever retrieved or printed: this is rotation, not retrieval. Linux,
+Cockpit and Incus credentials are not changed. If the portal itself is down,
+`sudo nixus-admin reset-password` from a private terminal sets a new password directly.
 
 
 ## Retry and source updates
