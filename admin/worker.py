@@ -121,7 +121,8 @@ def build(directory):
     effective, disks = projection['settings'], projection['disks']
     if role == 'bootstrap' and effective['ready']:
         raise ValueError('Bootstrap source marks the host configured; use the full guarded installer')
-    if 'cockpitPassword' in rt.read_staged_secrets(directory, job.get('secretChanges', [])) and not (effective['cockpit']['enable'] and effective['cockpit']['managePassword']):
+    if ('cockpitPassword' in rt.read_staged_secrets(directory, job.get('secretChanges', []))
+            or 'cockpitPassword' in job.get('encryptedSecretChanges', [])) and not (effective['cockpit']['enable'] and effective['cockpit']['managePassword']):
         raise ValueError('Cockpit password enrollment conflicts with file-owned effective settings')
     from model import inventory, validate_settings, validate_bootstrap
     validation = json.loads(json.dumps(effective))
@@ -181,6 +182,8 @@ def save_recovery(directory):
              (rt.machine_path(rt.ROOT, 'installation'), 'installation.json'),
              (rt.STATE / 'platform-baseline.json', 'platform-baseline.json'),
              (rt.ROOT / 'flake.lock', 'flake.lock')]
+    import host_secrets
+    files += [(host_secrets.path(rt.ROOT), 'host-secrets.yaml')]
     files += [(path, 'secret-' + key) for key, path in rt.SECRET_PATHS.items()]
     files += [(rt.STATE / name, name) for name in ('tls.crt', 'tls.key')]
     manifest = []
@@ -337,6 +340,11 @@ def apply(directory):
                     for name, path in rt.source_files(rt.ROOT) if platform_path(name)})
         rt.install_modules(directory / 'source', rt.ROOT)
         rt.write_json(rt.machine_path(rt.ROOT, 'settings'), job['settings'])
+        import host_secrets
+        reviewed = host_secrets.path(directory / 'source')
+        if reviewed.is_file():
+            # Reviewed ciphertext; the recovery manifest restores the previous file.
+            rt.atomic(host_secrets.path(rt.ROOT), reviewed.read_bytes(), mode=0o644)
         if job['updateInputs']:
             rt.atomic(rt.ROOT / 'flake.lock', (directory / 'source/flake.lock').read_bytes(), mode=0o644)
         before, after = old_settings['management'], effective['management']

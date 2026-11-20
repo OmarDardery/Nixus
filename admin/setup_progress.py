@@ -64,6 +64,13 @@ def browser_enrolled(state):
     return any(record['status'] == 'active' for record in records)
 
 
+def cockpit_password_set(settings):
+    if settings.get('secrets', {}).get('enable'):
+        import host_secrets
+        return host_secrets.operator_password_set(rt.ROOT)
+    return rt.SECRET_PATHS['cockpitPassword'].exists()
+
+
 def progress(status, *, state=None, identity=None, account_valid=None):
     state = Path(state or rt.STATE)
     if identity is None:
@@ -80,7 +87,7 @@ def progress(status, *, state=None, identity=None, account_valid=None):
         'administrator': bool(account_valid()),
         'activation': bool(status.get('setupComplete') and status.get('lastConfirmed')),
         'incusBrowser': browser_enrolled(state),
-        'cockpitPassword': rt.SECRET_PATHS['cockpitPassword'].exists(),
+        'cockpitPassword': cockpit_password_set(settings),
         'secretsKey': key is not None,
         'recoveryKit': key is not None and marker.get('identity') == key,
         'sshKey': bool(settings.get('adminKeys')),

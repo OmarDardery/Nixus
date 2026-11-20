@@ -1,4 +1,4 @@
-Commit encrypted sops YAML only. Never commit age private identities, tunnel plaintext,
-password files, database dumps or restic repository keys. Configure recipients for the
-host and VM separately; see `docs/deployment.md`. Files here are not valid secret data
-until encrypted by the administrator with real recipients.
+Nixus keeps host credentials in `machine/secrets/host.yaml` on the installed host,
+encrypted to the host age identity in `/var/lib/sops-nix/key.txt`. The portal
+writes it; see `docs/deployment.md`. Commit encrypted SOPS YAML only. Never commit
+age private identities, password files, database dumps or restic repository keys.

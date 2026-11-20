@@ -85,7 +85,7 @@ def activate(candidate, manager=None, effective=None, staged_source=None, expect
     from controller import Manager
     manager = manager or Manager()
     effective = effective or candidate
-    if effective['cockpit']['enable'] and effective['cockpit']['managePassword']:
+    if effective['cockpit']['enable'] and effective['cockpit']['managePassword'] and not effective['secrets']['enable']:
         import local_access
         local_access.ensure_operator_password()
     job_id = manager.review(candidate, secret_values={}, principal=PRINCIPAL,

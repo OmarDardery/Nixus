@@ -82,40 +82,35 @@ console defaults. Secure Boot for this guest image is disabled; host firmware po
 
 ## Secrets and first boot
 
-Native systemd credential loading protects cloudflared's tunnel JSON. sops-nix handles
-reprovisioning when enabled; encrypted files may be committed, private decryption keys may not.
+Fresh installations keep every host credential as SOPS/age ciphertext, with no manual step:
 
-1. Create separate age identities for host and applications VM, keeping recovery copies offline.
-2. Encrypt host YAML with host recipients and guest YAML with guest recipients using `sops`.
-3. Commit the encrypted files, set their repository-relative paths in `site.secrets`, and enable it.
-4. Provision each machine's age private key at `site.secrets.ageKeyFile`, mode 0600, before activation.
-   A host key does not automatically appear in the VM. Initial VM provisioning can use authenticated
-   `incus file push` from a protected local file, followed by a guest rebuild.
-5. Rebuild the host and guest. sops-nix materializes secret paths at boot and restarts dependent services.
+1. The installer creates the host age identity at `/var/lib/sops-nix/key.txt`
+   (mode 0600, directory 0700) and never overwrites an existing one.
+2. It writes `machine/secrets/host.yaml`, encrypted to that identity, and sets
+   `secrets.enable = true` and `secrets.hostFile = "machine/secrets/host.yaml"`.
+   The managed `operator` account starts with an unusable password hash and an
+   unset marker until you choose a password in the portal.
+3. Credentials entered in the portal (Cockpit operator password, Wi-Fi WPA key,
+   restic password and environment, tunnel JSON) are encrypted into the job's
+   staged copy of `host.yaml` during review. No plaintext is staged or logged.
+   Apply publishes the reviewed ciphertext; rollback restores the previous file.
+4. sops-nix decrypts at activation into the paths below and restarts dependants.
+5. Every encrypted recovery kit includes the host age identity. Without it,
+   `host.yaml` cannot be decrypted on replacement hardware.
 
-Expected encrypted YAML keys:
-
-| Machine | Key | Content |
+| Key in `host.yaml` | Decrypted to | Written by |
 |---|---|---|
-| Host | `cloudflared` | Tunnel credentials JSON as a YAML multiline string |
-| Host | `restic-password` | Restic repository password |
-| Host | `restic-environment` | Runtime restic environment, e.g. repository access credentials; can be empty for credential-free targets |
-| VM | Arcane initial password | Supplied through authenticated onboarding into transient runtime input; not managed as a recurring SOPS secret |
-| VM | `demo-db-password` | Strong database password; only required when demo enabled |
+| `cockpit-operator-password` | `/run/secrets-for-users/…` (SHA-512 crypt hash) | Services → Local operator password |
+| `wifi-env` | `/var/lib/nixus-secrets/wifi.env` | Networking → managed Wi-Fi |
+| `restic-password`, `restic-environment` | `backup.passwordFile`, `backup.environmentFile` | Backups |
+| `cloudflared` | `tunnel.credentialsFile` | Public ingress |
 
-Without sops-nix, provision the same root-owned files under `/var/lib/nixus-secrets` using
-your existing secret deployment system. Parent directory mode is 0700, ordinary files 0600.
-The demo password file must be 0444 inside that protected directory so the unprivileged
-web/PG containers can read its bind-mounted secret. File-based Compose secrets are mounts,
-not a Docker Swarm encrypted secret store. Do not use `builtins.readFile` on plaintext secrets.
+Top-level key names in `host.yaml` stay readable, so the portal can tell which
+credentials exist without decrypting anything. Never commit or copy the age
+private key into the source tree.
 
-Arcane stays stopped while its bootstrap file is absent. Supplying the file then requires
-`systemctl start docker-arcane` in the VM, or a rebuild/reboot. The bootstrap password flag
-only creates the initial admin; it does not rotate an existing account. Set up account changes
-through Arcane and retain its persistent data. The secret mount still needs to exist on restarts.
-
-Encrypted guest files are part of the VM image closure; a decryption key is never baked into it.
-Do not enable the demo until the guest can materialize its database secret.
+Hosts with `secrets.enable = false` keep the older root-owned files under
+`/var/lib/nixus-secrets` (directory 0700, files 0600).
 
 ## Deploy changes into the existing VM
 

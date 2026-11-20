@@ -187,19 +187,24 @@ class Manager:
             if install.get('legacyWpaProfiles') and wifi['enable'] and not wifi['manageProfile']:
                 raise ValueError('This host used Nix wpa_supplicant profiles. Declare its SSID/password when moving Wi-Fi to NetworkManager/iwd')
             encoded = rt.encode_secrets(secret_values or {}, candidate)
-            if candidate['cockpit']['enable'] and candidate['cockpit']['managePassword'] and not candidate['secrets']['enable']:
-                if 'cockpitPassword' not in encoded and not rt.SECRET_PATHS['cockpitPassword'].exists():
+            sops = candidate['secrets']['enable']
+            import host_secrets
+            def kept(field):
+                # With sops-nix the reviewed ciphertext, not a live file, is authoritative.
+                return host_secrets.present(self.root, field) if sops else rt.SECRET_PATHS[field].exists()
+            if candidate['cockpit']['enable'] and candidate['cockpit']['managePassword']:
+                if 'cockpitPassword' not in encoded and not kept('cockpitPassword'):
                     raise ValueError('Set the Cockpit operator password, or retain existing local-account authentication')
             if candidate['radios']['wifi']['manageProfile'] and candidate['radios']['wifi']['enable']:
-                if 'wifiPassword' not in encoded and not rt.SECRET_PATHS['wifiPassword'].exists():
+                if 'wifiPassword' not in encoded and not kept('wifiPassword'):
                     raise ValueError('Provide the WPA password for the managed Wi-Fi profile')
-            if candidate['backup']['enable'] and not candidate['secrets']['enable']:
-                if 'resticPassword' not in encoded and not rt.SECRET_PATHS['resticPassword'].exists():
+            if candidate['backup']['enable']:
+                if 'resticPassword' not in encoded and not kept('resticPassword'):
                     raise ValueError('Provide the restic repository password')
                 # Native service needs an EnvironmentFile even with no cloud credentials.
-                if 'resticEnvironment' not in encoded and not rt.SECRET_PATHS['resticEnvironment'].exists():
+                if 'resticEnvironment' not in encoded and not kept('resticEnvironment'):
                     encoded['resticEnvironment'] = ''
-            if candidate['tunnel']['enable'] and not candidate['secrets']['enable'] and 'tunnelCredentials' not in encoded and not rt.SECRET_PATHS['tunnelCredentials'].exists():
+            if candidate['tunnel']['enable'] and 'tunnelCredentials' not in encoded and not kept('tunnelCredentials'):
                 raise ValueError('Provide the tunnel-specific credentials JSON')
             initialized = Path('/var/lib/incus/database').exists()
             runtime_settings = previous['settings'] if initialized and not current['ready'] and active.get('id') and previous.get('previousSystem') else current
@@ -239,6 +244,11 @@ class Manager:
             for name, content in modules.items():
                 rt.atomic(rt.machine_path(directory / 'source', 'modules') / name, content, mode=0o644)
             rt.write_json(rt.machine_path(directory / 'source', 'settings'), candidate)
+            encrypted = []
+            if sops and encoded:
+                # Ciphertext joins the reviewed source; nothing plaintext is staged.
+                encrypted = host_secrets.write(directory / 'source', encoded, candidate['secrets']['ageKeyFile'])
+                encoded = {}
             import impact
             before = self.effective_settings(current) if current['ready'] else runtime_settings
             rt.write_json(directory / 'impact-base.json', impact.baseline(before))
@@ -246,7 +256,7 @@ class Manager:
                    'settingsMigration': {'from': stored.get('schemaVersion', 0), 'to': candidate.get('schemaVersion', 0)},
                    'settings': candidate, 'changes': differences(current, candidate), 'principal': principal,
                    'moduleChanges': [{'path': name, 'before': (rt.machine_path(self.root, 'modules') / name).read_text() if (rt.machine_path(self.root, 'modules') / name).exists() else None, 'after': content} for name, content in modules.items()],
-                   'secretChanges': sorted(encoded), 'updateInputs': bool(update_inputs), 'platformRevision': revision,
+                   'secretChanges': sorted(encoded), 'encryptedSecretChanges': encrypted, 'updateInputs': bool(update_inputs), 'platformRevision': revision,
                    'sourceStaged': staged_source is not None, 'sourcePlatformUpdated': bool(staged_changes),
                    'platformChanges': [{'path': name, 'kind': 'staged-installer-update'} for name in staged_changes]}
             rt.write_json(directory / 'job.json', job)
@@ -257,7 +267,7 @@ class Manager:
                 rt.write_json(obsolete / 'job.json', record)
                 rt.remove_staged_secrets(obsolete)
                 rt.durable_unlink(obsolete / 'system')
-            rt.audit('review', job=job_id, changes=len(job['changes']), secrets=list(encoded))
+            rt.audit('review', job=job_id, changes=len(job['changes']), secrets=list(encoded) + encrypted)
             try:
                 if encoded:
                     rt.stage_secrets(directory, encoded)
