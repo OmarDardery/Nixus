@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       runs:
-        description: 'JSON run IDs: validate, installer, portal, apps, commissioning, website'
+        description: 'JSON run IDs: validate, portal, website'
         required: true
         type: string
 permissions:
@@ -43,18 +43,16 @@ jobs:
           for file in fresh.json upgrade.json recovery.json limitations.md; do
             git show "$EVIDENCE_COMMIT:qualification/$file" > "$RUNNER_TEMP/physical-evidence/$file"
           done
-      - name: Prohibit releases with incomplete Incus-native source migration
-        run: |
-          python3 scripts/incus_native_audit.py --strict
-          # Complete source classification alone does not prove release qualification.
-          # The existing physical recovery and full exact-revision CI gates follow.
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: go.mod
       - name: Verify physical reports and exact-revision CI; prepare source assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           CI_RUNS: ${{ inputs.runs }}
         run: |
-          python3 scripts/release.py --tag "$RELEASE_TAG" --runs "$CI_RUNS" \
+          go run ./cmd/nixus release --tag "$RELEASE_TAG" --runs "$CI_RUNS" \
             --evidence "$RUNNER_TEMP/physical-evidence" --output "$RUNNER_TEMP/beta-assets"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

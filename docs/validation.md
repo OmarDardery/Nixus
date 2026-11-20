@@ -29,8 +29,8 @@ The workflow runs these checks on every pull request:
 Run the lightweight source checks locally:
 
 ```sh
-python3 -m compileall -q admin installer scripts tests helpers
-python3 -m unittest discover -s tests -v
+nix develop -c go vet ./...
+nix develop -c go test ./...
 node tests/test_homepage.js
 node tests/test_operations_ui.js
 node tests/test_foundation_ui.js

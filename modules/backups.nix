@@ -4,8 +4,8 @@ let
   admin = import ../admin/package.nix { inherit pkgs; };
   backup = pkgs.writeShellApplication {
     name = "nixus-export";
-    runtimeInputs = [ pkgs.python3 pkgs.incus-lts.client ];
-    text = ''PYTHONPATH=${../scripts} exec python3 ${../scripts/backup.py} "$@"'';
+    runtimeInputs = [ admin ];
+    text = ''exec nixus-admin backup "$@"'';
   };
   prepare = pkgs.writeShellApplication {
     name = "nixus-backup-prepare";
@@ -55,7 +55,6 @@ in {
         after = [ "incus-preseed.service" "nixus-instances.service" ];
         requires = [ "incus.service" ];
         environment.NIXUS_EXPORT_DIRECTORY = site.backup.stagingDirectory;
-        environment.NIXUS_RECOVERY_TOOL = "${admin}/bin/nixus-admin";
         environment.NIXUS_BACKUP_POLICY = pkgs.writeText "nixus-backup-policy.json" (builtins.toJSON {
           inherit (site.backup) groups exclude reserveMiB;
         });
@@ -68,7 +67,7 @@ in {
         postStart = ''
           # A deliberately excluded workload must not make the full-host freshness
           # indicator green. Detailed coverage remains in backup-status.json.
-          if ${pkgs.python3}/bin/python3 -c 'import json; import sys; sys.exit(json.load(open("/var/lib/nixus/backup-status.json"))["phase"] != "complete")'; then
+          if [ "$(${pkgs.jq}/bin/jq -r .phase /var/lib/nixus/backup-status.json)" = complete ]; then
             date +%s > /var/lib/nixus/last-backup-success
           fi
         '';
@@ -81,10 +80,9 @@ in {
         path = [ pkgs.restic pkgs.systemd ];
         serviceConfig = {
           Type = "oneshot"; EnvironmentFile = site.backup.environmentFile;
-          ExecStart = "${pkgs.python3}/bin/python3 ${../scripts/backup_verification.py} --mode ${verification.mode}";
+          ExecStart = "${admin}/bin/nixus-admin backup-verify --mode ${verification.mode}";
           TimeoutStartSec = "12h"; UMask = "0077";
         };
-        environment.PYTHONPATH = "${../admin}:${../scripts}";
       };
       nixus-backup-recover = {
         wantedBy = [ "multi-user.target" ];

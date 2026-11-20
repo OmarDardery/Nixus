@@ -41,7 +41,7 @@ must keep these. Public `#install`/`#update`, `nixus-admin`, stable portal
 API routes, systemd service names, and the old/modern machine settings layouts
 are covered by the versioned
 [compatibility fixture](../tests/fixtures/architecture-contract.json) and
-[regression tests](../tests/test_compatibility_surface.py). See the
+[regression tests](../cmd/nixus/nixus_test.go). See the
 [architecture matrix](architecture.md#frozen-compatibility-surface-cr-01) for
 owners and migration conditions.
 

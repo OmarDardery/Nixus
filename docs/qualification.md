@@ -33,7 +33,7 @@ profile. Helper applications and physical USB/PCI devices need their own evidenc
 3. On a workstation, generate a matrix for an **exact** release commit:
 
    ```sh
-   PYTHONPATH=admin:scripts python3 admin/commissioning.py matrix \
+   nixus-admin commissioning matrix \
      --revision FULL_40_CHARACTER_COMMIT_SHA fresh-report.json upgrade-report.json
    ```
 

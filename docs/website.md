@@ -55,14 +55,12 @@ Official references: [custom subdomains](https://docs.github.com/en/pages/config
 ## Edit the site
 
 `website/index.html` owns the landing page, `website/assets/` owns its CSS and
-browser behavior, and `website/build.py` renders the actual `docs/*.md` into
+browser behavior, and `cmd/website/main.go` renders the actual `docs/*.md` into
 searchable documentation. Markdown remains the source of truth for both the
 website and the offline guides in the management portal.
 
 ```sh
-python3 -m venv .venv-website
-.venv-website/bin/pip install -r website/requirements.txt
-.venv-website/bin/python website/build.py --check
+go run ./cmd/website --check
 ```
 
 The output is `_site/`. Preview it with any static server. To check the project-site

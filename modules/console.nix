@@ -2,8 +2,8 @@
 let
   status = pkgs.writeShellApplication {
     name = "nixus-status";
-    runtimeInputs = [ pkgs.python3 pkgs.iproute2 pkgs.systemd ];
-    text = ''exec python3 ${../scripts/console_status.py} "$@"'';
+    runtimeInputs = [ pkgs.iproute2 pkgs.systemd ];
+    text = ''exec ${import ../pkgs/nixus.nix { inherit pkgs; }}/bin/nixus-go console-status "$@"'';
   };
   fetchConfig = pkgs.writeText "nixus-fastfetch.json" (builtins.toJSON {
     logo = { type = "data"; source = "NIXUS\nNixOS + Incus"; padding.right = 4; };
@@ -99,7 +99,7 @@ in {
     # Load ble.sh early. Its default attach mode attaches at the first prompt,
     # after every rc file including the user's ~/.bashrc and ~/.bash_profile.
     # An explicit ble-attach here would run before those files and break user
-    # PROMPT_COMMAND changes (caught by tests/console-client.py).
+    # PROMPT_COMMAND changes (caught by the console VM check).
     (lib.mkOrder 450 ''
       if [[ $- == *i* && -t 0 && $TERM != dumb ]]; then
         source ${pkgs.blesh}/share/blesh/ble.sh

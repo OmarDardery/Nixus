@@ -10,12 +10,7 @@
     serviceConfig.Type = "oneshot";
     script = ''
       test -c /dev/kvm
-      ${pkgs.python3}/bin/python - <<'PYCODE'
-      import os, fcntl
-      fd = os.open('/dev/kvm', os.O_RDWR)
-      assert fcntl.ioctl(fd, 0xAE00, 0) == 12, 'KVM API unavailable'
-      os.close(fd)
-      PYCODE
+      ${import ../pkgs/nixus.nix { inherit pkgs; }}/bin/nixus-go kvm-check
     '';
   };
 }

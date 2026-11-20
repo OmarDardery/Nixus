@@ -23,7 +23,7 @@ loaded automatically in deterministic order, except directories/files prefixed
 with an underscore or dot. Other `.nix` files do not import automatically.
 Project names and Incus project claims must be unique.
 
-The `scripts/project_workspace.py` validator checks file types, symlinks,
+The broker workspace validator (`validateWorkspace` in `cmd/nixus/projects.go`) checks file types, symlinks,
 source size and lock presence before a *future* privileged broker evaluates an
 uploaded workspace. Running `nix eval` manually on untrusted Nix files is
 **not** a security boundary; review and sandbox the input.

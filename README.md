@@ -25,11 +25,15 @@ Open NixLab issues were copied here with links back to the originals.
 - [Rebuild execution plan](docs/incus-native-plan.md)
 - [OCI source uploads and build safety](docs/oci-source-intake.md)
 - [Declarative secrets UI](docs/incus-native-secrets-ui.md)
+- [Go runtime](docs/go-runtime.md)
 
 ## Development checks
 
+The runtime is one Go program (`cmd/nixus`); see [Go runtime](docs/go-runtime.md).
+
 ```sh
-python3 -m unittest discover -s tests
+nix develop -c go test ./...
+nix build .#nixus
 nix eval .#nixusFoundationChecks --json
 ```
 

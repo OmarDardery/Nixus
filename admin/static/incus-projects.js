@@ -119,9 +119,14 @@ function nativeProjectPage() {
             ? '<button type="button" id="native-oci-start">Retry failed offline OCI build</button>'
             : '') +
         (build.artifacts || []).map(item => '<p>Verified OCI archive: <code>' +
-          esc(item.image) + '</code> · SHA-256 <code>' + esc(item.sha256) + '</code></p>').join('') +
+          esc(item.image) + '</code> · SHA-256 <code>' + esc(item.sha256) + '</code>' +
+          (item.incusFingerprint ? ' · Incus image <code>' + esc(item.incusAlias) +
+            '</code> (fingerprint <code>' + esc(item.incusFingerprint.slice(0, 12)) + '</code>)' : '') +
+          '</p>').join('') +
         (build.status === 'verified-artifact'
-          ? '<p>Image artifact verified. It is not imported or running in Incus.</p>' : '') +
+          ? '<p>Image artifact verified. Importing it into Incus…</p>'
+          : build.status === 'imported'
+            ? '<p>Images imported into the Incus project with verified fingerprints. Nothing is running yet.</p>' : '') +
         (build.errorCode ? '<p role="alert">Build status: ' + esc(build.errorCode) + '</p>' : '')
         : '')
     : '<p>Publish source to review an isolated OCI build.</p>';
