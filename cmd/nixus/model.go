@@ -443,7 +443,7 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 	}{{"retentionDays", 1, 90}, {"scrapeSeconds", 15, 300}} {
 		v, ok := intValue(jget(candidate, "monitoring", f.name))
 		if !ok || v < f.lower || v > f.upper {
-			return nil, Public("Monitoring %s must be between %d and %d", f.name, f.lower, f.upper)
+			return nil, Publicf("Monitoring %s must be between %d and %d", f.name, f.lower, f.upper)
 		}
 	}
 	zone := str(jget(candidate, "maintenance", "timeZone"))
@@ -664,7 +664,10 @@ func differences(old, new M, prefix string) []any {
 
 var ifaceName = re(`[A-Za-z0-9_.-]{1,15}`)
 
-func validInterface(v any) bool { s, ok := v.(string); return ok && fullmatch(ifaceName, s) && s != "lo" }
+func validInterface(v any) bool {
+	s, ok := v.(string)
+	return ok && fullmatch(ifaceName, s) && s != "lo"
+}
 
 func foundationRecords(values any, fields []string, label string) ([]M, error) {
 	l, ok := values.([]any)

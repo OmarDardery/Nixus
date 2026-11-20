@@ -414,7 +414,7 @@ func backupCoverage(guests, volumes, selectedGuests, selectedVolumes []M, namesp
 	}
 	return M{"format": 1, "items": rows, "complete": complete,
 		"applicationConsistency": "cold exports; external writers and application recovery require independent verification",
-		"restore": "unverified"}
+		"restore":                "unverified"}
 }
 
 func freeBytes(p string) int64 {

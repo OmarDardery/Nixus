@@ -745,7 +745,7 @@ func replacementPlan(directory string, mapping M) (M, error) {
 	record := M{"format": 1, "id": id, "phase": "planned", "created": now(), "source": directory, "inventorySHA256": inventoryDigest,
 		"mapping": mapping, "poolFingerprint": poolFingerprint(poolState), "project": project, "bridge": bridge,
 		"profiles": strings2any(sortedKeys(profiles)), "guests": guests, "volumes": volumes, "completed": []any{}, "running": nil,
-		"coverage": M{"complete": jget(inventory, "coverageDetails", "complete") == true, "assessment": assessment},
+		"coverage":      M{"complete": jget(inventory, "coverageDetails", "complete") == true, "assessment": assessment},
 		"backupCreated": inventory["created"], "restore": "unverified", "sourceRevision": sourceRevision, "sourceInputsDigest": sourceInputs}
 	if err := writeJSON(replacementJournal(), record); err != nil {
 		return nil, err

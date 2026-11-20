@@ -1171,7 +1171,7 @@ func (k *RecoveryKit) inspect(actor string, encrypted, passphrase any) (M, error
 	}
 	return M{"valid": true, "verified": true, "recipient": record["recipient"],
 		"credentialNames": strings2any(sortedKeys(boolSet(credentials))),
-		"note": "Recovery kit verified in memory; no host files modified"}, nil
+		"note":            "Recovery kit verified in memory; no host files modified"}, nil
 }
 
 func (k *RecoveryKit) restore(actor string, encrypted, passphrase any, acknowledge bool) (M, error) {

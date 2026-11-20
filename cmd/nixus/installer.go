@@ -26,7 +26,9 @@ var installTarget = "/var/lib/nixus/config"
 const originalNixos = "/etc/nixos"
 const activeStatuses = "building ready applying awaiting-confirmation rolling-back"
 
-func isActiveStatus(s string) bool { return s != "" && strings.Contains(" "+activeStatuses+" ", " "+s+" ") }
+func isActiveStatus(s string) bool {
+	return s != "" && strings.Contains(" "+activeStatuses+" ", " "+s+" ")
+}
 
 var stdin = bufio.NewReader(os.Stdin)
 
@@ -2012,7 +2014,9 @@ func selectManagement(settings M, links []any, connections []M, requested string
 	if master := str(byName[name]["master"]); master != "" {
 		name = master
 	}
-	matchesRef := func(ref string, p M) bool { return ref == str(p["uuid"]) || ref == str(p["id"]) || ref == str(p["interface"]) }
+	matchesRef := func(ref string, p M) bool {
+		return ref == str(p["uuid"]) || ref == str(p["id"]) || ref == str(p["interface"])
+	}
 	var bound []M
 	for _, p := range connections {
 		if str(p["interface"]) == name {

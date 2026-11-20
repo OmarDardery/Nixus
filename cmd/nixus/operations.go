@@ -166,7 +166,9 @@ func NewOperations() *Operations {
 	return o
 }
 
-func (o *Operations) path(id string) (string, error) { return jobDirectory(o.directory, id, "operation") }
+func (o *Operations) path(id string) (string, error) {
+	return jobDirectory(o.directory, id, "operation")
+}
 
 func (o *Operations) status(limit int) []any {
 	entries, _ := os.ReadDir(o.directory)

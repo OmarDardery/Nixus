@@ -502,7 +502,9 @@ func (p *PublishedSources) current(project string) (M, error) {
 	return record, nil
 }
 
-func (p *PublishedSources) attest(project, revision any) (M, error) { return p.attestOpts(project, revision, true) }
+func (p *PublishedSources) attest(project, revision any) (M, error) {
+	return p.attestOpts(project, revision, true)
+}
 
 func (p *PublishedSources) attestOpts(projectArg, revisionArg any, requireCurrent bool) (M, error) {
 	project, ok1 := projectArg.(string)
@@ -656,7 +658,7 @@ func (p *PublishedSources) review(s *ImportStaging, identity any, actor string, 
 		total += f.Size
 	}
 	return M{"reviewId": token, "project": project, "revision": manifestHash, "baseRevision": base,
-		"changes": M{"added": strings2any(added), "removed": strings2any(removed), "modified": strings2any(modified)},
+		"changes":   M{"added": strings2any(added), "removed": strings2any(removed), "modified": strings2any(modified)},
 		"fileCount": len(files), "bytes": total, "alreadyPublished": str(base) == str(manifestHash),
 		"note": "Review publishes inert source only; no build, evaluation, or Incus change"}, nil
 }
@@ -1042,7 +1044,7 @@ var credentialURL = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s@/
 var privateMaterial = regexp.MustCompile(`(?i)-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|AGE-SECRET-KEY-1`)
 
 func guardFail(p, problem string) error {
-	return Public("Source publication blocked for %s: %s. Import values using Projects → Environment & Secrets (SOPS/age); re-upload a redacted original file. Upload bytes were not modified.", p, problem)
+	return Publicf("Source publication blocked for %s: %s. Import values using Projects → Environment & Secrets (SOPS/age); re-upload a redacted original file. Upload bytes were not modified.", p, problem)
 }
 
 func placeholderValue(v any) bool {
@@ -1212,17 +1214,17 @@ func inspectDockerfileSecrets(p string, raw []byte) error {
 		rest := strings.TrimSpace(m[1])
 		for _, a := range assignmentToken.FindAllStringSubmatch(rest, -1) {
 			if secretCredential.MatchString(a[1]) {
-				return Public("Credential-bearing Dockerfile %s in %s; use the Nixus SOPS secrets UI and runtime file bindings", directive, p)
+				return Publicf("Credential-bearing Dockerfile %s in %s; use the Nixus SOPS secrets UI and runtime file bindings", directive, p)
 			}
 		}
 		first, _, _ := strings.Cut(strings.Fields(rest)[0], "=")
 		if directive == "ARG" && secretCredential.MatchString(first) {
-			return Public("Credential-bearing Dockerfile ARG in %s; build-time secrets are not supported", p)
+			return Publicf("Credential-bearing Dockerfile ARG in %s; build-time secrets are not supported", p)
 		}
 		if directive == "ENV" && !strings.Contains(rest, "=") {
 			parts := strings.Fields(rest)
 			if len(parts) >= 2 && secretCredential.MatchString(parts[0]) {
-				return Public("Credential-bearing Dockerfile ENV in %s; use SOPS", p)
+				return Publicf("Credential-bearing Dockerfile ENV in %s; use SOPS", p)
 			}
 		}
 	}
@@ -1249,12 +1251,12 @@ func inspectComposeSecrets(p string, raw []byte) error {
 				continue
 			}
 			if section != "" && level > indent && secretCredential.MatchString(key) {
-				return Public("Credential-bearing Compose %s in %s; import values into SOPS and use scoped runtime files", section, p)
+				return Publicf("Credential-bearing Compose %s in %s; import values into SOPS and use scoped runtime files", section, p)
 			}
 		}
 		if section != "" && len(line)-len(strings.TrimLeft(line, " \t")) > indent {
 			if m := listItem.FindStringSubmatch(line); m != nil && secretCredential.MatchString(m[1]) {
-				return Public("Credential-bearing Compose %s in %s; use the Nixus SOPS secrets UI", section, p)
+				return Publicf("Credential-bearing Compose %s in %s; use the Nixus SOPS secrets UI", section, p)
 			}
 		}
 	}

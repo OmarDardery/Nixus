@@ -6,13 +6,11 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
-	"syscall"
-	"unsafe"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,8 +21,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // M is a JSON object.
@@ -36,12 +36,10 @@ type PublicError struct{ msg string }
 func (e *PublicError) Error() string { return e.msg }
 
 // Public returns an error whose message is safe to show to the browser.
-func Public(format string, args ...any) error {
-	if len(args) == 0 {
-		return &PublicError{format}
-	}
-	return &PublicError{fmt.Sprintf(format, args...)}
-}
+func Public(msg string) error { return &PublicError{msg} }
+
+// Publicf formats a reviewed public message.
+func Publicf(format string, args ...any) error { return &PublicError{fmt.Sprintf(format, args...)} }
 
 // Hidden returns an error whose message is never shown to the browser.
 func Hidden(msg string) error { return errors.New(msg) }

@@ -5,6 +5,7 @@ package main
 
 import (
 	"crypto/pbkdf2"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +14,6 @@ import (
 	"io"
 	"math"
 	"math/big"
-	"crypto/rand"
 	"os"
 	"os/user"
 	"path/filepath"
