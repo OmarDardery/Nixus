@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -456,26 +457,7 @@ func nativeSpec(project M, name string, current M) (M, error) {
 		"devices": last["devices"], "profiles": last["profiles"]}, nil
 }
 
-func itoa(n int) string { return strings.TrimSpace(strings.Replace(strings.TrimSpace(func() string { return fmtInt(n) }()), " ", "", -1)) }
-
-func fmtInt(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	if neg {
-		b = append([]byte{'-'}, b...)
-	}
-	return string(b)
-}
+func itoa(n int) string { return strconv.Itoa(n) }
 
 var nativeObservation = func(project M, guest string) (M, error) {
 	current, etag, err := readInstance(str(project["incusProject"]), guest)
