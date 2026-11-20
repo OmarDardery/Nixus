@@ -45,9 +45,14 @@ def record_recovery_kit(identity_path, now=None):
     """Called after a successful kit export; stores no key material."""
     digest = identity_digest(identity_path)
     if digest is None:
-        return
-    rt.write_json(rt.STATE / MARKER, {'version': 1, 'identity': digest,
-                                       'exportedAt': int(time.time() if now is None else now)})
+        return False
+    try:
+        rt.write_json(rt.STATE / MARKER, {'version': 1, 'identity': digest,
+                                           'exportedAt': int(time.time() if now is None else now)})
+    except OSError:
+        # Advisory walkthrough state only: never fail the kit export over it.
+        return False
+    return True
 
 
 def browser_enrolled(state):

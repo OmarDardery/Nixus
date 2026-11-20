@@ -77,6 +77,12 @@ class SetupProgressTests(unittest.TestCase):
         with patch('browser_certificates.registry', side_effect=ValueError('invalid')):
             self.assertFalse(self.states(self.progress(status()))['incusBrowser'])
 
+    def test_unwritable_state_never_fails_the_caller(self):
+        self.identity.write_text('identity')
+        with patch.object(rt, 'write_json', side_effect=PermissionError('read-only state')):
+            self.assertFalse(setup_progress.record_recovery_kit(self.identity, now=1))
+        self.assertTrue(setup_progress.record_recovery_kit(self.identity, now=1))
+
     def test_output_and_marker_contain_no_secret_material(self):
         self.identity.write_text(SECRETS['private-key'])
         setup_progress.record_recovery_kit(self.identity, now=1)
