@@ -34,6 +34,10 @@ in {
     environment.etc."nixus/backup-verification.json".text = builtins.toJSON {
       version = 1; inherit (verification) enable schedule mode;
     };
+    systemd.timers.nixus-project-backup = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = { OnCalendar = "*:0/15"; Persistent = true; RandomizedDelaySec = "2min"; };
+    };
     systemd.timers.nixus-backup-check = lib.mkIf verification.enable {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = verification.schedule; Persistent = true; RandomizedDelaySec = "30min"; };
@@ -83,6 +87,15 @@ in {
           ExecStart = "${admin}/bin/nixus-admin backup-verify --mode ${verification.mode}";
           TimeoutStartSec = "12h"; UMask = "0077";
         };
+      };
+      # Stable unit: project backup policy lives in the reviewed workspace
+      # backups.nix, so policy edits never need a host rebuild.
+      nixus-project-backup = {
+        description = "Run the reviewed declarative project backup policy when due";
+        restartIfChanged = false;
+        after = [ "network-online.target" "incus.service" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin project-backup tick"; TimeoutStartSec = "12h"; UMask = "0077"; };
       };
       nixus-backup-recover = {
         wantedBy = [ "multi-user.target" ];

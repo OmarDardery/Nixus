@@ -450,3 +450,61 @@ through an isolated restore drill. Incus server identity/administrator enrollmen
 external writers, arbitrary custom module secrets and application-specific
 consistency still require review; this change alone does not close #6 or qualify
 a whole-host release. No new application integration or retention policy is added.
+
+## Project backups (declarative)
+
+Project backups are configured once in the reviewed project workspace, in
+`/srv/nixus/projects/backups.nix`. Policy edits go through the normal project
+review and publication, so they never need a host rebuild.
+
+```nix
+{ ... }: {
+  nixus.backups = {
+    enable = true;
+    includeProjects = "all";          # new projects are picked up automatically
+    schedule = "daily";               # hourly, daily or weekly
+    data = true;                      # also export Incus instances and volumes
+    verification = "metadata";        # none, metadata or full
+    restic = {
+      repository = "rclone:gdrive:nixus-backups";       # Google Drive through rclone
+      rcloneConfigFile = "/var/lib/nixus-secrets/rclone.conf";
+      initialize = true;              # only for a brand new repository
+    };
+    github.repository = "git@github.com:you/nixus-config.git";  # optional, private
+  };
+}
+```
+
+The stable `nixus-project-backup.timer` checks every 15 minutes and runs the
+published policy when it is due. Each run records a separate status for every
+phase:
+
+| Phase | What it does |
+|---|---|
+| `config` | Copies the workspace Nix, `flake.lock`, `.sops.yaml`, SOPS ciphertext and each project's exact published Dockerfile/Compose source, with a SHA-256 manifest and per-project coverage |
+| `data` | Exports Incus instances and custom volumes through the existing grouped exporter (local staging only) |
+| `offHost` | Uploads both to the encrypted restic repository and applies the retention policy |
+| `verification` | Runs `restic check` (metadata or full read); this is not an application restore test |
+| `github` | Mirrors the non-secret configuration snapshot to a private repository |
+
+Credentials never appear in the policy. Create them as root-only runtime files:
+
+- **Restic password:** `/var/lib/nixus-secrets/project-restic-password`.
+- **Google Drive:** create an rclone remote named `gdrive` with `rclone config`,
+  and keep its config file at the path set in `rcloneConfigFile`.
+- **GitHub mirror:** run `sudo nixus-admin project-backup github-key`. It
+  prints only the public key; add it to your private repository as a deploy key
+  with write access. GitHub's SSH host key is pinned.
+
+Useful commands:
+
+```sh
+sudo nixus-admin project-backup status             # per-phase results and coverage
+sudo nixus-admin project-backup run                # run now, ignoring the schedule
+sudo nixus-admin project-backup check-destination  # confirm restic can unlock the repository
+```
+
+Coverage is honest. A Compose project without a published source, or host bind
+mounts outside Incus volumes, is listed under `unknowns`. Keep the
+passphrase-encrypted recovery kit separately: without it, the restic password
+and age identity are lost with the host.
