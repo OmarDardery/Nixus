@@ -45,7 +45,7 @@ class SourceSecretGuardTests(unittest.TestCase):
         ):
             with self.subTest(content=content):
                 entry = self.stage("Dockerfile", content)
-                with self.assertRaisesRegex(ValueError, "Credential-bearing"):
+                with self.assertRaisesRegex(ValueError, "Credential-bearing|Source publication blocked"):
                     self.publisher.review(self.staging, entry["id"], "admin", entry["manifestHash"])
 
     def test_compose_credentials_blocked_in_map_and_list(self):
@@ -56,7 +56,7 @@ class SourceSecretGuardTests(unittest.TestCase):
         ):
             with self.subTest(content=content):
                 entry = self.stage("compose.yaml", content)
-                with self.assertRaisesRegex(ValueError, "Credential-bearing"):
+                with self.assertRaisesRegex(ValueError, "Credential-bearing|Source publication blocked"):
                     self.publisher.review(self.staging, entry["id"], "admin", entry["manifestHash"])
 
     def test_nonsecret_source_can_be_published_byte_exact(self):

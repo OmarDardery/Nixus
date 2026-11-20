@@ -10,7 +10,7 @@ let
   '';
 in pkgs.writeShellApplication {
   name = "nixus-admin";
-  runtimeInputs = with pkgs; [ (python3.withPackages (ps: [ ps.markdown ps.cryptography ])) nix nixos-rebuild git iproute2 util-linux openssl openssh shadow coreutils systemd networkmanager incus-lts.client age sops parted e2fsprogs pamtester ];
+  runtimeInputs = with pkgs; [ (python3.withPackages (ps: [ ps.markdown ps.cryptography ps.pyyaml ])) nix nixos-rebuild git iproute2 util-linux openssl openssh shadow coreutils systemd networkmanager incus-lts.client age sops parted e2fsprogs pamtester ];
   text = ''
     NIXUS_WORKER_RUNTIME="$(dirname "$(dirname "$(readlink -f "$0")")")"
     export NIXUS_WORKER_RUNTIME
