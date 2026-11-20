@@ -57,8 +57,7 @@ in {
     ++ (with pkgs; [ eza bat ripgrep fd zoxide ]);
   environment.etc."xdg/fastfetch/config.jsonc".source = fetchConfig;
   programs.bash.completion.enable = lib.mkDefault true;
-  # ble.sh is loaded below with deferred attachment; the upstream module would
-  # attach before fzf/starship initialise and slow every shell.
+  # ble.sh is sourced below, guarded to real interactive terminals.
   programs.bash.blesh.enable = lib.mkDefault false;
   programs.fzf = { keybindings = lib.mkDefault true; fuzzyCompletion = lib.mkDefault true; };
   programs.starship = {
@@ -97,15 +96,17 @@ in {
     (lib.mkOrder 400 ''
       ${pkgs.coreutils}/bin/mkdir -p -m 700 -- "''${XDG_CACHE_HOME:-$HOME/.cache}"
     '')
-    # Load ble.sh early without attaching; attach once everything else is set up.
+    # Load ble.sh early. Its default attach mode attaches at the first prompt,
+    # after every rc file including the user's ~/.bashrc and ~/.bash_profile.
+    # An explicit ble-attach here would run before those files and break user
+    # PROMPT_COMMAND changes (caught by tests/console-client.py).
     (lib.mkOrder 450 ''
       if [[ $- == *i* && -t 0 && $TERM != dumb ]]; then
-        source ${pkgs.blesh}/share/blesh/ble.sh --attach=none
+        source ${pkgs.blesh}/share/blesh/ble.sh
       fi
     '')
     (lib.mkAfter ''
       source ${zoxideInit}
-      [[ ! ''${BLE_VERSION-} ]] || ble-attach
     '')
     ''
     HISTCONTROL=ignoreboth:erasedups
