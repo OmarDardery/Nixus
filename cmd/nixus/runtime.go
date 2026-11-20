@@ -22,6 +22,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -442,7 +444,7 @@ func stageSecrets(directory string, values M) error {
 	if f.Sync() != nil || f.Close() != nil {
 		return fail
 	}
-	if syscall.Linkat(fd, temporary, fd, "secrets.json", 0) != nil || syscall.Fsync(fd) != nil {
+	if unix.Linkat(fd, temporary, fd, "secrets.json", 0) != nil || syscall.Fsync(fd) != nil {
 		return fail
 	}
 	return nil
@@ -600,8 +602,8 @@ func cleanupTerminalSecrets(state string) error {
 				}
 			}
 			if present {
-				var st syscall.Stat_t
-				if syscall.Fstatat(dfd, "secrets.json", &st, 0x100) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFREG ||
+				var st unix.Stat_t
+				if unix.Fstatat(dfd, "secrets.json", &st, unix.AT_SYMLINK_NOFOLLOW) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFREG ||
 					int(st.Uid) != os.Geteuid() || st.Nlink != 1 || st.Mode&0o077 != 0 {
 					return false
 				}
