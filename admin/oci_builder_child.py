@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tarfile
 
 from oci_compose import validate_model
 
@@ -135,6 +136,30 @@ def _digest(path):
     return {"sha256": result.hexdigest(), "bytes": count}
 
 
+def _rootfs_filter(entry):
+    # The sandbox maps only uid 0, so every file is root-owned already.
+    if not (entry.isdir() or entry.isreg() or entry.issym() or entry.islnk()):
+        raise ValueError("Built image contains device nodes, FIFOs or sockets")
+    entry.uid = entry.gid = 0
+    entry.uname = entry.gname = ""
+    return entry
+
+
+def _export_rootfs(storage, image, name):
+    """Flatten the built image with Buildah itself (vfs: mount is a plain path)."""
+    container = "nixus-export-" + name
+    _exec(storage + ["from", "--signature-policy", POLICY_PATH, "--pull=never",
+                     "--name", container, image], timeout=300, cwd=CONTEXT)
+    mount = Path(_exec(storage + ["mount", container], timeout=60, cwd=CONTEXT).decode().strip())
+    if not mount.is_absolute() or WORK / ("storage-" + name) not in mount.parents or mount.is_symlink():
+        raise ValueError("Buildah returned an unexpected rootfs location")
+    archive = OUTPUT / (name + ".rootfs.tar")
+    # tarfile adds directory members in sorted order, so the bytes are stable.
+    with tarfile.open(archive, "w", format=tarfile.PAX_FORMAT) as output:
+        output.add(str(mount), arcname=".", filter=_rootfs_filter)
+    return archive
+
+
 def build(spec):
     checked = _model(spec)
     if checked["intentHash"] != spec["intentHash"]:
@@ -169,8 +194,11 @@ def build(spec):
                          "oci-archive:" + str(archive) + ":" + svc["image"]],
               timeout=300, cwd=CONTEXT)
         record = _digest(archive)
+        rootfs = _digest(_export_rootfs(storage, svc["image"], name))
         records.append({"service": name, "image": svc["image"], "artifact": archive.name,
-                        "sha256": record["sha256"], "bytes": record["bytes"]})
+                        "sha256": record["sha256"], "bytes": record["bytes"],
+                        "rootfs": name + ".rootfs.tar", "rootfsSha256": rootfs["sha256"],
+                        "rootfsBytes": rootfs["bytes"]})
     if not records:
         raise ValueError("No locally built services in the reviewed source")
     output = {"format": 1, "project": spec["project"], "revision": spec["revision"],

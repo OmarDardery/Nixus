@@ -20,8 +20,9 @@ def blob(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def archive(*, bad_layer=False, special=False, corrupted=False):
-    config = dump({"architecture": "amd64", "os": "linux", "rootfs": {"type": "layers", "diff_ids": []}})
+def archive(*, bad_layer=False, special=False, corrupted=False, image_config=None):
+    config = dump({"architecture": "amd64", "os": "linux", "rootfs": {"type": "layers", "diff_ids": []},
+                   "config": {"Cmd": ["/bin/app"]} if image_config is None else image_config})
     layer = b"layer bytes"
     manifest = dump({"schemaVersion": 2,
                      "config": {"mediaType": "application/vnd.oci.image.config.v1+json",

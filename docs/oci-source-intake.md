@@ -1,6 +1,6 @@
 # OCI source intake and build-boundary qualification (#47)
 
-This document describes the **source-only** milestone and its next security gates. It does not claim Dockerfile execution, OCI import or Incus Compose deployment is complete.
+This document covers source intake, the isolated build and the verified Incus import. Starting containers from these images (`incus-compose up`, start order, ownership and rollback) is #45.
 
 ## Supported source intake
 
@@ -11,16 +11,24 @@ This document describes the **source-only** milestone and its next security gate
 - Published source inspection returns exact file path/hash/size metadata. A Dockerfile-only source produces a separate, read-only generated Compose launch preview without adding a Compose file to the uploaded revision. The plan's `buildContextHash` and proposed image identity depend on the entire source revision, **including every context file**, not only the Dockerfile. An existing Compose source is preserved with its original paths and requires pinned parser/compatibility validation.
 - High-confidence BuildKit-only features are flagged as unsupported, but source remains unchanged. The preview is **not** an approval to build or deploy.
 
-## Next required gates before any build or deployment
+## Build and import (implemented)
 
-1. Run the **pinned** `incus-compose config --quiet` validator on a disposable, read-only context in an unprivileged sandbox. Forbid access to the host Nix store secrets, Incus socket, Git deploy key, /etc credentials, block devices and user guest volumes. Show unsupported Compose/BuildKit constructs; never silently translate. Preserve `compose.incus.yaml` and produce a *separate* Nixus override only.
-2. A non-root, resource-capped **Buildah/Podman builder worker** receives only the frozen and reverified nonsecret context. Network registry egress must be opt-in/allowlisted. It exports an OCI image artifact and provenance digest; no Docker daemon, direct Incus socket or root host mounts enter the sandbox. On timeout/error, keep previous images/guests untouched.
-3. The trusted broker verifies the artifact digest and imports it into the exact Incus project using a source-qualified alias, with ETag and ownership checks from #45. **Never run `incus-compose up --build`** as privileged action. Instead invoke pinned `incus-compose up --no-build` with separate image overrides; review every recreate/outage and protect named volumes.
-4. #46 must deliver original Compose `.env` and `env_file:` secret values from SOPS only into ephemeral, root-controlled runtime paths with cleanup and no Buildah access. Refuse deployment on missing or unverified keys/secret references.
-5. Full two-service Compose with nested relative Dockerfile/context, persistent named volume, source-only no-op, changed context rebuild, tampered source denial, unauthorized mounts, failed build rollback, and fresh-host restored app tests must all pass before closing #47.
+1. **Preflight:** the pinned `incus-compose config` validator runs on a read-only snapshot of the reviewed source inside bubblewrap (`--unshare-all`) as the unprivileged `nixus-oci` user. The Incus socket, host secrets and state directories are inaccessible. Built services get a *separate* Nixus override (`image: localhost/nixus-<project>-<service>:<revision>`, builds disabled); the uploaded Compose file is never edited.
+2. **Build:** Buildah runs in the same sandbox with no network (`--pull=never`, empty network namespace) and an offline signature policy that only accepts local storage and the output archive. Each built service produces an OCI archive and a flattened rootfs tarball.
+3. **Verify:** root re-hashes both outputs. The OCI archive's manifest graph is checked without extraction. The rootfs may contain only directories, regular files, symlinks and hard links to earlier members: no devices, FIFOs, sockets or path escapes. Root derives the runtime `config.json` (command, environment, working directory, user) from the verified OCI image config, never from the sandbox. Named users are resolved from the image's own `/etc/passwd`; an unresolved user fails instead of running as root.
+4. **Import:** Incus 7 has no local OCI-archive import, so Nixus builds the same split OCI image incus-compose builds: a deterministic metadata tarball (`metadata.yaml` with `type: oci`, plus `config.json`) and the rootfs. Incus fingerprints a split image as SHA-256 of metadata followed by rootfs. Nixus computes that before import, refuses and removes any import whose fingerprint differs, and only then creates the alias `local/nixus-<project>-<service>:<revision>`. That is exactly the alias incus-compose resolves for the override's image reference, so `incus-compose up` reuses it and never pulls or builds. An alias that already points at other content is never moved.
+5. **Project:** images go into the Incus project incus-compose uses for the Compose project. Nixus creates it, if missing, with its own image store and `user.nixus.owner=true`; it refuses a project that shares the default image store.
+
+The `oci-builder` VM test runs the whole path for real: build in the sandbox, import into Incus, check the alias and fingerprint, then start the image as an OCI container and read a file from it.
+
+## Still open
+
+- **#45:** `incus-compose up --no-build`, start order, recreate/outage review, named-volume protection, ownership and rollback.
+- **#46:** delivering Compose `.env`/`env_file:` secrets from SOPS at runtime only.
+- **Base images:** builds are offline, so `FROM` must be `scratch` or an image already in local Buildah storage. Images whose files belong to non-root users cannot be built yet, because the sandbox maps only one user.
 
 ## Scope
 
 Nixus is proceeding with a **clean-slate** installation. There is **no legacy Docker or Portainer/Arcane data migration to perform**. Do not create migration shims or quietly delete unknown host state.
 
-This milestone does not install a builder, alter Incus, permit Dockerfile execution, decrypt secrets or rebuild the host OS. Dockerfile/Compose imports remain inert until every required release gate is qualified.
+Building and importing never starts a container, decrypts secrets or rebuilds the host OS.

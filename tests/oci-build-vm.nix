@@ -7,6 +7,15 @@ in pkgs.testers.runNixOSTest {
   globalTimeout = 900;
   nodes.host = { ... }: {
     virtualisation = { memorySize = 3072; diskSize = 7168; };
+    # Real Incus (containers only, no KVM claim) to qualify the verified import.
+    virtualisation.incus = {
+      enable = true;
+      preseed = {
+        storage_pools = [ { name = "default"; driver = "dir"; } ];
+        profiles = [ { name = "default"; devices.root = { path = "/"; pool = "default"; type = "disk"; }; } ];
+      };
+    };
+    networking.nftables.enable = true;
     users.groups.nixus-oci = { };
     users.users.nixus-oci = {
       isSystemUser = true;
@@ -25,6 +34,7 @@ in pkgs.testers.runNixOSTest {
       NIXUS_OCI_COMPOSE_BIN = "${incusCompose}/bin/incus-compose";
       NIXUS_OCI_BUILDAH_BIN = "${pkgs.buildah}/bin/buildah";
       NIXUS_OCI_BWRAP_BIN = "${pkgs.bubblewrap}/bin/bwrap";
+      NIXUS_OCI_TEST_BUSYBOX = "${pkgs.pkgsStatic.busybox}/bin/busybox";
       NIXUS_OCI_PATH = pkgs.lib.makeBinPath (with pkgs; [
         buildah bubblewrap incusCompose coreutils gnutar gzip xz bash shadow
       ]);
@@ -33,6 +43,7 @@ in pkgs.testers.runNixOSTest {
   testScript = ''
     host.start()
     host.wait_for_unit("multi-user.target")
+    host.wait_for_unit("incus-preseed.service")
     host.succeed("PYTHONPATH=${../admin}:${../scripts} python3 ${./oci-build-integration.py}", timeout=720)
   '';
 }

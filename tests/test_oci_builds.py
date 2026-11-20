@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -19,6 +20,7 @@ import oci_compose
 import native_imports as sources
 import runtime as rt
 import test_oci_artifacts
+import test_oci_images
 
 
 class OCIBuildReviewTests(unittest.TestCase):
@@ -66,13 +68,17 @@ class OCIBuildReviewTests(unittest.TestCase):
         self.assertEqual(checked["intentHash"], spec["intentHash"])
         content = test_oci_artifacts.archive()
         (workspace / "out" / "app.oci.tar").write_bytes(content)
+        flat = test_oci_images.rootfs()
+        (workspace / "out" / "app.rootfs.tar").write_bytes(flat)
         (workspace / "out" / "build-result.json").write_text(json.dumps({
             "format": 1, "project": "sample", "revision": spec["revision"],
             "intentHash": checked["intentHash"],
             "artifacts": [{"service": "app", "image": checked["services"][0]["image"],
                            "artifact": "app.oci.tar",
                            "sha256": hashlib.sha256(content).hexdigest(),
-                           "bytes": len(content)}]
+                           "bytes": len(content), "rootfs": "app.rootfs.tar",
+                           "rootfsSha256": hashlib.sha256(flat).hexdigest(),
+                           "rootfsBytes": len(flat)}]
         }))
 
     def test_review_is_source_only_and_build_approval_is_exact(self):
@@ -103,22 +109,42 @@ class OCIBuildReviewTests(unittest.TestCase):
         self.assertFalse((self.manager._job(reviewed["id"]) / "artifacts" / "app.oci.tar").exists())
         self.assertFalse((self.root / "state" / "oci-build-active.json").exists())
 
-    def test_build_artifact_is_verified_and_no_incus_api_called(self):
+    def built(self, incus):
         with patch.object(oci_builds, "_run_sandbox", side_effect=self.fake_sandbox):
             reviewed = self.manager.review("sample", self.published["revision"])
         with patch.object(oci_builds.rt, "pin_worker_runtime"), patch.object(
                 oci_builds.subprocess, "run"):
             self.manager.queue(reviewed["id"], reviewed["planHash"])
-        with patch.object(oci_builds, "_run_sandbox", side_effect=self.fake_sandbox):
-            done = self.manager.run(reviewed["id"])
-        self.assertEqual(done["status"], "verified-artifact")
+        with patch.object(oci_builds, "_run_sandbox", side_effect=self.fake_sandbox), \
+                patch.object(oci_builds, "_incus", incus):
+            return reviewed, self.manager.run(reviewed["id"])
+
+    def test_build_artifact_is_verified_then_imported_with_its_fingerprint(self):
+        incus = test_oci_images.FakeIncus()
+        reviewed, done = self.built(incus)
+        self.assertEqual(done["status"], "imported")
         self.assertEqual(len(done["artifacts"]), 1)
-        artifact = self.manager._job(reviewed["id"]) / "artifacts" / "app.oci.tar"
-        self.assertTrue(artifact.exists())
-        self.assertEqual(artifact.stat().st_mode & 0o222, 0)
-        self.assertEqual(done["artifacts"][0]["sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest())
+        folder = self.manager._job(reviewed["id"]) / "artifacts"
+        artifact = folder / "app.oci.tar"
+        for path in (artifact, folder / "app.rootfs.tar", folder / "app.meta.tar"):
+            self.assertEqual(path.stat().st_mode & 0o222, 0, path)
+        item = done["artifacts"][0]
+        self.assertEqual(item["sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest())
+        self.assertEqual(item["incusFingerprint"], hashlib.sha256(
+            (folder / "app.meta.tar").read_bytes() + (folder / "app.rootfs.tar").read_bytes()).hexdigest())
+        self.assertEqual(incus.aliases[("sample", item["incusAlias"])], item["incusFingerprint"])
+        self.assertEqual(item["incusAlias"], "local/" + item["image"].removeprefix("localhost/"))
+        with tarfile.open(folder / "app.meta.tar") as meta:
+            spec = json.loads(meta.extractfile("config.json").read())
+        self.assertEqual(spec["process"]["args"], ["/bin/app"])
         self.assertFalse((self.root / "state" / "oci-build-active.json").exists())
-        self.assertEqual(self.manager.status(reviewed["id"])["status"], "verified-artifact")
+        self.assertEqual(self.manager.status(reviewed["id"])["status"], "imported")
+
+    def test_import_failure_keeps_verified_artifacts_and_reports_it(self):
+        reviewed, done = self.built(test_oci_images.FakeIncus(wrong_fingerprint=True))
+        self.assertEqual(done["status"], "failed")
+        self.assertEqual(done["errorCode"], "incus-import-failed")
+        self.assertTrue((self.manager._job(reviewed["id"]) / "artifacts" / "app.oci.tar").exists())
 
     def test_published_source_rotation_blocks_expired_review(self):
         with patch.object(oci_builds, "_run_sandbox", side_effect=self.fake_sandbox):

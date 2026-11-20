@@ -1,8 +1,9 @@
 """Inspect untrusted Buildah OCI archives before any trusted Incus import.
 
 An output archive is *not* an executable capability. The trusted broker checks
-all archive member kinds, OCI content-addressed manifests and exact bytes, and
-requires a patched Incus engine before any future import operation.
+all archive member kinds, OCI content-addressed manifests and exact bytes.
+The flattened rootfs the sandbox exports beside it is checked the same way
+before oci_images.py turns the pair into a fingerprint-verified Incus image.
 """
 import hashlib
 import json
@@ -141,5 +142,73 @@ def verify_archive(path, expected_sha256, expected_bytes):
         ident = _ref(item)
         if blobs.get(ident) != item["size"]:
             raise ValueError("OCI image config or layer missing from archive")
+    config_id = _ref(manifest["config"])
+    with tarfile.open(path, mode="r:") as archive:
+        member = next(e for e in archive if e.name.removeprefix("./") == "blobs/sha256/" + config_id)
+        if member.size > MAX_JSON:
+            raise ValueError("OCI image config is oversized")
+        image = _bounded_json(archive.extractfile(member).read(MAX_JSON + 1))
+    if not isinstance(image.get("config", {}), dict) or not isinstance(image.get("architecture"), str):
+        raise ValueError("OCI image config is malformed")
     return {"sha256": checksum.hexdigest(), "bytes": counted,
-            "ociManifestDigest": manifest_id, "blobs": len(blobs)}
+            "ociManifestDigest": manifest_id, "blobs": len(blobs),
+            "architecture": image["architecture"], "config": image.get("config") or {}}
+
+
+MAX_ROOTFS_ENTRIES = 262144
+MAX_ACCOUNT_FILE = 65536
+
+
+def _member_name(name):
+    if name in (".", "./"):
+        return "."
+    if not name.startswith("./"):
+        raise ValueError("Rootfs member is not relative to the image root")
+    parts = name[2:].rstrip("/").split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        raise ValueError("Rootfs member path escapes or is not normalized")
+    return "/".join(parts)
+
+
+def verify_rootfs(path, expected_sha256, expected_bytes):
+    """Check the sandbox's flattened rootfs tar; nothing is extracted here.
+
+    Allowed: directories, regular files, symlinks and hard links to earlier
+    members. Device nodes, FIFOs, sockets and path escapes are refused.
+    Returns the hash plus /etc/passwd and /etc/group for user resolution.
+    """
+    path = Path(path)
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or info.st_size != expected_bytes
+            or not 0 < info.st_size <= MAX_IMAGE_BYTES
+            or not isinstance(expected_sha256, str) or not HEX.fullmatch(expected_sha256)):
+        raise ValueError("Untrusted rootfs artifact metadata")
+    checksum = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(65536), b""):
+            checksum.update(block)
+    if checksum.hexdigest() != expected_sha256:
+        raise ValueError("Rootfs hash differs from builder output")
+    seen, accounts = set(), {}
+    with tarfile.open(path, mode="r:") as archive:
+        for count, entry in enumerate(archive):
+            if count >= MAX_ROOTFS_ENTRIES:
+                raise ValueError("Rootfs contains excessive members")
+            name = _member_name(entry.name)
+            if name in seen and not entry.isdir():
+                raise ValueError("Duplicate rootfs member")
+            if entry.islnk():
+                if _member_name("./" + entry.linkname.removeprefix("./")) not in seen:
+                    raise ValueError("Rootfs hard link target is outside the archive")
+            elif not (entry.isdir() or entry.isreg() or entry.issym()):
+                raise ValueError("Rootfs contains device nodes, FIFOs or other special files")
+            if entry.mode & 0o6000 and entry.uid != 0:
+                raise ValueError("Rootfs contains set-ID files owned by an unprivileged user")
+            seen.add(name)
+            if name in ("etc/passwd", "etc/group") and entry.isreg():
+                if entry.size > MAX_ACCOUNT_FILE:
+                    raise ValueError("Rootfs account database is oversized")
+                accounts[name] = archive.extractfile(entry).read().decode("utf-8", "replace")
+    return {"sha256": expected_sha256, "bytes": expected_bytes,
+            "passwd": accounts.get("etc/passwd", ""), "group": accounts.get("etc/group", "")}

@@ -25,7 +25,8 @@ import runtime as rt
 from locking import open_lock
 from native_imports import PublishedSources, _verified_source, check_files
 from oci_source_plan import source_plan
-from oci_artifacts import verify_archive
+from oci_artifacts import verify_archive, verify_rootfs
+import oci_images
 
 ID = re.compile(r"[0-9a-f]{32}\Z")
 ROOT = Path(os.environ.get("NIXUS_OCI_ROOT", "/var/lib/nixus-oci"))
@@ -232,6 +233,11 @@ def _run_sandbox(workspace, mode, identity):
         raise ValueError("Isolated OCI validation/build failed; source was not deployed")
 
 
+def _incus(*args, timeout=600):
+    import operations
+    return operations.incus(*args, timeout=timeout)
+
+
 class OCIBuilds:
     """Project-scoped, immutable OCI build job queue, entirely separate from Incus apply."""
     def __init__(self, state=None, publisher=None):
@@ -255,7 +261,7 @@ class OCIBuilds:
         current = rt.read_json(self.state / "oci-build-active.json", {})
         if current.get("id") and current["id"] != identity:
             record = self._record(current["id"])
-            if record["status"] not in ("verified-artifact", "failed", "cancelled"):
+            if record["status"] not in ("verified-artifact", "imported", "failed", "cancelled"):
                 raise ValueError("Finish or recover the current OCI build")
         return current
 
@@ -274,7 +280,7 @@ class OCIBuilds:
                 rt.write_json(self._job(identity) / "job.json", record)
         return {k: record.get(k) for k in (
             "id", "project", "revision", "status", "planHash", "createdAt",
-            "expires", "intentHash", "services", "artifacts", "errorCode")}
+            "expires", "intentHash", "services", "artifacts", "errorCode", "importedAt")}
 
     def review(self, project, revision, *, principal="root"):
         with rt.locked(blocking=False):
@@ -390,23 +396,53 @@ class OCIBuilds:
                     if (entry.get("image") != expected[name] or
                             entry.get("artifact") != name + ".oci.tar"):
                         raise ValueError("OCI artifact identity changed after review")
+                    if entry.get("rootfs") != name + ".rootfs.tar":
+                        raise ValueError("OCI rootfs identity changed after review")
                     source = scratch / "out" / entry["artifact"]
                     metadata = verify_archive(source, entry.get("sha256"), entry.get("bytes"))
+                    rootfs_source = scratch / "out" / entry["rootfs"]
+                    rootfs = verify_rootfs(rootfs_source, entry.get("rootfsSha256"), entry.get("rootfsBytes"))
+                    # config.json is derived by root from the verified OCI
+                    # config blob, never taken from the sandbox.
+                    spec_json = oci_images.runtime_spec(metadata["config"], rootfs["passwd"], rootfs["group"])
+                    meta = destination / (name + ".meta.tar")
+                    rt.atomic(meta, oci_images.metadata_tar(entry["image"], metadata["architecture"],
+                                                            int(time.time()), spec_json))
                     target = destination / entry["artifact"]
+                    rootfs_target = destination / entry["rootfs"]
                     # Strictly replace the artifact owner after the verified
                     # worker terminates. Do not execute or extract OCI layers.
-                    os.rename(source, target)
-                    os.chown(target, os.geteuid(), os.getegid(), follow_symlinks=False)
-                    os.chmod(target, 0o400)
+                    for origin, final in ((source, target), (rootfs_source, rootfs_target)):
+                        os.rename(origin, final)
+                        os.chown(final, os.geteuid(), os.getegid(), follow_symlinks=False)
+                        os.chmod(final, 0o400)
+                    os.chmod(meta, 0o400)
                     completed.append({"service": name, "image": entry["image"],
                                       "sha256": metadata["sha256"],
                                       "bytes": metadata["bytes"],
-                                      "ociManifestDigest": metadata["ociManifestDigest"]})
+                                      "ociManifestDigest": metadata["ociManifestDigest"],
+                                      "rootfsSha256": rootfs["sha256"],
+                                      "incusAlias": oci_images.alias_for(entry["image"]),
+                                      "incusFingerprint": oci_images.fingerprint(meta, rootfs_target)})
                 self.publisher.attest(record["project"], record["revision"])
                 record.update(status="verified-artifact", completedAt=time.time(),
                               artifacts=completed)
                 rt.audit("oci-build-artifacts-verified", identity=identity, project=record["project"],
                          imageCount=len(completed))
+                try:
+                    project = oci_images.incus_project(record["project"])
+                    oci_images.ensure_project(project, _incus)
+                    for item in completed:
+                        oci_images.import_image(project, item["incusAlias"], item["incusFingerprint"],
+                                                destination / (item["service"] + ".meta.tar"),
+                                                destination / (item["service"] + ".rootfs.tar"), _incus)
+                        item["incusProject"] = project
+                    record.update(status="imported", importedAt=time.time())
+                    rt.audit("oci-build-imported", identity=identity, project=record["project"],
+                             imageCount=len(completed))
+                except Exception:
+                    record.update(status="failed", errorCode="incus-import-failed")
+                    rt.audit("oci-build-import-failed", identity=identity, project=record["project"])
             except Exception:
                 record.update(status="failed", errorCode="build-or-artifact-verification-failed")
                 rt.audit("oci-build-failed", identity=identity, project=record["project"])
