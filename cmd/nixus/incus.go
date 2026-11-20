@@ -358,6 +358,13 @@ func reconcileInstance(spec M) error {
 		if !ok || spec["profiles"] == nil {
 			profiles = []string{"base"}
 		}
+		if len(profiles) == 0 {
+			root, nic := obj(jget(spec, "devices", "root")), obj(jget(spec, "devices", "eth0"))
+			if str(root["pool"]) == "" || str(nic["network"]) == "" {
+				return Public("A profile-free instance needs explicit root storage and eth0 network")
+			}
+			args = append(args, "--no-profiles", "--storage", str(root["pool"]), "--network", str(nic["network"]))
+		}
 		for _, p := range profiles {
 			args = append(args, "--profile", p)
 		}

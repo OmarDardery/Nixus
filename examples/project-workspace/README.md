@@ -28,6 +28,35 @@ source size and lock presence before a *future* privileged broker evaluates an
 uploaded workspace. Running `nix eval` manually on untrusted Nix files is
 **not** a security boundary; review and sandbox the input.
 
-**Not yet supported:** browser creation, project revisions, Nixus project
-review/apply, Incus Compose and secret injection. These are tracked separately
-in issues OmarDardery/nixlab#135, #45, #46 and #41.
+## Declared native guests
+
+An `incus-native` project can declare its Incus resources directly:
+
+```nix
+{ ... }: {
+  nixus.project = {
+    backend = "incus-native";
+    volumes.printer-data.size = "2GiB";
+    instances.printer = {
+      image = "images:debian/13";   # used only when the instance is first created
+      cpus = 1; memory = "1GiB";
+      disks.data = { volume = "printer-data"; path = "/srv/data"; };
+      usb.board = { vendorId = "1d50"; productId = "614e"; };
+    };
+  };
+}
+```
+
+A reviewed project deployment then, in order:
+
+1. Creates the Nixus-owned Incus project, or claims an existing unowned one
+   as an explicit reviewed action. Compose-owned, `default` and `lab` projects
+   are refused.
+2. Creates missing custom volumes. Resizing or adopting an unowned volume is
+   refused.
+3. Creates missing instances, or reconciles existing owned instances through
+   ETag and last-applied checks. Runtime drift stops the deployment.
+
+Removing a declaration, or disabling a project, never stops or deletes
+anything. The plan lists such instances under `retained` and keeps them with
+their data until an explicit migration.
