@@ -1155,6 +1155,9 @@ func installMain(argv []string) int {
 	fs.BoolVar(&a.laptop, "laptop-mode", false, "")
 	fs.BoolVar(&a.noMonitoring, "no-monitoring", false, "")
 	if err := fs.Parse(argv); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	release, err := lockFile("/run/lock/nixus-install.lock", false)
@@ -1895,6 +1898,9 @@ func updateMain(argv []string) int {
 	iface := fs.String("interface", "", "Use this already-addressed management interface through the reviewed update")
 	repairNetwork := fs.Bool("repair-network", false, "At the local console, recover existing Ethernet/bridge connections before the guarded update")
 	if err := fs.Parse(argv); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	err := func() error {
