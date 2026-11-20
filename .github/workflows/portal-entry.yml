@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths:
       - 'admin/static/**'
-      - 'admin/diagnostics.py'
+      - 'cmd/nixus/diagnostics.go'
       - 'modules/admin-ui.nix'
       - 'tests/test_homepage.js'
       - 'tests/test_commands_ui.js'
@@ -12,7 +12,7 @@ on:
   pull_request:
     paths:
       - 'admin/static/**'
-      - 'admin/diagnostics.py'
+      - 'cmd/nixus/diagnostics.go'
       - 'modules/admin-ui.nix'
       - 'tests/test_homepage.js'
       - 'tests/test_commands_ui.js'
@@ -38,27 +38,11 @@ jobs:
           node --check admin/static/commands.js
           node tests/test_homepage.js
           node tests/test_commands_ui.js
-      - name: Evaluate port 80 redirect on the actual setup configurations
+      - name: Evaluate port 80 redirect on the actual setup configuration
         run: |
-          python3 - <<'PY'
-          import json
-          import subprocess
-          # validation-setup-apps is the guest VM, not the host portal.
-          for variant in ('validation-setup',):
-              def evaluate(path):
-                  return json.loads(subprocess.check_output(
-                      ['nix', 'eval', '--json',
-                       f'.#nixosConfigurations.{variant}.config.{path}'], text=True))
-              setup_enabled = evaluate('nixus.settings.setup.enable')
-              nginx_enabled = evaluate('services.nginx.enable')
-              print(variant, 'setup.enabled=', setup_enabled,
-                    'nginx.enabled=', nginx_enabled, flush=True)
-              assert setup_enabled is True, 'The fixture must enable the setup portal'
-              assert nginx_enabled is True, 'The port-80 proxy must be enabled'
-              listen = evaluate('services.nginx.virtualHosts.nixus-entry.listen')
-              assert any(item['port'] == 80 and not item.get('ssl', False)
-                         for item in listen), listen
-              entry = evaluate('services.nginx.virtualHosts.nixus-entry.locations."/".return')
-              assert entry == '308 https://$host:9440$request_uri', entry
-              assert evaluate('services.nginx.virtualHosts.nixus-entry.default') is True
-          PY
+          eval_json() { nix eval --json ".#nixosConfigurations.validation-setup.config.$1"; }
+          test "$(eval_json nixus.settings.setup.enable)" = true
+          test "$(eval_json services.nginx.enable)" = true
+          eval_json services.nginx.virtualHosts.nixus-entry.listen | jq -e 'any(.[]; .port == 80 and (.ssl // false) == false)'
+          test "$(eval_json 'services.nginx.virtualHosts.nixus-entry.locations."/".return')" = '"308 https://$host:9440$request_uri"'
+          test "$(eval_json services.nginx.virtualHosts.nixus-entry.default)" = true

@@ -60,7 +60,7 @@ let collecting = site.monitoring.collection || site.monitoring.history; in {
       if test -f /var/lib/nixus/last-backup-success; then
         read -r last < /var/lib/nixus/last-backup-success
       fi
-      overdue=$(${pkgs.python3}/bin/python3 ${../scripts/backup_health.py} --overdue)
+      overdue=$(${import ../pkgs/nixus.nix { inherit pkgs; }}/bin/nixus-go backup-health)
       printf 'nixus_last_backup_success_seconds %s\nnixus_backup_enabled %s\nnixus_backup_overdue %s\n' "$last" '${if site.backup.enable then "1" else "0"}' "$overdue" > "$metrics/backup.tmp"
       mv "$metrics/backup.tmp" "$metrics/backup.prom"
     '';

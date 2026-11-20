@@ -27,30 +27,38 @@ func printJSON(v any) { fmt.Print(string(jsonFile(v))) }
 
 func fail(msg string) int { fmt.Fprintln(os.Stderr, msg); return 1 }
 
-var commands = map[string]func([]string) int{
-	"nixus-admin":          adminMain,
-	"admin":                adminMain,
-	"nixus-install":        installMain,
-	"install":              installMain,
-	"nixus-update":         updateMain,
-	"update":               updateMain,
-	"nixus-helpers":        helpersMain,
-	"helpers":              helpersMain,
-	"nixus":                homelabMain,
-	"homelab":              homelabMain,
-	"nixus-console-status": func([]string) int { return consoleStatusMain() },
-	"console-status":       func([]string) int { return consoleStatusMain() },
-	"nixus-notify":         notifyMain,
-	"notify":               notifyMain,
-	"nixus-backup":         backupMain,
-	"backup":               backupMain,
-	"nixus-backup-verify":  backupVerificationMain,
-	"backup-verify":        backupVerificationMain,
-	"nixus-reconcile":      reconcileCommand,
-	"reconcile":            reconcileCommand,
-	"oci-child":            ociChildMain,
-	"release":              releaseCommand,
-	"nixus-release":        releaseCommand,
+var commands map[string]func([]string) int
+
+func init() {
+	commands = map[string]func([]string) int{
+		"nixus-admin":          adminMain,
+		"admin":                adminMain,
+		"nixus-install":        installMain,
+		"install":              installMain,
+		"nixus-update":         updateMain,
+		"update":               updateMain,
+		"nixus-helpers":        helpersMain,
+		"helpers":              helpersMain,
+		"nixus":                homelabMain,
+		"homelab":              homelabMain,
+		"nixus-console-status": func([]string) int { return consoleStatusMain() },
+		"console-status":       func([]string) int { return consoleStatusMain() },
+		"nixus-notify":         notifyMain,
+		"notify":               notifyMain,
+		"nixus-backup":         backupMain,
+		"backup":               backupMain,
+		"nixus-backup-verify":  backupVerificationMain,
+		"backup-verify":        backupVerificationMain,
+		"nixus-reconcile":      reconcileCommand,
+		"reconcile":            reconcileCommand,
+		"oci-child":            ociChildMain,
+		"release":              releaseCommand,
+		"nixus-release":        releaseCommand,
+		"preflight":            preflightCommand,
+		"infrastructure":       infrastructureCommand,
+		"backup-health":        backupHealthCommand,
+		"kvm-check":            kvmCheckCommand,
+	}
 }
 
 func main() {
@@ -693,6 +701,9 @@ const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|g
 
 func adminMain(argv []string) int {
 	syscall.Umask(0o027)
+	if len(argv) > 0 && argv[0] == "admin" {
+		argv = argv[1:]
+	}
 	action := ""
 	if len(argv) > 0 {
 		action = argv[0]
@@ -844,5 +855,72 @@ func adminMain(argv []string) int {
 		fmt.Println("Password changed for the recovery administrator. Its old sessions will be rejected; sign in as admin.")
 		return 0
 	}
+	if tool := commands[action]; tool != nil && action != "admin" && action != "nixus-admin" {
+		return tool(rest)
+	}
 	return fail(adminUsage)
+}
+
+func readObjectFile(p string) (M, error) {
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return nil, err
+	}
+	return parseObject(raw)
+}
+
+// preflightCommand validates explicit inventory before Incus changes bridges or pools.
+func preflightCommand(args []string) int {
+	if len(args) != 1 {
+		return fail("usage: preflight INVENTORY.json")
+	}
+	site, err := readObjectFile(args[0])
+	if err == nil {
+		err = validateNetwork(site)
+	}
+	if err != nil {
+		return fail(publicError(err))
+	}
+	return 0
+}
+
+func infrastructureCommand(args []string) int {
+	syscall.Umask(0o077)
+	if len(args) != 2 || (args[0] != "check" && args[0] != "record") {
+		return fail("usage: infrastructure {check|record} PRESEED.json")
+	}
+	preseed, err := readObjectFile(args[1])
+	if err == nil {
+		if args[0] == "check" {
+			err = infraCheck(preseed)
+		} else {
+			err = infraRecord(preseed)
+		}
+	}
+	if err != nil {
+		return fail(publicError(err))
+	}
+	return 0
+}
+
+func backupHealthCommand(args []string) int {
+	if backupHealth(true) == "overdue" {
+		fmt.Println("1")
+	} else {
+		fmt.Println("0")
+	}
+	return 0
+}
+
+func kvmCheckCommand([]string) int {
+	f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)
+	if err != nil {
+		return fail("KVM API unavailable")
+	}
+	defer f.Close()
+	v, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), 0xAE00, 0)
+	if errno != 0 || v != 12 {
+		return fail("KVM API unavailable")
+	}
+	return 0
 }

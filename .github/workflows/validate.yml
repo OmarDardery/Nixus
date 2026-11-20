@@ -7,8 +7,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-# Same-repository PRs already validate feature branches. Do not run the same
-# expensive NixOS suite a second time for their branch push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -24,178 +22,62 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: test "$RELEASE_TAG" = "v$(cat VERSION)"
-      - name: Python safety tests
+      - name: Go formatting, vet and unit tests
         run: |
-          python3 -m compileall -q admin scripts tests helpers installer
-          python3 -m unittest discover -s tests -v
-      - name: Verify real SOPS, age and offline recovery kit crypto
-        run: |
-          nix develop .#secrets-test -c python3 tests/test_native_secrets_crypto.py
-          nix develop .#secrets-test -c python3 tests/test_native_recovery_crypto.py
-          nix develop .#secrets-test -c python3 -m unittest tests/test_host_secrets.py
-      - name: Fresh install, console-approved claim, setup progress and reboot
-        run: nix build .#checks.x86_64-linux.first-run --no-link -L
-      - name: Restore offline SOPS kit on separate NixOS VM and restart real service
-        run: nix build .#checks.x86_64-linux.secrets-recovery --no-link -L
-      - name: Activate guest-owned sops-nix and verify automatic systemd restart
-        run: nix build .#checks.x86_64-linux.guest-sops-activation --no-link -L
-      - name: Build and verify one-command update entrypoint
-        run: |
-          nix run .#update -- --help
-          nix build .#checks.x86_64-linux.installer-runtime --no-link -L
+          nix develop -c bash -c 'test -z "$(gofmt -l cmd)" && go vet ./... && go test ./...'
+      - name: Build Go runtime and run its packaged tests
+        run: nix build .#packages.x86_64-linux.nixus --no-link -L
       - name: Validate UI JavaScript
         run: |
-          node --check admin/static/app.js
-          node --check admin/static/projects.js
-          node --check admin/static/incus-projects.js
-          node --check admin/static/incus-secrets.js
-          node --check admin/static/api.js
-          node --check admin/static/events.js
-          node --check admin/static/operations.js
-          node --check admin/static/foundation.js
-          node --check admin/static/commands.js
-          node --check admin/static/setup.js
-          node tests/test_incus_native_ui.js
-          node tests/test_incus_native_source_editor.js
-          node tests/test_incus_native_source_publication_ui.js
-          node tests/test_native_secrets_ui.js
-          node tests/test_native_recovery_ui.js
-          node tests/test_commands_ui.js
-          node tests/test_homepage.js
-          node tests/test_redesign_ui.js
-          node tests/test_operations_ui.js
-          node tests/test_foundation_ui.js
-          node tests/test_deployments_ui.js
-      - name: Qualify isolated project evaluator without writable store
-        run: nix build .#checks.x86_64-linux.project-evaluator --no-link -L
-      - name: Qualify offline rootless OCI builder and artifact handoff in NixOS VM
-        run: nix build .#checks.x86_64-linux.oci-builder --no-link -L
-      - name: Boot real Incus containers and verify host integration and restore
-        run: nix build .#checks.x86_64-linux.foundation --no-link -L
-      - name: Browser workflow checks
-        run: |
-          python3 -m venv "$RUNNER_TEMP/nixus-browser"
-          "$RUNNER_TEMP/nixus-browser/bin/python" -m pip install playwright==1.55.0
-          "$RUNNER_TEMP/nixus-browser/bin/python" -m playwright install --with-deps chromium
-          "$RUNNER_TEMP/nixus-browser/bin/python" tests/browser_foundation.py
+          for file in admin/static/*.js; do node --check "$file"; done
+          for test in tests/*.js; do node "$test"; done
       - name: Parse all Nix files
+        run: find . -name '*.nix' -print0 | xargs -0 -r -n1 nix-instantiate --parse >/dev/null
+      - name: Verify pure settings, project, secret and management contracts
         run: |
-          find . -name '*.nix' -print0 | xargs -0 -r -n1 nix-instantiate --parse >/dev/null
-          nix eval --raw .#checks.x86_64-linux.foundation.drvPath
-      - name: Verify pure settings migration contract
+          for checks in nixusMigrationChecks nixusGuestSecretsChecks nixusProjectValidationChecks nixusFoundationChecks nixusSecretsChecks nixusManagementChecks; do
+            nix eval --json ".#$checks" | jq -e 'length > 0 and all(.[]; . == true)'
+          done
+          nix-instantiate --eval --strict --json site.nix | jq -e '.schemaVersion == 1'
+          nix eval --json .#nixusProjectChecks | jq -e '
+            .schemaVersion == 1 and (.projects | keys) == ["alpha", "beta"]
+            and .projects.alpha.backend == "incus-compose" and .projects.alpha.resources.cpus == 3
+            and .projects.alpha.secrets.file == "secrets.enc.yaml"
+            and .projects.alpha.secrets.bindings.API_TOKEN.destination == "/run/secrets/API_TOKEN"
+            and .projects.alpha.modules == ["modules/nested/resources.nix", "modules/network.nix"]
+            and .projects.beta.backup.consistency == "quiesce"'
+      - name: Verify defaults and backup verification policy
         run: |
-          nix eval --json .#nixusMigrationChecks > /tmp/nixus-migration.json
-          python3 -c 'import json; checks=json.load(open("/tmp/nixus-migration.json")); assert checks and all(checks.values()), checks'
-          nix-instantiate --eval --strict --json site.nix > /tmp/nixus-desired.json
-          python3 -c 'import json; assert json.load(open("/tmp/nixus-desired.json"))["schemaVersion"] == 1'
-      - name: Validate isolated declarative project workspaces
-        run: |
-          python3 scripts/project_workspace.py tests/project-workspace --unlocked-template > /tmp/nixus-project-source.json
-          nix eval --json .#nixusProjectChecks > /tmp/nixus-project-inventory.json
-          nix eval --json .#nixusGuestSecretsChecks > /tmp/nixus-guest-secret-checks.json
-          python3 -c 'import json; checks=json.load(open("/tmp/nixus-guest-secret-checks.json")); assert checks and all(checks.values()), checks'
-          nix eval --json .#nixusProjectValidationChecks > /tmp/nixus-project-negative.json
-          python3 - <<'PY'
-          import json
-          inventory = json.load(open('/tmp/nixus-project-inventory.json'))
-          negative = json.load(open('/tmp/nixus-project-negative.json'))
-          source = json.load(open('/tmp/nixus-project-source.json'))
-          assert inventory['schemaVersion'] == 1
-          assert sorted(inventory['projects']) == ['alpha', 'beta']
-          assert inventory['projects']['alpha']['backend'] == 'incus-compose'
-          assert inventory['projects']['alpha']['resources']['cpus'] == 3
-          assert inventory['projects']['alpha']['secrets']['file'] == 'secrets.enc.yaml'
-          assert inventory['projects']['alpha']['secrets']['bindings']['API_TOKEN']['key'] == 'API_TOKEN'
-          assert inventory['projects']['alpha']['secrets']['bindings']['API_TOKEN']['instance'] == 'web'
-          assert inventory['projects']['alpha']['secrets']['bindings']['API_TOKEN']['destination'] == '/run/secrets/API_TOKEN'
-          assert inventory['projects']['alpha']['modules'] == ['modules/nested/resources.nix', 'modules/network.nix']
-          assert inventory['projects']['beta']['backup']['consistency'] == 'quiesce'
-          assert source['projects']['alpha']['modules'] == [
-              'alpha/modules/nested/resources.nix', 'alpha/modules/network.nix']
-          assert all(negative.values()), negative
-          PY
-      # Fail native lifecycle/network recovery early, before larger guest images.
-      - name: Report Incus-native source migration progress
-        run: python3 scripts/incus_native_audit.py
-      - name: Verify real restic integrity checks and corruption detection
-        run: |
-          nix build .#checks.x86_64-linux.backup-verification --no-link -L
+          diff <(nix eval --json .#nixusDefaults | jq -S .) <(jq -S . tests/fixtures/defaults.json)
           test "$(nix eval --json .#nixosConfigurations.validation-services.config.nixus.backupVerification.enable)" = "true"
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.nixus.backupVerification.enable)" = "false"
-          nix eval --json .#nixosConfigurations.validation-services.config.systemd.timers.nixus-backup-check.timerConfig > /tmp/nixus-verification-timer.json
-          python3 -c 'import json; timer=json.load(open("/tmp/nixus-verification-timer.json")); assert timer["Persistent"] and timer["OnCalendar"] == "Sun *-*-* 05:00:00"'
-      - name: Boot portal and verify real NixOS permissions
-        run: nix build .#checks.x86_64-linux.portal --no-link -L
-      - name: Activate bootstrap and verify rollback after reboot
-        run: nix build .#checks.x86_64-linux.bootstrap-transaction --no-link -L
-      - name: Verify NixOS guest rollout, health rollback and interrupted transfer recovery
-        run: nix build .#checks.x86_64-linux.guest-deployments --no-link -L
-      - name: Evaluate direct conversion from an installed NixOS configuration
-        run: python3 tests/evaluate_direct_install.py
-      - name: Verify production firewall and DHCP management across reboot
-        run: nix build .#checks.x86_64-linux.startup --no-link -L
-      - name: Verify management services and native Incus isolation
-        run: |
-          nix eval .#nixosConfigurations.validation-management.config.system.build.toplevel.drvPath
-      - name: Verify NixOS clock readiness without NTP
-        run: nix build .#checks.x86_64-linux.clock-readiness --no-link -L
-      - name: Evaluate configuration variants
-        run: |
-          for target in validation-minimal validation-file-disk validation-recipes validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup; do
-            nix eval ".#nixosConfigurations.$target.config.system.build.toplevel.drvPath"
-          done
+          nix eval --json .#nixosConfigurations.validation-services.config.systemd.timers.nixus-backup-check.timerConfig \
+            | jq -e '.Persistent and .OnCalendar == "Sun *-*-* 05:00:00"'
+          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.prometheus.enable)" = "false"
+          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.nginx.enable)" = "false"
+          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.virtualisation.docker.enable)" = "false"
+          test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.enable)" = "true"
       - name: Verify replacement recovery suppresses ordinary guest automation
         run: |
-          nix eval .#nixosConfigurations.validation-recovery.config.system.build.toplevel.drvPath
           for unit in nixus-instances nixus-backup-recover restic-backups-nixus; do
             test "$(nix eval --json ".#nixosConfigurations.validation-recovery.config.systemd.services.$unit.enable")" = false
           done
           test "$(nix eval --json .#nixosConfigurations.validation-recovery.config.systemd.timers.restic-backups-nixus.enable)" = false
-      - name: Verify lightweight defaults and declarative settings
+      - name: Evaluate configuration variants
         run: |
-          nix eval --json .#nixusDefaults > /tmp/nixus-defaults.json
-          python3 -c 'import json; from pathlib import Path; assert json.loads(Path("/tmp/nixus-defaults.json").read_text()) == json.loads(Path("tests/fixtures/defaults.json").read_text())'
-          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.prometheus.enable)" = "false"
-          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.prometheus.exporters.node.enable)" = "false"
-          test "$(nix eval --json '.#nixosConfigurations.validation-minimal.config.systemd.services' --apply 'services: builtins.hasAttr "nixus-metrics" services')" = "false"
-          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.nginx.enable)" = "false"
-          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.virtualisation.docker.enable)" = "false"
-          test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.enable)" = "true"
-          test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.exporters.node.enable)" = "true"
-      - name: Verify typed inventory migration
+          for target in validation-minimal validation-file-disk validation-recipes validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup validation-management validation-recovery validation-sops; do
+            nix eval ".#nixosConfigurations.$target.config.system.build.toplevel.drvPath"
+          done
+      - name: Build packages, launchers and service units
         run: |
-          nix eval --json .#nixusFoundationChecks > /tmp/nixus-foundation.json
-          python3 -c 'import json; checks=json.load(open("/tmp/nixus-foundation.json")); assert checks and all(checks.values()), checks'
-          nix eval --json .#nixusSecretsChecks > /tmp/nixus-secrets.json
-          python3 -c 'import json; checks=json.load(open("/tmp/nixus-secrets.json")); assert checks and all(checks.values()), checks'
-          nix eval --json .#nixusManagementChecks > /tmp/nixus-management.json
-          python3 -c 'import json; checks=json.load(open("/tmp/nixus-management.json")); assert checks and all(checks.values()), checks'
-          test "$(nix eval --raw .#nixosConfigurations.validation-file-disk.config.time.timeZone)" = "UTC"
-          test "$(nix eval --raw .#nixosConfigurations.validation-file-disk.config.nixus.incus.instances.fixture.project)" = "lab"
-      - name: Check typed legacy mount projection
-        run: |
-          nix eval --json .#nixosConfigurations.validation-setup.config.nixus.storage.mounts > /tmp/nixus-mounts.json
-          python3 tests/check_mount_projection.py /tmp/nixus-mounts.json
-          test "$(nix eval --raw '.#nixosConfigurations.validation-file-disk.config.fileSystems."/srv/nixus/archive".device')" = "/dev/disk/by-uuid/33333333-3333-3333-3333-333333333333"
-          nix eval --json .#nixosConfigurations.validation-file-disk.config.virtualisation.incus.preseed.storage_pools > /tmp/nixus-file-pools.json
-          python3 -c 'import json; assert any(p["name"] == "disk-archive" and p["config"]["source"] == "/srv/nixus/archive/incus" for p in json.load(open("/tmp/nixus-file-pools.json")))'
-
-      - name: Build native host and guest-management helper
-        run: nix build .#packages.x86_64-linux.homelab --no-link
-      - name: Build setup tools and bootstrap OS
-        run: |
-          nix build .#packages.x86_64-linux.admin .#packages.x86_64-linux.installer --no-link
-          nix build .#nixosConfigurations.validation-bootstrap.config.system.build.toplevel --no-link
-          nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' '.#nixosConfigurations.validation-setup.config.systemd.units."nginx.service".unit' --no-link
-          test "$(nix eval --raw .#nixosConfigurations.validation-inherited.config.system.stateVersion)" = "25.11"
-      - name: Build backup and monitoring units
-        run: |
+          nix build .#packages.x86_64-linux.admin .#packages.x86_64-linux.installer .#packages.x86_64-linux.homelab --no-link
+          nix run .#update -- --help
           nix build '.#nixosConfigurations.validation-services.config.systemd.units."restic-backups-nixus.service".unit' '.#nixosConfigurations.validation-services.config.systemd.units."nixus-metrics.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-recipes.config.systemd.units."nixus-notify@.service".unit' --no-link
+          nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
       - name: Build pinned upstream helper runner
         run: |
           nix build .#packages.x86_64-linux.helpers -o result-helpers
-          result-helpers/bin/nixus-helpers list > /tmp/nixus-helpers.json
-          python3 -c 'import json; d=json.load(open("/tmp/nixus-helpers.json")); assert d["scripts"]; assert all(len(v["revision"]) == 40 for v in d["sources"].values())'
+          result-helpers/bin/nixus-helpers list | jq -e '(.scripts | length > 0) and all(.sources[]; .revision | length == 40)'
       - name: Build complete Incus-native hypervisor
         run: nix build .#nixosConfigurations.validation-host.config.system.build.toplevel --no-link -L

@@ -2,9 +2,9 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/**', 'admin/static/brand.css', 'admin/static/favicon.svg', 'admin/static/fonts/**', '.github/workflows/pages.yml']
+    paths: ['website/**', 'docs/**', 'cmd/website/**', 'go.mod', 'go.sum', 'admin/static/brand.css', 'admin/static/favicon.svg', 'admin/static/fonts/**', '.github/workflows/pages.yml']
   pull_request:
-    paths: ['website/**', 'docs/**', 'admin/static/brand.css', 'admin/static/favicon.svg', 'admin/static/fonts/**', '.github/workflows/pages.yml']
+    paths: ['website/**', 'docs/**', 'cmd/website/**', 'go.mod', 'go.sum', 'admin/static/brand.css', 'admin/static/favicon.svg', 'admin/static/fonts/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -22,14 +22,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
         with:
-          python-version: '3.12'
-      - run: pip install -r website/requirements.txt
+          go-version-file: go.mod
       - name: Build and validate custom-domain site
-        run: python website/build.py --base-path '' --check
+        run: go run ./cmd/website --base-path '' --check
       - name: Validate project-site paths too
-        run: python website/build.py --base-path /nixus --output /tmp/nixus-project-site --check
+        run: go run ./cmd/website --base-path /nixus --output /tmp/nixus-project-site --check
       - name: Check browser JavaScript
         run: node --check website/assets/site.js
   deploy:
@@ -45,17 +44,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
         with:
-          python-version: '3.12'
-      - run: pip install -r website/requirements.txt
+          go-version-file: go.mod
       - name: Get Pages base path
         id: pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Build deployment using configured Pages base path
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: python website/build.py --base-path "$PAGES_BASE_PATH" --check
+        run: go run ./cmd/website --base-path "$PAGES_BASE_PATH" --check
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: _site

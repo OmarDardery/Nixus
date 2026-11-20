@@ -264,10 +264,9 @@ func (m *Manager) spawn(phase, id string) error {
 	if err := pinWorkerRuntime(dir); err != nil {
 		return err
 	}
-	exe, _ := os.Executable()
 	_, err = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-" + phase + "-" + id,
 		"--property=RuntimeMaxSec=10800", "--setenv=NIXUS_ROOT=" + m.root, "--setenv=NIXUS_STATE=" + m.state,
-		"--setenv=PATH=" + os.Getenv("PATH"), exe, "admin", "job", phase, id}, nil, time.Minute)
+		"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "job", phase, id}, nil, time.Minute)
 	return err
 }
 

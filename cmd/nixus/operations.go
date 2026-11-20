@@ -434,10 +434,9 @@ func (o *Operations) submit(request M, principal string) (M, error) {
 		if err := writeJSON(filepath.Join(directory, "job.json"), record); err != nil {
 			return err
 		}
-		exe, _ := os.Executable()
 		if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-operation-" + id,
 			"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_ROOT=" + o.root, "--setenv=NIXUS_STATE=" + o.state,
-			"--setenv=PATH=" + os.Getenv("PATH"), exe, "admin", "operation-job", id}, nil, time.Minute); err != nil {
+			"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "operation-job", id}, nil, time.Minute); err != nil {
 			record["status"], record["error"] = "failed", "Could not start operation worker"
 			writeJSON(filepath.Join(directory, "job.json"), record)
 			return err

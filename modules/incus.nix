@@ -18,10 +18,11 @@ let
   instances = declared;
   inventory = pkgs.writeText "inventory.json" (builtins.toJSON (site // { instances = declared; }));
   desired = pkgs.writeText "instances.json" (builtins.toJSON instances);
+  nixus = import ../pkgs/nixus.nix { inherit pkgs; };
   reconcile = pkgs.writeShellApplication {
     name = "nixus-reconcile";
-    runtimeInputs = [ pkgs.python3 pkgs.incus-lts.client ];
-    text = ''PYTHONPATH=${../scripts} exec python3 ${../scripts/reconcile.py} ${desired}'';
+    runtimeInputs = [ pkgs.incus-lts.client ];
+    text = ''exec ${nixus}/bin/nixus-go reconcile ${desired}'';
   };
 in {
   nixus.incus.desiredInstances = instances;
@@ -65,11 +66,11 @@ in {
     };
   };
   systemd.services.incus-preseed.preStart = lib.mkBefore ''
-    PYTHONPATH=${../scripts} ${pkgs.python3}/bin/python ${../scripts/preflight.py} ${inventory}
-    ${pkgs.python3}/bin/python ${../scripts/infrastructure.py} check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go preflight ${inventory}
+    ${nixus}/bin/nixus-go infrastructure check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
   '';
   systemd.services.incus-preseed.postStart = ''
-    ${pkgs.python3}/bin/python ${../scripts/infrastructure.py} record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go infrastructure record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
   '';
   systemd.services.incus-preseed.path = [ pkgs.incus-lts.client ];
   systemd.services.nixus-instances = {
@@ -77,7 +78,7 @@ in {
     wantedBy = [ "multi-user.target" ];
     after = [ "incus-preseed.service" "nixus-kvm-check.service" ];
     requires = [ "incus-preseed.service" "nixus-kvm-check.service" ];
-    path = [ pkgs.incus-lts.client pkgs.findutils pkgs.python3 ];
+    path = [ pkgs.incus-lts.client pkgs.findutils ];
     restartTriggers = [ desired ];
     serviceConfig = { Type = "oneshot"; RemainAfterExit = true; TimeoutStartSec = "30min"; };
     script = "${reconcile}/bin/nixus-reconcile";

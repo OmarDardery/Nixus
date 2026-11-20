@@ -448,7 +448,6 @@ func (b *OCIBuilds) queue(identity, planHash any, resume bool) (M, error) {
 		record["status"], record["updatedAt"] = "queued", now()
 		writeJSON(filepath.Join(dir, "job.json"), record)
 		writeJSON(filepath.Join(b.state, "oci-build-active.json"), M{"id": id})
-		exe, _ := os.Executable()
 		pinErr := pinWorkerRuntime(dir)
 		var runErr error
 		if pinErr == nil {
@@ -456,7 +455,7 @@ func (b *OCIBuilds) queue(identity, planHash any, resume bool) (M, error) {
 				"--property=RuntimeMaxSec=2400", "--setenv=NIXUS_STATE=" + b.state, "--setenv=NIXUS_OCI_ROOT=" + ociRoot,
 				"--setenv=NIXUS_OCI_BWRAP_BIN=" + os.Getenv("NIXUS_OCI_BWRAP_BIN"), "--setenv=NIXUS_OCI_COMPOSE_BIN=" + os.Getenv("NIXUS_OCI_COMPOSE_BIN"),
 				"--setenv=NIXUS_OCI_BUILDAH_BIN=" + os.Getenv("NIXUS_OCI_BUILDAH_BIN"), "--setenv=NIXUS_OCI_PATH=" + os.Getenv("NIXUS_OCI_PATH"),
-				"--setenv=PATH=" + os.Getenv("PATH"), exe, "admin", "oci-build-job", id}, nil, 20*time.Second)
+				"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "oci-build-job", id}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {
 			record["status"], record["errorCode"] = "interrupted", "builder-launch-failed"

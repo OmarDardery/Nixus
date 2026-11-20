@@ -1431,13 +1431,12 @@ func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M,
 		writeJSON(filepath.Join(dir, "deployment.json"), existing)
 		writeJSON(filepath.Join(t.state, "project-deploy-active.json"), M{"id": identity})
 		audit("project-deploy-requested", M{"identity": identity, "resume": resume, "principal": job["principal"]})
-		exe, _ := os.Executable()
 		pinErr := pinWorkerRuntime(dir)
 		var runErr error
 		if pinErr == nil {
 			_, runErr = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-deploy-" + identity,
 				"--property=RuntimeMaxSec=3600", "--setenv=NIXUS_STATE=" + t.state, "--setenv=NIXUS_PROJECTS=" + t.workspace,
-				"--setenv=PATH=" + os.Getenv("PATH"), exe, "admin", "project-deploy-job", identity}, nil, 20*time.Second)
+				"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "project-deploy-job", identity}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {
 			existing["status"], existing["errorCode"] = "interrupted", "worker-start-failed"

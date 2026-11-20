@@ -7,19 +7,19 @@ changing them. Planned changes are not claims that a feature already exists.
 
 | Boundary | Current owner | Regression coverage |
 |---|---|---|
-| Settings defaults, types and Nix module overrides | `site-defaults.nix`, `site.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `modules/settings.nix`; Python validates interactive input | `tests/settings-checks.nix`, `tests/test_setup.py` |
-| Host review, activation and rollback | `admin/controller.py` Manager and `admin/worker.py`; installer and update commands call them | `tests/test_update_command.py`, `tests/test_installer_workflow.py`, `tests/test_impact.py` |
-| Host network and management exposure | `modules/networking.nix` and individual service modules; firewall, binding and application checks are currently separate | `tests/management-vm.nix`, `tests/test_management.py` |
-| Management identity and TLS | `admin/runtime.py` and the management identity service in `modules/admin-ui.nix` | `tests/management-vm.nix`, `tests/test_installer_workflow.py` |
-| Reserved Incus infrastructure and explicitly managed instances | `scripts/infrastructure.py`, `scripts/reconcile.py`; native objects remain Incus-owned | `tests/test_platform.py`, `tests/test_impact.py` |
+| Settings defaults, types and Nix module overrides | `site-defaults.nix`, `site.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `modules/settings.nix`; Python validates interactive input | `tests/settings-checks.nix`, the Go unit tests |
+| Host review, activation and rollback | `cmd/nixus/controller.go` Manager and `cmd/nixus/worker.go`; installer and update commands call them | the Go unit tests, the Go unit tests, the Go unit tests |
+| Host network and management exposure | `modules/networking.nix` and individual service modules; firewall, binding and application checks are currently separate | `tests/management-vm.nix`, the Go unit tests |
+| Management identity and TLS | `cmd/nixus/runtime.go` and the management identity service in `modules/admin-ui.nix` | `tests/management-vm.nix`, the Go unit tests |
+| Reserved Incus infrastructure and explicitly managed instances | `cmd/nixus/incus.go`, `cmd/nixus/incus.go`; native objects remain Incus-owned | the Go unit tests, the Go unit tests |
 | Docker applications | Arcane or the operator's declared Compose source in the apps VM | `tests/apps-integration.nix`, `tests/guest-deployments-kvm.nix` |
-| Independent backup and restore evidence | `scripts/backup.py`, `admin/operations.py`, `admin/recovery.py` | `tests/test_backup_plan.py`, `tests/test_platform.py` |
-| Dependencies and qualification | `flake.lock` pins Nix inputs; `scripts/release.py` validates release evidence | `tests/test_release.py`, `.github/workflows/release.yml` |
+| Independent backup and restore evidence | `cmd/nixus/backup.go`, `cmd/nixus/operations.go`, `cmd/nixus/recovery.go` | the Go unit tests, the Go unit tests |
+| Dependencies and qualification | `flake.lock` pins Nix inputs; `cmd/nixus/tools.go` validates release evidence | the Go unit tests, `.github/workflows/release.yml` |
 
 ### Frozen compatibility surface (CR-01)
 
 `tests/fixtures/architecture-contract.json` is the **versioned public-surface
-inventory**, with assertions in `tests/test_compatibility_surface.py`. It
+inventory**, with assertions in the Go unit tests. It
 characterizes existing interfaces; it is not a specification that unsafe defaults
 or implementation details must be retained. Running the source-only tests does
 not replace the evaluated NixOS/Incus and rollback integration tests.
@@ -27,16 +27,16 @@ not replace the evaluated NixOS/Incus and rollback integration tests.
 | Boundary | Canonical source / data owner | Public/stable surface | Failure or migration gate |
 |---|---|---|---|
 | Host settings, defaults, and legacy schema | `site-defaults.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `site.nix`; Python only validates request inputs | `machine/settings.json` (layout v1), legacy `local/settings.json`, `schemaVersion`, file-module overrides | OmarDardery/nixlab#49; default/list/override/legacy tests and reject unknown future versions |
-| Host mutation | `admin/controller.py` `Manager` + `admin/worker.py` | Review, build, impact plan, apply, confirm, rollback, cancel; `active.json`, `pending.json`, `last-confirmed.json`, `jobs/` | OmarDardery/nixlab#50/#17; preserved previous generation, live access check, interrupt and stopped-worker tests |
-| Entry points and HTTPS API | `installer/package.nix`, `admin/package.nix`, `admin/main.py` | `nix run .#install`, `nix run .#update`, `nixus-admin` and authenticated `/api/*` paths/response fields | OmarDardery/nixlab#50/#20/#27; public alias/route/shape regression before renaming; sensitive output is **not** protected compatibility |
+| Host mutation | `cmd/nixus/controller.go` `Manager` + `cmd/nixus/worker.go` | Review, build, impact plan, apply, confirm, rollback, cancel; `active.json`, `pending.json`, `last-confirmed.json`, `jobs/` | OmarDardery/nixlab#50/#17; preserved previous generation, live access check, interrupt and stopped-worker tests |
+| Entry points and HTTPS API | `installer/package.nix`, `admin/package.nix`, `cmd/nixus/server.go` | `nix run .#install`, `nix run .#update`, `nixus-admin` and authenticated `/api/*` paths/response fields | OmarDardery/nixlab#50/#20/#27; public alias/route/shape regression before renaming; sensitive output is **not** protected compatibility |
 | Listener/exposure policy | `modules/settings.nix`, `modules/networking.nix`, `modules/admin-ui.nix`, service-owned listeners | Management HTTPS, Cockpit, Incus, optional app proxy and explicit trusted CIDRs | #16; collision/bind/scope tests, management access/rollback. Present fragmented policy is a gap |
-| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `admin/runtime.py` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI, Arcane DB for apps | Existing portal session and separate Cockpit/Incus/Arcane identity; `nixus-management-identity.service` | #22/#26–#68; never freeze credential printing, blanket trust or weak onboarding |
-| Incus declared infrastructure | Native Incus preseed + `scripts/infrastructure.py`; reconciled instance fields via `scripts/reconcile.py` | Reserved project/profile/network/pool, last-applied state, ETag/ownership; **native** guests survive source changes | #15/OmarDardery/nixlab#9; drift and changed-precondition refusal, no deletion of unowned guest state |
+| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `cmd/nixus/runtime.go` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI, Arcane DB for apps | Existing portal session and separate Cockpit/Incus/Arcane identity; `nixus-management-identity.service` | #22/#26–#68; never freeze credential printing, blanket trust or weak onboarding |
+| Incus declared infrastructure | Native Incus preseed + `cmd/nixus/incus.go`; reconciled instance fields via `cmd/nixus/incus.go` | Reserved project/profile/network/pool, last-applied state, ETag/ownership; **native** guests survive source changes | #15/OmarDardery/nixlab#9; drift and changed-precondition refusal, no deletion of unowned guest state |
 | Apps VM and Compose | Incus owns apps VM/disk; Docker/Arcane or user's Compose repository owns containers/stacks and Arcane DB | Persistent guest disks, volumes and specialist UI | #4/#10/#23; updates cannot claim data rollback or overwrite existing specialist identity |
-| Backup and restore evidence | `scripts/backup.py`, `admin/operations.py`, `admin/recovery.py` and restic | Staged manifest, independent archive, integrity result and **actual restore proof** are distinct | #5/#6/#18; incomplete stage, exclusions and interruption never count as verified restore |
+| Backup and restore evidence | `cmd/nixus/backup.go`, `cmd/nixus/operations.go`, `cmd/nixus/recovery.go` and restic | Staged manifest, independent archive, integrity result and **actual restore proof** are distinct | #5/#6/#18; incomplete stage, exclusions and interruption never count as verified restore |
 | Monitoring and alerts | `modules/monitoring.nix`, `modules/notifications.nix` | Prometheus/optional historical metrics, failure notification | #18; Alertmanager is the planned normal router, **not currently assumed implemented** |
 | Nix/OCI dependencies | Single `flake.lock`; OCI image/template references currently live in their owning services | `nixosModules`, `nixosConfigurations`, `packages`, `apps`, `checks` | #19/#23; one lock and planned reviewed OCI manifest, no second dependency authority |
-| Release evidence | `scripts/release.py`, CI workflows, commissioning/recovery reports | `VERSION`, checks/qualification gates, source revision | #21/#3; machine-readable release contract planned, physical evidence remains distinct |
+| Release evidence | `cmd/nixus/tools.go`, CI workflows, commissioning/recovery reports | `VERSION`, checks/qualification gates, source revision | #21/#3; machine-readable release contract planned, physical evidence remains distinct |
 
 **Compatibility policy.** Changes to the manifest's flake paths, CLI aliases,
 authenticated portal routes/response fields, state paths, machine format, or
@@ -49,17 +49,17 @@ password disclosure, overly broad exposure, or an unverified health/restore
 claim just because those behaviors once existed.
 
 **Failure traceability (S02–S09).** Legacy/modern snapshots, list overlay and
-future-layout refusal: `test_architecture_contract.py`,
-`test_compatibility_surface.py`, `test_setup.py`,
+future-layout refusal: the Go unit tests,
+the Go unit tests, the Go unit tests,
 `tests/settings-checks.nix`. Worker interruption and action locks:
-`test_worker_inspection.py`, `test_installer_workflow.py`,
-`test_update_command.py`, `test_bootstrap_transaction.py`,
+the Go unit tests, the Go unit tests,
+the Go unit tests, the Go unit tests,
 `tests/bootstrap-transaction-vm.nix`. Incus ETags/native preservation and
-partial inventory: `test_impact.py`, `test_guest_network.py`,
+partial inventory: the Go unit tests, the Go unit tests,
 `tests/foundation-vm.nix`. Secret cleanup and recoverability:
-`test_secret_cleanup.py`, `test_backup_plan.py`,
+the Go unit tests, the Go unit tests,
 `tests/management-vm.nix`. Release evidence:
-`test_release.py`, `.github/workflows/validate.yml`.
+the Go unit tests, `.github/workflows/validate.yml`.
 The current installed system or guest-data recovery is **never** inferred from
 a source-only passing test; on-host commissioning is a separate qualification.
 
@@ -252,8 +252,8 @@ cannot become another request. Transport/JSON decode errors and unsupported-meth
 responses do not reflect the submitted content. Domain validation errors retain
 their existing behavior and require the separate credential-output audit.
 
-`tests/test_http_limits.py` checks framing and bounded reads. The real HTTPS
-fixture in `tests/test_setup.py` checks rejection/closure, existing auth/CSRF and
+the Go unit tests checks framing and bounded reads. The real HTTPS
+fixture in the Go unit tests checks rejection/closure, existing auth/CSRF and
 hostname rules, safe method errors, and recovery after 100 stalled TLS clients.
 HTTP timeouts are inactivity bounds, not an absolute request deadline. Management
 firewall policy, TLS trust and private-network deployment remain necessary; these

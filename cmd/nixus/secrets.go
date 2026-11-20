@@ -934,7 +934,7 @@ func b64(data []byte) string { return base64.StdEncoding.EncodeToString(data) }
 
 func unb64(v any) ([]byte, error) {
 	s, ok := v.(string)
-	if !ok || len(s) > maxKit*2 {
+	if !ok || len(s) > maxKit*2 || strings.ContainsAny(s, "\r\n") {
 		return nil, Public("Invalid recovery payload")
 	}
 	return base64.StdEncoding.Strict().DecodeString(s)

@@ -2179,9 +2179,8 @@ func repairDropinContent(settingsPath string) (string, error) {
 	if envBin == "" || ip == "" || openssl == "" {
 		return "", Public("Recovery runtime needs env, ip and openssl")
 	}
-	exe, _ := os.Executable()
 	toolPath := filepath.Dir(resolvedOr(ip)) + ":" + filepath.Dir(resolvedOr(openssl))
-	args := []string{envBin, "PATH=" + toolPath, exe, "admin", "network-identity", settingsPath}
+	args := []string{envBin, "PATH=" + toolPath, adminLauncher(), "admin", "network-identity", settingsPath}
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		if strings.ContainsAny(a, "%\n") {

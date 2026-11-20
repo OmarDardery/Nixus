@@ -646,10 +646,9 @@ func (d *Deployments) submit(id string, resume any, principal string) (M, error)
 		if err := writeJSON(filepath.Join(d.state, "deployment-active.json"), M{"id": id}); err != nil {
 			return nil, err
 		}
-		exe, _ := os.Executable()
 		if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-deploy-" + id,
 			"--property=RuntimeMaxSec=10800", "--setenv=NIXUS_ROOT=" + d.root, "--setenv=NIXUS_STATE=" + d.state,
-			"--setenv=PATH=" + os.Getenv("PATH"), exe, "admin", "deployment-job", id}, nil, 20*time.Second); err != nil {
+			"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "deployment-job", id}, nil, 20*time.Second); err != nil {
 			record["status"], record["error"], record["updatedAt"] = "interrupted", "Could not start deployment worker", now()
 			writeJSON(filepath.Join(directory, "deployment.json"), record)
 			durableUnlink(filepath.Join(d.state, "deployment-active.json"))

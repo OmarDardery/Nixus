@@ -46,24 +46,24 @@ override them. Secret *contents* are never inventory fields.
 | Credential | Producer and consumer | Persistence and current disposal | Delivery and assessment |
 |---|---|---|---|
 | First portal administrator | `enrollment.ensure_web_enrollment` (installer); `browser_bootstrap`, `nixus-admin approve-enrollment`; `runtime.password_record`, `accounts.matches` | No password is generated. Root-only `bootstrap-state.json` holds a hashed browser proof bound to the boot and a deadline; the claim writes a salted PBKDF2 verifier to `auth.json`/`users.json` and retires the enrollment marker | The installer prints only the portal URL, the approval command and the CA fingerprint; the browser shows a code the console approves; the password is chosen in that browser |
-| Portal accounts | `admin/accounts.py:update/change_password`; `main.Auth` | `auth.json` and `users.json`, root-owned/group-readable by nixus-ui; account hash/role changes invalidate existing sessions on lookup | Supplied in authenticated TLS bodies or local getpass; list API returns names/roles; account changes require reauthentication |
-| Portal session/CSRF | `admin/main.py:Auth.login/get`, HTTPS frontend | Bounded in-memory sessions; idle and absolute expiry, logout/password/identity changes revoke; web restart discards memory | Cookie and authenticated CSRF response are private protocol delivery; never support-bundle/log fields; tests must inspect public artifacts separately from Set-Cookie |
+| Portal accounts | `cmd/nixus/accounts.go:update/change_password`; `main.Auth` | `auth.json` and `users.json`, root-owned/group-readable by nixus-ui; account hash/role changes invalidate existing sessions on lookup | Supplied in authenticated TLS bodies or local getpass; list API returns names/roles; account changes require reauthentication |
+| Portal session/CSRF | `cmd/nixus/server.go:Auth.login/get`, HTTPS frontend | Bounded in-memory sessions; idle and absolute expiry, logout/password/identity changes revoke; web restart discards memory | Cookie and authenticated CSRF response are private protocol delivery; never support-bundle/log fields; tests must inspect public artifacts separately from Set-Cookie |
 | Linux operator password hash | `local_access.ensure_operator_password` (no SOPS) or `host_secrets.initialize` (SOPS, default); NixOS user configuration | Starts as the hash of a discarded random password with an unset marker; no plaintext is stored. The portal replaces it via review (SOPS ciphertext or `/var/lib/nixus-secrets/cockpit-operator-password`); worker recovery preserves the previous shadow hash | Chosen in the portal (Services → Local operator password); unmanaged accounts use `sudo passwd` from an authorized terminal |
 | Incus browser private key/P12 passphrase | `controller.Manager.browser_certificate`; Incus trust API and browser | Root-only /run temporary directory is removed; owned public trust metadata persists; ECDSA P-384 client identity lasts 90 days, with guarded owned-trust expiry | Supplied import passphrase; metadata-only public JSON plus session-bound, CSRF-protected, one-claim encrypted download for 120 seconds. Reauthenticated issue/revoke, lab restriction by default, explicit acknowledged unrestricted action, owned inventory and renewal; real client import/selection qualification remains #29 evidence |
 | Management CA/server/app TLS keys | `runtime.issue_tls`, `diagnostics.identity`, `main.renew` | `/var/lib/nixus-admin/{ca,tls}.key`; host CA retained, leaf renewal; worker recovery retains prior host TLS files | Portal uses systemd LoadCredential; Incus bind mounts host leaf files; public CA/fingerprint are safe, private CA never distributed to guests |
 | Transaction secret inputs | `controller.review`, `runtime.encode_secrets`, `worker.apply/save_recovery/rollback` | Root-only `jobs/ID/secrets.json`, then fixed live paths; terminal cleanup retries confirmed/rolled-back/cancelled/superseded; failed/resumable jobs and recovery manifests retained | Separate from candidate source/job metadata; see [staged transaction lifetime](staged-transaction-secrets.md) for enforced admission/expiry, protected publication and visible cleanup failures; rollback material is not generic staging |
 | Wi-Fi, restic environment/password, tunnel credential JSON | `runtime.encode_secrets`, fixed `runtime.SECRET_PATHS`, or `modules/secrets.nix` sops | Host `/var/lib/nixus-secrets`; restic/tunnel paths source-managed; sops age key defaults `/var/lib/sops-nix/key.txt` | Intended services read files; password hashing uses stdin, environment-file values are quoted; command/error and generated-unit audits remain required |
-| Failure webhook URL | `modules/notifications.nix`, `scripts/notify.py:send` | Root-owned `/var/lib/nixus-secrets/notification-url` by default; source declares only its path | systemd LoadCredential; delivery failure withholds URL/response. URLs may contain bearer credentials and must not appear in public status; Alertmanager routing in #18 must reuse this boundary |
-| Recovery secrets | `admin/recovery.py:secret_files/export/download` | Checks file/ancestry trust, packages separate age-encrypted secret archive; temporary download directory cleaned | Configuration archive separate from encrypted secret kit; export API requires administrator reauthentication. New support bundles in #33 must not reuse secret export as a redacted bundle |
+| Failure webhook URL | `modules/notifications.nix`, `cmd/nixus/tools.go:send` | Root-owned `/var/lib/nixus-secrets/notification-url` by default; source declares only its path | systemd LoadCredential; delivery failure withholds URL/response. URLs may contain bearer credentials and must not appear in public status; Alertmanager routing in #18 must reuse this boundary |
+| Recovery secrets | `cmd/nixus/recovery.go:secret_files/export/download` | Checks file/ancestry trust, packages separate age-encrypted secret archive; temporary download directory cleaned | Configuration archive separate from encrypted secret kit; export API requires administrator reauthentication. New support bundles in #33 must not reuse secret export as a redacted bundle |
 
 ## Current disclosure and lifetime defects
 
 | Finding | Exact code boundary | Required follow-up |
 |---|---|---|
-| Browser client qualification still required | `browser_certificates.py`, protected binary download, client import stores | Implemented and covered by the real-Incus foundation VM test (#29, closed); real browser import/selection/expiry/revoke on supported clients is tracked by #44 |
-| Broader operation/deployment and service-journal qualification remains | `admin/operations.py`, `admin/deployments.py`, generated units | Broker/frontend errors, host command errors, installer failures and transaction worker records now use fixed messages. Other producers and real service journals still require negative captures |
+| Browser client qualification still required | `cmd/nixus/browser.go`, protected binary download, client import stores | Implemented and covered by the real-Incus foundation VM test (#29, closed); real browser import/selection/expiry/revoke on supported clients is tracked by #44 |
+| Broader operation/deployment and service-journal qualification remains | `cmd/nixus/operations.go`, `cmd/nixus/deployments.go`, generated units | Broker/frontend errors, host command errors, installer failures and transaction worker records now use fixed messages. Other producers and real service journals still require negative captures |
 | Staged credentials/recovery material can outlive useful purpose | `runtime.cleanup_terminal_secrets`; controller/worker terminal transitions | OmarDardery/nixlab#73 explicit state/lifetime table, expiry and crash/deletion-failure visibility, preserving indispensable recovery material |
-| Some secret/application files deliberately enter recovery exports | `admin/recovery.py:secret_files/export` | Keep encrypted recovery export separate from #33 diagnostics; redaction cannot be inferred from archive name |
+| Some secret/application files deliberately enter recovery exports | `cmd/nixus/recovery.go:secret_files/export` | Keep encrypted recovery export separate from #33 diagnostics; redaction cannot be inferred from archive name |
 
 These findings are defects, not compatibility promises. The output-boundary hardening
 changes no authentication authority, persisted schema, state path or recovery material.
@@ -82,22 +82,19 @@ This does not scrub historical journals or private files already created by olde
 
 ## Reproducible tests and evidence limits
 
-`tests/credential_fixtures.py` provides distinct synthetic setup, Linux, Arcane,
+the Go unit tests provides distinct synthetic setup, Linux, Arcane,
 P12, cookie, staged-secret and private-key values. `assert_public_clean` recursively
 checks mapping keys/values, lists and byte/text artifacts, including URL, base64 and
 hex forms. Failure messages name credential categories only. It is a test utility,
 not a general-purpose production redactor or proof against every encoding/hash.
 
-`tests/test_credential_contract.py` checks the scanner itself and actual safe
+the Go unit tests checks the scanner itself and actual safe
 boundaries: failed Arcane subprocess output, rejected secret input, account
 metadata/failed login/audit output and cancelled staged secrets. Existing
-`tests/test_setup.py` covers HTTPS auth/CSRF, staging exclusion and rollback;
-`tests/test_completion.py` covers secret/configuration export separation;
-`tests/test_installer_workflow.py` covers verified Arcane access and reset
-recovery; `tests/test_clock_readiness.py` checks no partial trust mutation on an
-invalid clock. Run with `python3 -m unittest discover -s tests -v` in the supported
-CI environment. The repository uses unittest, not pytest or node --test, for these
-Python cases; UI tests run the existing explicit Node scripts.
+the Go unit tests covers HTTPS auth/CSRF, staging exclusion and rollback;
+The Go unit tests (`cmd/nixus/nixus_test.go`) cover recovery archive and kit
+integrity, and clock plausibility. Run them with `nix develop -c go test ./...`;
+UI tests run the existing explicit Node scripts.
 
 Installer/reset success now has sentinel coverage and status-only output; protected
 private credential files remain in place for local recovery. #26 cannot

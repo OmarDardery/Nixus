@@ -577,7 +577,7 @@ func diskPrepare() error {
 
 // --- release evidence ------------------------------------------------------------------------
 
-var releaseWorkflows = map[string]string{"validate": "validate.yml", "installer": "installer.yml", "portal": "portal-entry.yml", "website": "pages.yml"}
+var releaseWorkflows = map[string]string{"validate": "validate.yml", "portal": "portal-entry.yml", "website": "pages.yml"}
 var betaVersion = re(`[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+`)
 
 func physicalReports(paths []string, revision, version, inputs string) (M, error) {

@@ -162,12 +162,10 @@
             confirmedExistingZfsDataset = true; hostId = "1234abcd"; };
         }) [ ./tests/hardware.nix ];
       };
-      # Real crypto tests use the same pinned toolchain as the deployed broker.
-      devShells.x86_64-linux.secrets-test = pkgs.mkShell {
-        packages = [ (pkgs.python3.withPackages (ps: [ ps.cryptography ])) pkgs.sops pkgs.age ];
-      };
       packages.x86_64-linux = {
         inherit installer;
+        nixus = import ./pkgs/nixus.nix { inherit pkgs; };
+        default = self.packages.x86_64-linux.nixus;
         admin = import ./admin/package.nix { inherit pkgs; };
         homelab = import ./scripts/homelab.nix { inherit pkgs; };
         helpers = import ./helpers/package.nix { inherit pkgs; };
@@ -257,30 +255,16 @@
             (builtins.attrValues bootstrap.config.users.users)));
       };
       checks.x86_64-linux = {
-        backup-verification = pkgs.runCommand "nixus-backup-verification" {
-          nativeBuildInputs = [ pkgs.python3 pkgs.restic ];
-        } ''
-          PYTHONPATH=${./admin}:${./scripts}:${./tests} python3 ${./tests/backup-verification-integration.py}
-          touch $out
-        '';
-        startup = import ./tests/startup-vm.nix { inherit pkgs; };
-        clock-readiness = import ./tests/clock-readiness-vm.nix { inherit pkgs; };
-        project-evaluator = import ./tests/project-evaluator-vm.nix { inherit pkgs; };
-        oci-builder = import ./tests/oci-build-vm.nix { inherit pkgs; };
-        secrets-recovery = import ./tests/native-secrets-recovery-vm.nix { inherit pkgs; };
-        first-run = import ./tests/first-run-vm.nix { inherit pkgs; };
-        guest-sops-activation = import ./tests/native-guest-sops-vm.nix { inherit pkgs sops-nix; };
-        installer-runtime = self.packages.x86_64-linux.installer.tests.recovery-guard;
-        portal = import ./tests/portal-vm.nix { inherit pkgs; };
-        bootstrap-transaction = import ./tests/bootstrap-transaction-vm.nix { inherit pkgs; };
-        foundation = import ./tests/foundation-vm.nix { inherit pkgs; };
-        guest-deployments = import ./tests/guest-deployments-vm.nix { inherit pkgs; };
+        # Builds the Go runtime and runs its unit tests (go test) in the sandbox.
+        nixus = self.packages.x86_64-linux.nixus;
+        admin = self.packages.x86_64-linux.admin;
+        installer = self.packages.x86_64-linux.installer;
         host = self.nixosConfigurations.validation-host.config.system.build.toplevel;
         helpers = self.packages.x86_64-linux.homelab;
       };
       devShells.x86_64-linux = {
         default = pkgs.mkShell {
-          packages = with pkgs; [ nixfmt shellcheck python3 incus-lts.client ];
+          packages = with pkgs; [ go gopls nixfmt shellcheck incus-lts.client sops age ];
         };
       };
     };

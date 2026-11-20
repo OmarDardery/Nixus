@@ -18,7 +18,7 @@ in {
       serviceConfig = {
         Type = "oneshot"; TimeoutStartSec = "30s"; Restart = "on-failure"; RestartSec = "10s";
         LoadCredential = [ "webhook:${cfg.webhookFile}" ];
-        ExecStart = "${pkgs.python3}/bin/python3 ${../scripts/notify.py} %i";
+        ExecStart = "${import ../pkgs/nixus.nix { inherit pkgs; }}/bin/nixus-go notify %i";
         NoNewPrivileges = true; PrivateTmp = true; ProtectSystem = "strict"; ProtectHome = true;
       };
     };

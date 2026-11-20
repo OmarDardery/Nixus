@@ -1355,3 +1355,13 @@ func incusRun(args []string, timeout time.Duration, limit int) (string, error) {
 	}
 	return string(res.Stdout), nil
 }
+
+// adminLauncher is the packaged nixus-admin wrapper when available, so that
+// transient workers inherit its pinned tools and environment.
+func adminLauncher() string {
+	if launcher := os.Getenv("NIXUS_ADMIN_LAUNCHER"); strings.HasPrefix(launcher, "/nix/store/") {
+		return launcher
+	}
+	exe, _ := os.Executable()
+	return exe
+}

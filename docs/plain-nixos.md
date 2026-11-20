@@ -195,7 +195,7 @@ NetworkManager connections that no longer exist.
 | Late validation, partial checkout, manual resume/update | Disposable planning, atomic checkout publication, transaction reattachment and protected staged source updates |
 | Existing Incus blocked or at risk of overwrite | Explicit inventory/export/adoption with separate owned resources and collision refusal |
 | Nginx SSL listener missing certificates | Existing `onlySSL` fix retained; startup VM boots the actual apps-enabled proxy with verified upstream TLS |
-| Duplicate image fingerprint on retry | Existing idempotent import/alias implementation and `test_app_image_import.py` retained |
+| Duplicate image fingerprint on retry | Existing idempotent import/alias implementation and the Go unit tests retained |
 | Rollback masked original error or restarted missing units/connections | Separate error fields, loaded-unit checks and existing-UUID checks |
 | Cockpit address unavailable at boot; stale `.240` links | Address-independent listeners, runtime TLS identity, observed URLs; DHCP/reboot VM fixture |
 | Success despite broken interfaces | TLS endpoint and Arcane administrator readiness gate before confirmation |

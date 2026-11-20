@@ -89,7 +89,7 @@ are not a redacted support-bundle allowlist.
 
 ## Evidence
 
-`tests/test_secret_cleanup.py` covers expiry boundaries, invalid clocks, both
+the Go unit tests covers expiry boundaries, invalid clocks, both
 activation admission checks, pending cancellation refusal, terminal cleanup,
 permission/alias rejection, full/read-only storage, failed job-state publication,
 failed unlink, retained recovery, and actual SIGKILL before/after publication and
