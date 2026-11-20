@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='nixus-direct-eval-') as folder:
     host = {'architecture': 'x86_64', 'cpuVendor': 'intel', 'kvm': True,
             'interfaces': [{'name': 'eth0', 'wireless': False, 'addresses': ['192.0.2.10/24']}],
             'routes': [{'dst': '192.0.2.0/24', 'dev': 'eth0'}], 'disks': []}
-    candidate = direct.prepare(settings, overview, host, apps=False)
+    candidate = direct.prepare(settings, overview, host)
     path.write_text(json.dumps(candidate))
     actual = evaluate(root, 'nixosConfigurations.hypervisor.config', '''c: {
       stateVersion = c.system.stateVersion;
