@@ -266,6 +266,7 @@
         startup = import ./tests/startup-vm.nix { inherit pkgs; };
         clock-readiness = import ./tests/clock-readiness-vm.nix { inherit pkgs; };
         project-evaluator = import ./tests/project-evaluator-vm.nix { inherit pkgs; };
+        oci-builder = import ./tests/oci-build-vm.nix { inherit pkgs; };
         secrets-recovery = import ./tests/native-secrets-recovery-vm.nix { inherit pkgs; };
         first-run = import ./tests/first-run-vm.nix { inherit pkgs; };
         guest-sops-activation = import ./tests/native-guest-sops-vm.nix { inherit pkgs sops-nix; };

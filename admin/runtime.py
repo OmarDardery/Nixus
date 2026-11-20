@@ -180,7 +180,7 @@ def public_progress(text):
 
 def worker_active(unit: str) -> bool:
     """Observe only Nixus workers; unknown systemd state is not stopped work."""
-    if not isinstance(unit, str) or not re.fullmatch(r'nixus-(?:build|apply|rollback|operation|deploy|project-deploy)-[0-9a-f]{32}', unit):
+    if not isinstance(unit, str) or not re.fullmatch(r'nixus-(?:build|apply|rollback|operation|deploy|project-deploy|oci-build)-[0-9a-f]{32}', unit):
         raise ValueError('Invalid worker unit')
     try:
         result = subprocess.run(['systemctl', 'is-active', '--quiet', unit],

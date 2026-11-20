@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "admin"))
+sys.path[:0] = [str(Path(__file__).resolve().parents[1] / d) for d in ("admin", "scripts")]
 import native_imports as imp
 from oci_source_plan import source_plan
 
