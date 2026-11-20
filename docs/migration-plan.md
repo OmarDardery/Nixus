@@ -36,10 +36,17 @@ Each copy links back to its original, which holds the full specification.
 - [x] Host baseline: all `validation-*` configurations, all `checks.x86_64-linux` derivations and the boolean check sets evaluate; unit and Node UI tests pass; the website builds with link checking.
 - [ ] Rewrite the remaining docs that still describe the Arcane apps VM (#48).
 
+### M1.5: One command, then the browser
+- [x] `#install` installs Incus and its UI, Cockpit, console and portal non-interactively, then opens console-approved browser enrollment (#50).
+- [x] Guided Setup walkthrough derived from host state; resumes after refresh or reboot (#51).
+- [x] Host credentials are SOPS/age ciphertext by default, edited in the portal (#52).
+- [x] Optimized Bash with a startup budget (#53).
+- [x] First-run VM test: claim, setup progress, host SOPS, reboot (#54; VM runs in CI).
+
 ### M2: Feature parity (incus-native plan, phases 1–3)
 - [ ] Projects: reviewed publication, deploy, logs and revisions (#41, #45).
-- [ ] Isolated OCI builder and Compose preflight (#47; NixLab PRs OmarDardery/nixlab#152 and OmarDardery/nixlab#154 are pending).
-- [ ] SOPS/age delivery and rotation (#46; NixLab draft PR OmarDardery/nixlab#153).
+- [ ] Isolated OCI builder and Compose preflight (#47; NixLab PR OmarDardery/nixlab#152 is not yet ported).
+- [ ] SOPS/age delivery and rotation (#46): NixLab PRs OmarDardery/nixlab#153 and OmarDardery/nixlab#154 are ported. Production runtime delivery into Incus Compose is still open.
 - [ ] Zero-secret output and credential work: #26, #27, #28, #29.
 
 ### M3: Qualification (phase 4)
