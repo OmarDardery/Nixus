@@ -19,7 +19,7 @@ in pkgs.testers.runNixOSTest {
       "d /var/lib/nixus-oci 0711 root root -"
       "d /var/lib/nixus-oci/jobs 0711 root root -"
     ];
-    environment.systemPackages = [ tool pkgs.python3 pkgs.nix pkgs.buildah
+    environment.systemPackages = [ tool (pkgs.python3.withPackages (ps: [ ps.markdown ps.cryptography ps.pyyaml ])) pkgs.nix pkgs.buildah
       pkgs.bubblewrap incusCompose pkgs.util-linux ];
     environment.variables = {
       NIXUS_OCI_COMPOSE_BIN = "${incusCompose}/bin/incus-compose";
