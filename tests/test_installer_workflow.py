@@ -27,7 +27,8 @@ spec.loader.exec_module(installer)
 
 
 class BootstrapCredentialTests(unittest.TestCase):
-    def test_concurrent_legacy_bootstrap_reuses_one_verifier(self):
+    def test_fresh_install_opens_console_approved_enrollment_without_a_password(self):
+        import enrollment
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)), \
                 patch.object(installer.secrets, 'token_urlsafe', wraps=installer.secrets.token_urlsafe) as token:
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -35,8 +36,21 @@ class BootstrapCredentialTests(unittest.TestCase):
                     pool.submit(installer.ensure_portal_account), pool.submit(installer.ensure_portal_account))]
             self.assertIsNone(first)
             self.assertIsNone(second)
-            self.assertEqual(token.call_count, 1)
-            self.assertTrue(rt.password_matches((rt.STATE / 'setup-password').read_text().strip(), rt.read_json(rt.STATE / 'auth.json')))
+            token.assert_not_called()
+            for name in ('setup-password', 'auth.json', 'users.json'):
+                self.assertFalse((rt.STATE / name).exists(), name)
+            self.assertTrue((rt.STATE / 'web-enrollment').is_file())
+            self.assertEqual(enrollment.status(), {'available': True, 'recoveryRequired': False})
+            # A retry before the browser claim keeps enrollment open.
+            self.assertIsNone(installer.ensure_portal_account())
+            self.assertTrue(enrollment.status()['available'])
+
+    def test_partial_account_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)):
+            rt.write_json(rt.STATE / 'active.json', {'id': 'a' * 32})
+            with self.assertRaises(ValueError):
+                installer.ensure_portal_account()
+            self.assertFalse((rt.STATE / 'web-enrollment').exists())
 
     def test_legacy_retry_preserves_existing_authenticator(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(rt, 'STATE', Path(folder)):
@@ -163,6 +177,10 @@ class SourceTests(unittest.TestCase):
                  patch('controller.Manager.status', return_value={'job': None}),
                  patch('controller.read_settings', side_effect=lambda root: rt.read_json(rt.machine_path(root, 'settings'), {})),
                  patch('direct.activate', side_effect=activate), patch('builtins.print'),
+                 # One command: a terminal install never interviews or prompts.
+                 patch.object(sys.stdin, 'isatty', return_value=True),
+                 patch('intent.interview', side_effect=AssertionError('interview started')),
+                 patch('builtins.input', side_effect=AssertionError('prompted')),
                  patch('bootstrap.activate', side_effect=lambda **kw: activate(rt.read_json(rt.machine_path(target, 'settings')), **kw)),
                  patch.object(sys, 'argv', ['nixus-install', '--checkout', str(source)] + (['--wizard'] if wizard else []))
             ]

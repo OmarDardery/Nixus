@@ -29,12 +29,12 @@ sudo nix --extra-experimental-features 'nix-command flakes' \
   run github:OmarDardery/Nixus#install
 ```
 
-For a fresh interactive installation, the installer asks about workloads,
-network access, backup intent, monitoring, laptop policy and the apps VM. It displays
-an explicit plan **before** the normal reviewed NixOS activation. Use
-`--interactive` to request the interview explicitly, `--answers /root/answers.json`
-for headless provisioning, or `--plan-only` to preview without publishing.
-Non-TTY operation never waits for input. Answers files contain **no secrets**.
+The command installs the full stack with safe defaults (Incus and its UI,
+Cockpit, the console and the Nixus portal) without asking questions, then hands
+off to the browser: open the printed portal URL and approve its code with
+`sudo nixus-admin approve-enrollment`. Use `--interactive` for a terminal
+interview, `--answers /root/answers.json` for headless choices, or `--plan-only`
+to preview without publishing. Answers files contain **no secrets**.
 See [the generic homelab scenario](home-server-scenario.md) for Incus guests,
 optional device passthrough, Compose applications and backup/restore checks.
 

@@ -193,6 +193,28 @@ def claim_locked(digest, password, username='admin'):
 
 
 
+def ensure_web_enrollment():
+    """Root installer: open console-approved first-admin enrollment on a fresh host.
+
+    Idempotent across retries. An existing account is kept. Any partial or
+    historical account state fails closed instead of re-opening enrollment.
+    """
+    with rt.locked():
+        state = reconcile()
+        if account_valid():
+            return 'account'
+        if state and state['phase'] in {'unclaimed', 'host-verified'}:
+            if not present('web-enrollment'):
+                rt.atomic(rt.STATE / 'web-enrollment', '1\n')
+            return 'enrollment'
+        if (state is None and not host_history()
+                and not any(present(name) for name in ('auth.json', 'users.json', 'setup-password', 'web-enrollment'))):
+            save('unclaimed')
+            rt.atomic(rt.STATE / 'web-enrollment', '1\n')
+            return 'enrollment'
+        raise recovery_error()
+
+
 def ensure_legacy_account():
     """Private installer compatibility, never an anonymous recovery mechanism."""
     with rt.locked():

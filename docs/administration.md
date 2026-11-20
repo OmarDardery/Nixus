@@ -41,8 +41,8 @@ reset. A reboot restores an interrupted checkpoint before starting Arcane.
 For local-console recovery use `sudo nixus-admin arcane reset-password`.
 Passwords never appear in argv, public output, operation records or the Nix store.
 
-Console-approved browser enrollment is explicitly enabled with
-`--wizard --web-enrollment`; the default legacy path is not silently migrated.
+Every fresh installation opens console-approved browser enrollment; no portal
+password is generated.
 An existing or forgotten portal account can be rotated with
 `sudo nixus-admin reset-password` from an authorized private host terminal. It
 refuses non-terminal/echoing input, accepts a supplied password and removes the
@@ -375,7 +375,7 @@ The encrypted secrets recovery kit includes the claim authority with account ver
 
 ### Verify this machine before first-admin creation
 
-On a genuinely unclaimed host installed with `--wizard --web-enrollment`, the HTTPS portal offers **Verify this machine**. Verify the management CA first. Enter an existing local Linux administrator's username and password. The root broker runs the dedicated `nixus-enrollment` PAM service for password and account checks, then asks sudo's policy whether that identity may run an argument-free root Bash shell. Wheel membership or permission for an unrelated limited command alone is insufficient. Locked, expired, missing, noninteractive or nonadministrator accounts and missing PAM support are denied. No Linux user or password is changed. The service uses NixOS PAM rule generation, with root and null-password shortcuts disabled. Additional authentication policy can be configured through that PAM service; challenges that cannot complete through its bounded password input fail closed and require console approval.
+On a genuinely unclaimed freshly installed host, the HTTPS portal offers **Verify this machine**. Verify the management CA first. Enter an existing local Linux administrator's username and password. The root broker runs the dedicated `nixus-enrollment` PAM service for password and account checks, then asks sudo's policy whether that identity may run an argument-free root Bash shell. Wheel membership or permission for an unrelated limited command alone is insufficient. Locked, expired, missing, noninteractive or nonadministrator accounts and missing PAM support are denied. No Linux user or password is changed. The service uses NixOS PAM rule generation, with root and null-password shortcuts disabled. Additional authentication policy can be configured through that PAM service; challenges that cannot complete through its bounded password input fail closed and require console approval.
 
 The host password exists only in the HTTPS request and a protected helper stdin pipe; it is never passed in argv, stored, or returned. The helper's output is discarded. Verification is bounded by helper deadlines, a two-helper concurrency limit, five attempts per source address and twenty globally in five minutes. Bootstrap session creation is also bounded. Rate records and hashed browser session metadata survive a broker/web restart.
 
