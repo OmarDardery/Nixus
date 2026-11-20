@@ -267,6 +267,7 @@
         clock-readiness = import ./tests/clock-readiness-vm.nix { inherit pkgs; };
         project-evaluator = import ./tests/project-evaluator-vm.nix { inherit pkgs; };
         secrets-recovery = import ./tests/native-secrets-recovery-vm.nix { inherit pkgs; };
+        first-run = import ./tests/first-run-vm.nix { inherit pkgs; };
         guest-sops-activation = import ./tests/native-guest-sops-vm.nix { inherit pkgs sops-nix; };
         installer-runtime = self.packages.x86_64-linux.installer.tests.recovery-guard;
         portal = import ./tests/portal-vm.nix { inherit pkgs; };
