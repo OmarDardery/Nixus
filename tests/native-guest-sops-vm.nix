@@ -66,7 +66,9 @@ pkgs.testers.runNixOSTest {
     # A real sops-nix systemd activation must propagate the changed value
     # and trigger the declared consumer restart; no manual consumer restart.
     guest.succeed("systemctl restart sops-install-secrets.service", timeout=120)
-    guest.succeed("${run "verify-rotated"}", timeout=60)
+    # restartUnits queues the consumer restart asynchronously; wait for it to
+    # complete instead of racing it. The rotated digest must still be observed.
+    guest.wait_until_succeeds("${run "verify-rotated"}", timeout=60)
     guest.succeed("systemctl is-active nixus-guest-sops-consumer.service")
   '';
 }
