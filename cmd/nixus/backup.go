@@ -630,12 +630,8 @@ func runBackup(withRecovery bool) error {
 	}
 	coverage := backupCoverage(guests, volumes, selectedGuests, selectedVolumes, namespaces)
 	if withRecovery {
-		out, err := check([]string{os.Getenv("NIXUS_RECOVERY_TOOL"), "recovery-coverage"}, nil, 60*time.Second)
-		if err != nil {
-			return err
-		}
-		rc, err := parseObject(out)
-		if v, _ := num(rc["format"]); err != nil || v != 1 || !isTrue(rc["complete"]) {
+		rc := recoveryCoverage()
+		if v, _ := num(rc["format"]); v != 1 || !isTrue(rc["complete"]) {
 			return Public("Required recovery credentials are missing or unsafe; run nixus-admin recovery coverage before backup")
 		}
 		coverage["recovery"] = rc
@@ -727,7 +723,7 @@ func runBackup(withRecovery bool) error {
 		"guests": selectedGuests, "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
 		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
 	if withRecovery {
-		if _, err := check([]string{os.Getenv("NIXUS_RECOVERY_TOOL"), "recovery-backup", destination}, nil, 30*time.Minute); err != nil {
+		if err := recoveryBackup(destination); err != nil {
 			return err
 		}
 	}
