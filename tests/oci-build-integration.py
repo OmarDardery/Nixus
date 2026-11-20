@@ -63,8 +63,10 @@ assert not list((oci_builds.ROOT / "jobs").iterdir()), "Builder work removed"
 
 
 def incus(*args):
-    return subprocess.run(["incus", "--force-local", *args], check=True, capture_output=True,
-                          text=True, timeout=300).stdout
+    result = subprocess.run(["incus", "--force-local", *args], capture_output=True, text=True, timeout=300)
+    if result.returncode:
+        raise SystemExit("incus " + " ".join(args) + " failed: " + result.stderr[-2000:])
+    return result.stdout
 
 
 # The alias incus-compose resolves for the generated image reference points at
@@ -85,7 +87,10 @@ oci_images.import_image(project, artifact["incusAlias"], artifact["incusFingerpr
 assert len(json.loads(incus("query", "/1.0/images?project=" + project))) == 1
 
 # Incus reads config.json from the image: the OCI container runs the image CMD.
-incus("create", artifact["incusAlias"], "proof", "--project", project, "--storage", "default")
+# Name the local remote explicitly: the alias itself contains a colon.
+print(incus("image", "info", artifact["incusFingerprint"], "--project", project))
+print(incus("profile", "show", "default", "--project", project))
+incus("create", "local:" + artifact["incusAlias"], "proof", "--project", project, "--storage", "default")
 assert incus("config", "get", "proof", "oci.entrypoint", "--project", project).strip() == "/bin/busybox sleep 600"
 incus("start", "proof", "--project", project)
 assert incus("exec", "proof", "--project", project, "--", "/bin/busybox", "cat", "/payload.txt") == "guarded-oci-build\n"
