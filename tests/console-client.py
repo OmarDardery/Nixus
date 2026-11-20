@@ -40,8 +40,10 @@ fzf() {{
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
     process = subprocess.Popen(['bash', '--login', '-i'], stdin=slave, stdout=slave,
                                stderr=slave, env=env, pass_fds=(writer,), preexec_fn=controlling_terminal)
+    started = time.monotonic()
     os.close(slave); os.close(writer)
     output = bytearray()
+    first_prompt = None
     deadline = time.monotonic() + 20
     phase = 'startup'
     try:
@@ -62,6 +64,7 @@ fzf() {{
                 else:
                     for token in data:
                         if token == ord('P') and phase == 'startup':
+                            first_prompt = time.monotonic() - started
                             os.write(master, command.encode()); phase = 'features'
                         elif token == ord('F') and phase == 'features':
                             phase = 'history-prompt'
@@ -74,6 +77,10 @@ fzf() {{
             if process.poll() is not None: break
         assert process.wait(timeout=2) == 0 and phase == 'done', (phase, output.decode(errors='replace'))
         assert b'NIXUS' in output, output.decode(errors='replace')
+        # Startup budget for a cold first login shell (ble.sh builds its cache,
+        # fastfetch runs). Locally ~0.8s cold / ~0.3s warm; VMs are slower.
+        print(f'First interactive prompt after {first_prompt:.2f}s', flush=True)
+        assert first_prompt is not None and first_prompt < 5.0, first_prompt
     finally:
         if process.poll() is None:
             process.kill(); process.wait()
