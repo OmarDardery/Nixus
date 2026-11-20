@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // M is a JSON object.
@@ -120,8 +121,8 @@ func boolean(v any) bool { b, _ := v.(bool); return b }
 
 func isTrue(v any) bool { b, ok := v.(bool); return ok && b }
 
-// path walks nested objects: path(m, "a", "b").
-func path(m M, keys ...string) any {
+// path walks nested objects: jget(m, "a", "b").
+func jget(m M, keys ...string) any {
 	var cur any = m
 	for _, k := range keys {
 		o, ok := cur.(M)
@@ -333,3 +334,5 @@ func check(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
 }
 
 func environ(extra ...string) []string { return append(os.Environ(), extra...) }
+
+func utf8Valid(b []byte) bool { return utf8.Valid(b) }

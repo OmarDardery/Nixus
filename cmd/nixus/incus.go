@@ -208,7 +208,7 @@ func sameValue(a, b any) bool {
 }
 
 func reconcilePlan(current, spec M) (M, error) {
-	if str(path(current, "config", OWNER)) != "true" {
+	if str(jget(current, "config", OWNER)) != "true" {
 		return nil, Public("Refusing to modify unowned instance " + str(spec["name"]))
 	}
 	if str(current["type"]) != str(spec["type"]) {
@@ -222,7 +222,7 @@ func reconcilePlan(current, spec M) (M, error) {
 		return nil, err
 	}
 	old := M{}
-	if raw := str(path(current, "config", LAST_APPLIED)); raw != "" {
+	if raw := str(jget(current, "config", LAST_APPLIED)); raw != "" {
 		if old, err = parseObject([]byte(raw)); err != nil {
 			return nil, Public("Invalid previous Incus ownership metadata")
 		}
@@ -369,7 +369,7 @@ func reconcileInstance(spec M) error {
 	if err != nil {
 		return err
 	}
-	if isTrue(spec["manageExistingOnly"]) && str(path(current, "config", OWNER)) != "true" {
+	if isTrue(spec["manageExistingOnly"]) && str(jget(current, "config", OWNER)) != "true" {
 		fmt.Printf("unowned %s/%s; left untouched\n", project, name)
 		return nil
 	}
@@ -395,7 +395,7 @@ func reconcileInstance(spec M) error {
 			status = str(obj(i)["status"])
 		}
 	}
-	initializing := str(path(current, "config", INITIALIZING)) == "true"
+	initializing := str(jget(current, "config", INITIALIZING)) == "true"
 	start := initializing
 	if v, ok := spec["start"]; ok {
 		start = isTrue(v)
@@ -709,7 +709,7 @@ func summarizeGuests(instances, projects []any, at float64, ports map[string]str
 	for _, p := range projects {
 		pm := obj(p)
 		ns := "default"
-		if str(path(pm, "config", "features.networks")) == "true" {
+		if str(jget(pm, "config", "features.networks")) == "true" {
 			ns = str(pm["name"])
 		}
 		namespaces[str(pm["name"])] = ns
@@ -725,7 +725,7 @@ func summarizeGuests(instances, projects []any, at float64, ports map[string]str
 		running := str(guest["status"]) == "Running"
 		networks := M{}
 		if running {
-			networks = obj(path(guest, "state", "network"))
+			networks = obj(jget(guest, "state", "network"))
 		}
 		config := obj(guest["expanded_config"])
 		if config == nil {

@@ -271,7 +271,7 @@ func impactCapture(candidate M) M {
 			if p, ok := guest["project"]; ok {
 				project = str(p)
 			}
-			if str(path(guest, "config", OWNER)) == "true" {
+			if str(jget(guest, "config", OWNER)) == "true" {
 				value, etag, err := r.read(instancePath(project, str(guest["name"])), false)
 				if err != nil {
 					return err
@@ -304,7 +304,7 @@ func impactFingerprint(snapshot M) string {
 		for _, k := range []string{"name", "project", "type", "profiles", "devices", "expanded_devices"} {
 			value[k] = item[k]
 		}
-		if str(path(item, "config", OWNER)) == "true" {
+		if str(jget(item, "config", OWNER)) == "true" {
 			config := M{}
 			for k, v := range obj(item["config"]) {
 				if !strings.HasPrefix(k, "volatile.") {
@@ -456,7 +456,7 @@ func impactConsumers(identity string, snapshot M) []string {
 
 func configuredBridgePorts(settings M) map[string]string {
 	out := map[string]string{}
-	for _, b := range list(path(settings, "connectivity", "bridges")) {
+	for _, b := range list(jget(settings, "connectivity", "bridges")) {
 		bridge := obj(b)
 		for _, p := range list(bridge["interfaces"]) {
 			out[str(p)] = str(bridge["name"])
@@ -482,7 +482,7 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		p.add("runtime", "incus", "unknown", "Runtime inventory is incomplete or unavailable.", nil, nil, true,
 			"Restore local Incus access and build a new review; an empty inventory is not assumed.")
 	}
-	expected := isTrue(path(before, "settings", "ready"))
+	expected := isTrue(jget(before, "settings", "ready"))
 	if v, ok := before["expectedIncus"]; ok {
 		expected = isTrue(v)
 	}
@@ -499,8 +499,8 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 			}
 		}
 	}
-	serverBefore := obj(path(before, "preseed", "config"))
-	serverAfter := obj(path(after, "preseed", "config"))
+	serverBefore := obj(jget(before, "preseed", "config"))
+	serverAfter := obj(jget(after, "preseed", "config"))
 	if len(serverAfter) > 0 {
 		p.ownership = append(p.ownership, M{"identity": "incus-server", "owner": "Nix declared keys; other keys remain Incus",
 			"fields": strings2any(keys(serverAfter)), "consumers": []any{}})
@@ -648,7 +648,7 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 	for _, identity := range keys(mapToM(desired)) {
 		spec := desired[identity]
 		current := guests[identity]
-		owned := str(path(current, "config", OWNER)) == "true"
+		owned := str(jget(current, "config", OWNER)) == "true"
 		if isTrue(spec["manageExistingOnly"]) && (current == nil || !owned) {
 			continue
 		}
@@ -710,13 +710,13 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		}
 	}
 	oldMounts, newMounts := M{}, M{}
-	for _, m := range list(path(before, "settings", "mounts")) {
+	for _, m := range list(jget(before, "settings", "mounts")) {
 		oldMounts[str(obj(m)["name"])] = m
 	}
 	for k, v := range obj(before["disks"]) {
 		oldMounts[k] = v
 	}
-	for _, m := range list(path(after, "settings", "mounts")) {
+	for _, m := range list(jget(after, "settings", "mounts")) {
 		newMounts[str(obj(m)["name"])] = m
 	}
 	for k, v := range obj(after["disks"]) {
@@ -752,7 +752,7 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		}
 		var pools []string
 		for _, key := range keys(all) {
-			if strings.HasPrefix(key, "storage_pools:") && onMount(str(path(obj(all[key]), "config", "source"))) {
+			if strings.HasPrefix(key, "storage_pools:") && onMount(str(jget(obj(all[key]), "config", "source"))) {
 				pools = append(pools, key)
 			}
 		}
@@ -791,7 +791,7 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		if incusMount {
 			affected["incus.service"], affected["incus-preseed.service"], affected["nixus-instances.service"] = true, true, true
 		}
-		backup := obj(path(before, "settings", "backup"))
+		backup := obj(jget(before, "settings", "backup"))
 		if isTrue(backup["enable"]) && (incusMount || role == "backup" || onMount(str(backup["stagingDirectory"]))) {
 			affected["restic-backups-nixus.service"] = true
 		}

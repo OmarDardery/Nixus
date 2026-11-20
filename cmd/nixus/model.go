@@ -51,7 +51,7 @@ func hostInventory() M {
 		if name == "lo" || name == "" {
 			continue
 		}
-		kind := str(path(link, "linkinfo", "info_kind"))
+		kind := str(jget(link, "linkinfo", "info_kind"))
 		if kind == "" {
 			kind = "ethernet"
 		}
@@ -280,11 +280,11 @@ func intValue(v any) (int, bool) {
 }
 
 func validateBootstrap(settings, host M) error {
-	if isTrue(settings["ready"]) || isTrue(path(settings, "management", "configure")) || !isTrue(path(settings, "setup", "enable")) {
+	if isTrue(settings["ready"]) || isTrue(jget(settings, "management", "configure")) || !isTrue(jget(settings, "setup", "enable")) {
 		return Public("Initial onboarding must preserve networking and keep the portal enabled on an unconfigured host")
 	}
 	for _, section := range []string{"cockpit", "backup", "tunnel"} {
-		if isTrue(path(settings, section, "enable")) {
+		if isTrue(jget(settings, section, "enable")) {
 			return Public("Initial onboarding cannot activate optional host services or mounts; use the full guarded installer")
 		}
 	}
@@ -320,11 +320,11 @@ func validateBootstrap(settings, host M) error {
 			return Public("Configure trusted IPv4 management sources")
 		}
 	}
-	port, ok := intValue(path(settings, "setup", "port"))
+	port, ok := intValue(jget(settings, "setup", "port"))
 	if !ok || port < 1024 || port > 65535 || port == 8080 || port == 8443 || port == 9090 || port == 9091 || port == 9100 {
 		return Public("Choose an unused portal management port")
 	}
-	deadline, ok := intValue(path(settings, "setup", "confirmationSeconds"))
+	deadline, ok := intValue(jget(settings, "setup", "confirmationSeconds"))
 	if !ok || deadline < 300 || deadline > 1800 {
 		return Public("Activation confirmation must allow 5–30 minutes")
 	}
@@ -362,11 +362,11 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 			return nil, Public("Supply valid administrator SSH public keys")
 		}
 	}
-	bridge := str(path(candidate, "guests", "bridge"))
+	bridge := str(jget(candidate, "guests", "bridge"))
 	if _, ok := obj(candidate["guests"])["bridge"]; !ok {
 		bridge = "incusbr0"
 	}
-	pool := str(path(candidate, "storage", "pool"))
+	pool := str(jget(candidate, "storage", "pool"))
 	if _, ok := obj(candidate["storage"])["pool"]; !ok {
 		pool = "guests"
 	}
@@ -387,7 +387,7 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 	if err != nil {
 		return nil, err
 	}
-	m, w := obj(candidate["management"]), obj(path(candidate, "radios", "wifi"))
+	m, w := obj(candidate["management"]), obj(jget(candidate, "radios", "wifi"))
 	mi := str(m["interface"])
 	if requireDevices && interfaces[mi] == nil && !declared[mi] {
 		return nil, Public("Management interface was not discovered on this host")
@@ -441,12 +441,12 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		name         string
 		lower, upper int
 	}{{"retentionDays", 1, 90}, {"scrapeSeconds", 15, 300}} {
-		v, ok := intValue(path(candidate, "monitoring", f.name))
+		v, ok := intValue(jget(candidate, "monitoring", f.name))
 		if !ok || v < f.lower || v > f.upper {
 			return nil, Public("Monitoring %s must be between %d and %d", f.name, f.lower, f.upper)
 		}
 	}
-	zone := str(path(candidate, "maintenance", "timeZone"))
+	zone := str(jget(candidate, "maintenance", "timeZone"))
 	if !fullmatch(timeZone, zone) {
 		return nil, Public("Invalid time zone")
 	}
@@ -457,9 +457,9 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		name string
 		port any
 	}
-	listeners := []listener{{"setup", path(candidate, "setup", "port")}}
-	if isTrue(path(candidate, "cockpit", "enable")) {
-		listeners = append(listeners, listener{"Cockpit", path(candidate, "cockpit", "port")})
+	listeners := []listener{{"setup", jget(candidate, "setup", "port")}}
+	if isTrue(jget(candidate, "cockpit", "enable")) {
+		listeners = append(listeners, listener{"Cockpit", jget(candidate, "cockpit", "port")})
 	}
 	used := map[int]bool{22: true, 53: true, 67: true, 8080: true, 8443: true, 9100: true}
 	for _, l := range listeners {
@@ -469,10 +469,10 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		}
 		used[p] = true
 	}
-	if c, _ := num(path(candidate, "setup", "confirmationSeconds")); c < 300 || c > 1800 {
+	if c, _ := num(jget(candidate, "setup", "confirmationSeconds")); c < 300 || c > 1800 {
 		return nil, Public("Activation confirmation must allow 5–30 minutes")
 	}
-	if !isTrue(path(candidate, "setup", "enable")) {
+	if !isTrue(jget(candidate, "setup", "enable")) {
 		return nil, Public("The setup service cannot disable its own recovery/access path")
 	}
 	mounts := list(candidate["mounts"])
@@ -593,8 +593,8 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		if !fullmatch(re(`[0-9a-fA-F-]{36}`), str(tunnel["uuid"])) || len(ingress) == 0 {
 			return nil, Public("Provide the existing tunnel UUID and application hostnames")
 		}
-		setupPort, _ := intValue(path(candidate, "setup", "port"))
-		cockpitPort, _ := intValue(path(candidate, "cockpit", "port"))
+		setupPort, _ := intValue(jget(candidate, "setup", "port"))
+		cockpitPort, _ := intValue(jget(candidate, "cockpit", "port"))
 		blocked := map[int]bool{22: true, 8443: true, 9090: true, 9100: true, 9440: true, 9441: true, 9443: true, setupPort: true, cockpitPort: true}
 		for hostname, raw := range ingress {
 			target, ok := raw.(string)
@@ -861,7 +861,7 @@ func validateFoundation(site, host M) (map[string]bool, error) {
 			}
 		}
 	}
-	aliases, err := foundationRecords(path(site, "hardware", "serialAliases"), []string{"name", "vendorId", "productId", "serial"}, "serial aliases")
+	aliases, err := foundationRecords(jget(site, "hardware", "serialAliases"), []string{"name", "vendorId", "productId", "serial"}, "serial aliases")
 	if err != nil {
 		return nil, err
 	}

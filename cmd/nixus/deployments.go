@@ -430,7 +430,7 @@ func publicTargets(targets, observations M) []any {
 			checks = 0
 		}
 		out = append(out, M{"id": key, "project": spec["project"], "name": spec["name"], "targetSystem": spec["system"],
-			"currentSystem": path(obj(obs["current"]), "profile"), "dependsOn": spec["dependsOn"],
+			"currentSystem": jget(obj(obs["current"]), "profile"), "dependsOn": spec["dependsOn"],
 			"restartPolicy": spec["restartPolicy"], "maxAttempts": spec["maxAttempts"], "healthTimeout": spec["healthTimeout"],
 			"healthUnits": units, "httpChecks": checks, "observation": message})
 	}
@@ -619,7 +619,7 @@ func (d *Deployments) submit(id string, resume any, principal string) (M, error)
 			for _, key := range keys(targets) {
 				spec := obj(targets[key])
 				current, e := deploymentObservation(spec)
-				reviewed := obj(path(obj(bundle["observations"]), key, "current"))
+				reviewed := obj(jget(obj(bundle["observations"]), key, "current"))
 				if current != nil {
 					differs := reviewed == nil || !equalJSON(current["uuid"], reviewed["uuid"]) ||
 						!equalJSON(current["fingerprint"], reviewed["fingerprint"]) ||

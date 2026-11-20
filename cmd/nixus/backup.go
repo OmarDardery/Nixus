@@ -69,7 +69,7 @@ func saveRestartPending(pending []any) error {
 }
 
 func instanceIdentity(guest M) M {
-	return M{"project": guest["project"], "name": guest["name"], "uuid": path(guest, "config", "volatile.uuid")}
+	return M{"project": guest["project"], "name": guest["name"], "uuid": jget(guest, "config", "volatile.uuid")}
 }
 
 func verifyIdentity(guest M) error {
@@ -81,7 +81,7 @@ func verifyIdentity(guest M) error {
 		return err
 	}
 	current, err := parseObject([]byte(out))
-	if err != nil || str(path(current, "config", "volatile.uuid")) != str(guest["uuid"]) {
+	if err != nil || str(jget(current, "config", "volatile.uuid")) != str(guest["uuid"]) {
 		return Hidden("Guest identity changed after inventory; refusing backup lifecycle changes")
 	}
 	return nil
@@ -433,7 +433,7 @@ func stagingPlan(guests, volumes []M, reserve int64, withRecovery bool) M {
 		var usage any
 		if out, err := backupIncus(15*time.Second, "query", p); err == nil {
 			if state, err := parseObject([]byte(out)); err == nil {
-				usage = path(state, "disk", "root", "usage")
+				usage = jget(state, "disk", "root", "usage")
 			}
 		}
 		var prev any
@@ -448,7 +448,7 @@ func stagingPlan(guests, volumes []M, reserve int64, withRecovery bool) M {
 		var usage any
 		if out, err := backupIncus(15*time.Second, "query", p); err == nil {
 			if state, err := parseObject([]byte(out)); err == nil {
-				usage = path(state, "usage", "used")
+				usage = jget(state, "usage", "used")
 			}
 		}
 		var prev any
@@ -516,7 +516,7 @@ func runBackup(withRecovery bool) error {
 	for _, p := range projects {
 		pm := obj(p)
 		ns := "default"
-		if str(path(pm, "config", "features.storage.volumes")) == "true" {
+		if str(jget(pm, "config", "features.storage.volumes")) == "true" {
 			ns = str(pm["name"])
 		}
 		namespaces[str(pm["name"])] = ns

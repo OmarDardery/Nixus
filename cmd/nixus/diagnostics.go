@@ -58,7 +58,7 @@ func requirePlausibleClock() error {
 }
 
 func managementAddress(settings M) (string, error) {
-	iface := str(path(settings, "management", "interface"))
+	iface := str(jget(settings, "management", "interface"))
 	out, err := check([]string{"ip", "-j", "-4", "address", "show", "dev", iface}, nil, 10*time.Second)
 	if err != nil {
 		return "", err
@@ -72,13 +72,13 @@ func managementAddress(settings M) (string, error) {
 			}
 		}
 	}
-	configured := str(path(settings, "management", "address"))
+	configured := str(jget(settings, "management", "address"))
 	for _, a := range assigned {
 		if a == configured {
 			return configured, nil
 		}
 	}
-	if len(assigned) > 0 && !isTrue(path(settings, "management", "configure")) {
+	if len(assigned) > 0 && !isTrue(jget(settings, "management", "configure")) {
 		return assigned[0], nil
 	}
 	return "", Public("Management interface has no usable address: " + iface)
@@ -123,12 +123,12 @@ func probe(settings M) (M, error) {
 	if ready {
 		targets = append(targets, target{"Incus API", 8443, "/1.0"}, target{"Incus UI", 8443, "/ui/"})
 	}
-	setupPort, _ := intValue(path(settings, "setup", "port"))
-	if isTrue(path(settings, "setup", "enable")) {
+	setupPort, _ := intValue(jget(settings, "setup", "port"))
+	if isTrue(jget(settings, "setup", "enable")) {
 		targets = append(targets, target{"Nixus", setupPort, "/"})
 	}
-	if ready && isTrue(path(settings, "cockpit", "enable")) {
-		p, _ := intValue(path(settings, "cockpit", "port"))
+	if ready && isTrue(jget(settings, "cockpit", "enable")) {
+		p, _ := intValue(jget(settings, "cockpit", "port"))
 		targets = append(targets, target{"Cockpit", p, "/ping"})
 	}
 	client, cerr := managementClient()
@@ -150,7 +150,7 @@ func probe(settings M) (M, error) {
 		checks = append(checks, M{"name": t.name, "url": url, "ok": status == 200, "detail": fmt.Sprintf("HTTP %d", status)})
 		ok = ok && status == 200
 	}
-	if isTrue(path(settings, "setup", "enable")) {
+	if isTrue(jget(settings, "setup", "enable")) {
 		plain := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		url := fmt.Sprintf("http://%s:80", address)
 		resp, err := plain.Get(url + "/")
@@ -203,7 +203,7 @@ func writeCockpitOrigins(address string, settings M) error {
 	if err != nil {
 		return err
 	}
-	port, _ := intValue(path(settings, "cockpit", "port"))
+	port, _ := intValue(jget(settings, "cockpit", "port"))
 	set := map[string]bool{address: true, "127.0.0.1": true, "localhost": true, str(settings["hostName"]): true}
 	var hosts []string
 	for h := range set {
@@ -247,7 +247,7 @@ func identityRefresh(settings M) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if isTrue(path(settings, "cockpit", "enable")) {
+	if isTrue(jget(settings, "cockpit", "enable")) {
 		if err := writeCockpitOrigins(address, settings); err != nil {
 			return "", err
 		}

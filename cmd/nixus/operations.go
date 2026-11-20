@@ -55,7 +55,7 @@ func listGuests(projectArg any) ([]any, error) {
 	for _, raw := range items {
 		guest := obj(raw)
 		addresses := []any{}
-		for _, network := range obj(path(guest, "state", "network")) {
+		for _, network := range obj(jget(guest, "state", "network")) {
 			for _, a := range list(obj(network)["addresses"]) {
 				if str(obj(a)["scope"]) == "global" {
 					addresses = append(addresses, obj(a)["address"])
@@ -67,7 +67,7 @@ func listGuests(projectArg any) ([]any, error) {
 			config = obj(guest["config"])
 		}
 		drift := ""
-		if str(path(guest, "config", OWNER)) == "true" {
+		if str(jget(guest, "config", OWNER)) == "true" {
 			for _, d := range list(declared) {
 				spec := obj(d)
 				if str(spec["project"]) == project && str(spec["name"]) == str(guest["name"]) {
@@ -241,7 +241,7 @@ func (o *Operations) archiveSettings() (M, error) {
 	if len(settings) == 0 {
 		settings = readObj(machinePath(o.root, "settings"))
 	}
-	staging := str(path(settings, "backup", "stagingDirectory"))
+	staging := str(jget(settings, "backup", "stagingDirectory"))
 	if staging == "" {
 		return nil, Hidden("No backup settings")
 	}
@@ -359,7 +359,7 @@ func (o *Operations) submit(request M, principal string) (M, error) {
 	if !isTrue(settings["ready"]) {
 		return nil, Public("Complete host setup before managing guests")
 	}
-	if (action == "backup" || action == "backup-check") && !isTrue(path(settings, "backup", "enable")) {
+	if (action == "backup" || action == "backup-check") && !isTrue(jget(settings, "backup", "enable")) {
 		return nil, Public("Configure an independent backup destination first")
 	}
 	switch action {
@@ -489,7 +489,7 @@ func (o *Operations) perform(job M) (M, error) {
 			return nil, err
 		}
 	}
-	if (action == "start" || action == "restart") && str(path(current, "config", "user.nixus.restore-review")) == "required" {
+	if (action == "start" || action == "restart") && str(jget(current, "config", "user.nixus.restore-review")) == "required" {
 		return nil, Public("Review restored networking, disks and credentials, then release the restore before starting it")
 	}
 	switch action {

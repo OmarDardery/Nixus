@@ -373,7 +373,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 		return nil, err
 	}
 	for _, pair := range [][2]string{{"backup", "passwordFile"}, {"backup", "environmentFile"}, {"tunnel", "credentialsFile"}} {
-		if !equalJSON(path(candidate, pair[0], pair[1]), path(current, pair[0], pair[1])) {
+		if !equalJSON(jget(candidate, pair[0], pair[1]), jget(current, pair[0], pair[1])) {
 			return nil, Public("Secret file paths are source-managed")
 		}
 	}
@@ -391,7 +391,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 		}
 	}
 	install := readObj(machinePath(m.root, "installation"))
-	wifi := obj(path(candidate, "radios", "wifi"))
+	wifi := obj(jget(candidate, "radios", "wifi"))
 	if isTrue(install["legacyWpaProfiles"]) && isTrue(wifi["enable"]) && !isTrue(wifi["manageProfile"]) {
 		return nil, Public("This host used Nix wpa_supplicant profiles. Declare its SSID/password when moving Wi-Fi to NetworkManager/iwd")
 	}
@@ -399,14 +399,14 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	sops := isTrue(path(candidate, "secrets", "enable"))
+	sops := isTrue(jget(candidate, "secrets", "enable"))
 	kept := func(field string) bool {
 		if sops {
 			return hostSecretPresent(m.root, field)
 		}
 		return exists(SECRET_PATHS[field])
 	}
-	if isTrue(path(candidate, "cockpit", "enable")) && isTrue(path(candidate, "cockpit", "managePassword")) {
+	if isTrue(jget(candidate, "cockpit", "enable")) && isTrue(jget(candidate, "cockpit", "managePassword")) {
 		if _, ok := encoded["cockpitPassword"]; !ok && !kept("cockpitPassword") {
 			return nil, Public("Set the Cockpit operator password, or retain existing local-account authentication")
 		}
@@ -416,7 +416,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 			return nil, Public("Provide the WPA password for the managed Wi-Fi profile")
 		}
 	}
-	if isTrue(path(candidate, "backup", "enable")) {
+	if isTrue(jget(candidate, "backup", "enable")) {
 		if _, ok := encoded["resticPassword"]; !ok && !kept("resticPassword") {
 			return nil, Public("Provide the restic repository password")
 		}
@@ -424,7 +424,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 			encoded["resticEnvironment"] = ""
 		}
 	}
-	if isTrue(path(candidate, "tunnel", "enable")) {
+	if isTrue(jget(candidate, "tunnel", "enable")) {
 		if _, ok := encoded["tunnelCredentials"]; !ok && !kept("tunnelCredentials") {
 			return nil, Public("Provide the tunnel-specific credentials JSON")
 		}
@@ -434,7 +434,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 		runtimeSettings = obj(previous["settings"])
 	}
 	if o.HostRole == "hypervisor" {
-		guestNet, err := parseNetwork(path(candidate, "guests", "cidr"))
+		guestNet, err := parseNetwork(jget(candidate, "guests", "cidr"))
 		if err != nil {
 			return nil, err
 		}
@@ -524,7 +524,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	}
 	encrypted := []string{}
 	if sops && len(encoded) > 0 {
-		if encrypted, err = hostSecretsWrite(filepath.Join(directory, "source"), encoded, str(path(candidate, "secrets", "ageKeyFile"))); err != nil {
+		if encrypted, err = hostSecretsWrite(filepath.Join(directory, "source"), encoded, str(jget(candidate, "secrets", "ageKeyFile"))); err != nil {
 			return nil, err
 		}
 		encoded = M{}

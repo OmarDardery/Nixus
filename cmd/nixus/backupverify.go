@@ -184,7 +184,7 @@ func verificationStatus(enabled bool, policyPath, statePath, repository string) 
 		result["state"], result["lastMode"], result["finishedAt"] = phase, record["mode"], finished
 		if success != nil {
 			result["lastSuccess"] = success
-			result["timeWarning"] = path(success, "clock", "evidenceWarning")
+			result["timeWarning"] = jget(success, "clock", "evidenceWarning")
 		} else {
 			result["lastSuccess"] = nil
 		}

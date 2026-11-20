@@ -1203,7 +1203,7 @@ func encodeSecrets(values M, settings M) (M, error) {
 			}
 			value = "NIXUS_WIFI_PSK=" + shellQuote(strings.ReplaceAll(value, `\`, `\\`)) + "\n"
 		case "cockpitPassword":
-			if !isTrue(path(settings, "cockpit", "managePassword")) {
+			if !isTrue(jget(settings, "cockpit", "managePassword")) {
 				return nil, Public("Cockpit password enrollment must manage the operator password")
 			}
 			if n < 16 || n > 256 || strings.ContainsAny(value, "\n\r") {
@@ -1250,7 +1250,7 @@ func encodeSecrets(values M, settings M) (M, error) {
 			if !valid {
 				return nil, Public("Use the tunnel-specific Cloudflare credentials JSON")
 			}
-			if str(data["TunnelID"]) != str(path(settings, "tunnel", "uuid")) {
+			if str(data["TunnelID"]) != str(jget(settings, "tunnel", "uuid")) {
 				return nil, Public("Tunnel credentials do not match the configured UUID")
 			}
 			raw, _ := json.Marshal(data)

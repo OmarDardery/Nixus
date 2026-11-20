@@ -228,7 +228,7 @@ func workerBuild(directory string) error {
 			wantsCockpit = true
 		}
 	}
-	if wantsCockpit && !(isTrue(path(effective, "cockpit", "enable")) && isTrue(path(effective, "cockpit", "managePassword"))) {
+	if wantsCockpit && !(isTrue(jget(effective, "cockpit", "enable")) && isTrue(jget(effective, "cockpit", "managePassword"))) {
 		return Public("Cockpit password enrollment conflicts with file-owned effective settings")
 	}
 	validation := cloneM(effective)
@@ -255,10 +255,10 @@ func workerBuild(directory string) error {
 	changedInputs := []any{}
 	for _, k := range keys(newInputs) {
 		value := obj(newInputs[k])
-		oldLocked := path(obj(oldInputs[k]), "locked")
+		oldLocked := jget(obj(oldInputs[k]), "locked")
 		if !equalJSON(value["locked"], oldLocked) {
-			changedInputs = append(changedInputs, M{"input": k, "before": path(obj(oldInputs[k]), "locked", "rev"),
-				"after": path(value, "locked", "rev")})
+			changedInputs = append(changedInputs, M{"input": k, "before": jget(obj(oldInputs[k]), "locked", "rev"),
+				"after": jget(value, "locked", "rev")})
 		}
 	}
 	booted, _ := filepath.EvalSymlinks("/run/booted-system/kernel")
@@ -307,7 +307,7 @@ func saveRecovery(directory string) error {
 	if candidate == nil {
 		candidate = obj(record["settings"])
 	}
-	if isTrue(path(candidate, "cockpit", "managePassword")) {
+	if isTrue(jget(candidate, "cockpit", "managePassword")) {
 		if err := saveOperatorPassword(recovery); err != nil {
 			return err
 		}
@@ -693,7 +693,7 @@ func workerApply(directory string) error {
 			if _, err := hostCommand([]string{"systemctl", "is-active", "incus.service", "nixus-instances.service"}, log, 30*time.Second, true); err != nil {
 				return err
 			}
-			if isTrue(path(effective, "cockpit", "enable")) {
+			if isTrue(jget(effective, "cockpit", "enable")) {
 				if _, err := hostCommand([]string{"systemctl", "is-active", "cockpit.socket"}, log, 30*time.Second, true); err != nil {
 					return err
 				}
@@ -718,7 +718,7 @@ func workerApply(directory string) error {
 			return err
 		}
 		writeJSON(filepath.Join(directory, "health.json"), report)
-		seconds, _ := num(path(effective, "setup", "confirmationSeconds"))
+		seconds, _ := num(jget(effective, "setup", "confirmationSeconds"))
 		deadline := now() + seconds
 		if err := writeJSON(filepath.Join(STATE, "pending.json"), M{"id": filepath.Base(directory), "previousSystem": previous, "deadline": deadline}); err != nil {
 			return err
