@@ -258,7 +258,17 @@ def cli(argv):
     create.add_argument('--recipient'); create.add_argument('--include-secrets', action='store_true')
     verify = commands.add_parser('inspect'); verify.add_argument('archive', type=Path)
     restore = commands.add_parser('stage'); restore.add_argument('archive', type=Path); restore.add_argument('destination', type=Path)
+    approve = commands.add_parser('approve', help='Approve a portal "Recover access" request shown in a browser')
+    approve.add_argument('request_id'); approve.add_argument('--user')
     args = parser.parse_args(argv)
+    if args.command == 'approve':
+        import browser_recovery
+        try:
+            browser_recovery.approve(args.request_id, args.user)
+        except (ValueError, PermissionError) as exc:
+            raise SystemExit(rt.public_error(exc)) from None
+        print('Approved; return to the browser to choose a new portal password.')
+        return
     if args.command == 'export':
         with rt.locked(blocking=False): result = export(args.directory, args.recipient, args.include_secrets)
     elif args.command == 'inspect': result = inspect(args.archive)[0]

@@ -116,6 +116,33 @@ def after_reboot():
     assert not (STATE / 'web-enrollment').exists()
 
 
+def recover():
+    """Forgotten password: browser-bound request, real root CLI approval (#28)."""
+    new = 'first-run-vm-recovered-password-2!'
+    status, start, headers = request('/api/recovery')
+    assert status == 200 and not start['approved'], start
+    cookie = headers['Set-Cookie'].split(';')[0]
+    # Another browser cannot finish this request, approved or not.
+    _, other, other_headers = request('/api/recovery')
+    other_cookie = other_headers['Set-Cookie'].split(';')[0]
+    approval = subprocess.run(['nixus-admin', 'recovery', 'approve', start['requestId'], '--user', USER],
+                              capture_output=True, text=True, timeout=60)
+    assert approval.returncode == 0 and 'Approved' in approval.stdout, approval
+    assert new not in approval.stdout + approval.stderr
+    status, _, _ = request('/api/recovery/complete', {'password': new}, other_cookie, other['csrf'])
+    assert status != 200
+    status, done, _ = request('/api/recovery/complete', {'password': new}, cookie, start['csrf'])
+    assert status == 200 and done['username'] == USER, done
+    status, again, _ = request('/api/recovery/complete', {'password': new + 'x'}, cookie, start['csrf'])
+    assert status != 200, 'A consumed recovery request was reused'
+    assert request('/api/login', {'username': USER, 'password': PASSWORD})[0] != 200
+    assert request('/api/login', {'username': USER, 'password': new})[0] == 200
+    for path in STATE.rglob('*'):
+        if path.is_file():
+            assert new.encode() not in path.read_bytes(), path
+
+
 if __name__ == '__main__':
-    {'claim': lambda: (claim(), host_secrets_roundtrip()), 'after-reboot': after_reboot}[sys.argv[1]]()
+    {'claim': lambda: (claim(), host_secrets_roundtrip()), 'after-reboot': after_reboot,
+     'recover': recover}[sys.argv[1]]()
     print('first-run ' + sys.argv[1] + ' passed', flush=True)

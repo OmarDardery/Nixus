@@ -43,8 +43,12 @@ Passwords never appear in argv, public output, operation records or the Nix stor
 
 Every fresh installation opens console-approved browser enrollment; no portal
 password is generated.
-An existing or forgotten portal account can be rotated with
-`sudo nixus-admin reset-password` from an authorized private host terminal. It
+A forgotten portal password is normally recovered from the sign-in page:
+**Recover access** creates a browser-bound request whose ID an administrator
+approves with `sudo nixus-admin recovery approve ID [--user NAME]`, then that
+browser sets a new password once within five minutes (see
+[plain NixOS installation](plain-nixos.md#forgotten-portal-password)).
+The direct fallback is `sudo nixus-admin reset-password` from an authorized private host terminal. It
 refuses non-terminal/echoing input, accepts a supplied password and removes the
 old setup plaintext only after committing its replacement verifier. Existing
 sessions fail their next identity check; no UI restart is necessary. Do not put

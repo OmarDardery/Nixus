@@ -49,6 +49,7 @@ in pkgs.testers.runNixOSTest {
     machine.wait_for_unit("nixus-ui.service")
     machine.wait_for_open_port(9440)
     machine.succeed("python3 /etc/nixus-test-client.py after-reboot", timeout=120)
+    machine.succeed("python3 /etc/nixus-test-client.py recover", timeout=120)
     machine.succeed("systemctl is-active nixus-admin-backend.service nixus-ui.service cockpit.socket")
   '';
 }

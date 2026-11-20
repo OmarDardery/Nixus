@@ -479,3 +479,6 @@ td code{font-size:12px}
 .setup-copy h3 { margin: 0 0 4px; font-size: 1rem; }
 .setup-state { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
 @media (max-width: 640px) { .setup-step { grid-template-columns: 28px 1fr; } .setup-state, .setup-step button { grid-column: 2; justify-self: start; } }
+
+button.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+pre.command { white-space: pre-wrap; word-break: break-all; padding: 10px 12px; border: 1px solid var(--line, #2a313b); }
