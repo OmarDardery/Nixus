@@ -199,6 +199,9 @@ def backend():
                               'backupVerification': backup_verification.status(settings['backup']['enable'], repository=settings['backup']['repository'])}
                 elif self.path == '/guests':
                     result = {'guests': guests() if manager.settings()['ready'] else []}
+                elif self.path == '/oci/status':
+                    from oci_builds import OCIBuilds
+                    result = OCIBuilds().status()
                 elif self.path == '/project/status':
                     from project_transactions import ProjectTransactions
                     result = ProjectTransactions().status()
@@ -272,6 +275,14 @@ def backend():
                     # forwards an unbound browser claim to this legacy route.
                     import accounts
                     result = accounts.claim_enrollment(body.get('code'), body.get('password'))
+                elif self.path in ('/oci/review', '/oci/build'):
+                    from oci_builds import OCIBuilds
+                    engine = OCIBuilds()
+                    if self.path == '/oci/review':
+                        result = engine.review(body.get('project'), body.get('revision'), principal=actor)
+                    else:
+                        result = engine.queue(body.get('id'), body.get('planHash'),
+                                              resume=body.get('resume') is True)
                 elif self.path in ('/project-import/prepare', '/project-import/chunk', '/project-import/finish',
                                    '/project-import/review', '/project-import/publish', '/project-import/plan'):
                     import native_imports
@@ -755,7 +766,7 @@ def web():
                 if path == '/api/browser-certificates':
                     if session['role'] != 'admin': raise access_accounts.AuthorizationError('Administrator account required')
                     return reply(self, 200, broker_request('GET', '/browser-certificates'))
-                if path in ('/api/releases', '/api/main-revision', '/api/project-imports', '/api/project/status', '/api/project-secrets', '/api/setup-progress'):
+                if path in ('/api/releases', '/api/main-revision', '/api/project-imports', '/api/project/status', '/api/project-secrets', '/api/setup-progress', '/api/oci/status'):
                     if session['role'] != 'admin': raise access_accounts.AuthorizationError('Administrator account required')
                     return reply(self, 200, broker_request('GET', path[4:]))
                 if path.startswith('/api/deployment/'):
@@ -836,7 +847,9 @@ def web():
                     # even to prepare encrypted review material.
                     if not accounts.matches(session['username'], body.pop('current', None)):
                         raise rt.PublicError('Reauthenticate to manage encrypted project secrets')
-                if self.path in ('/api/project-import/prepare', '/api/project-import/publish'):
+                if self.path in ('/api/project-import/prepare', '/api/project-import/publish', '/api/oci/review', '/api/oci/build'):
+                    if self.path.startswith('/api/oci/') and body.get('acknowledge') is not True:
+                        raise rt.PublicError('Explicitly acknowledge the offline OCI build and resource costs')
                     # Import and publication use separate, fresh password checks.
                     # Review alone never writes persistent project source.
                     if not accounts.matches(session['username'], body.pop('current', None)):
@@ -904,7 +917,7 @@ def web():
                 if self.path in ('/api/recovery-export', '/api/users'):
                     if not accounts.matches(session['username'], body.pop('current', None)):
                         raise rt.PublicError('Reauthenticate before exporting recovery material or changing accounts')
-                actions = {'/api/project-import/prepare', '/api/project-import/chunk', '/api/project-import/finish', '/api/project-import/review', '/api/project-import/publish', '/api/project-import/plan', '/api/review', '/api/apply', '/api/confirm', '/api/rollback', '/api/cancel', '/api/migrate-layout', '/api/operation', '/api/users', '/api/recovery-export', '/api/cancel-backup', '/api/deploy-guests', '/api/project/initialize', '/api/project/review', '/api/project/publish', '/api/project/rollback', '/api/project/cancel', '/api/project/recover', '/api/project/deploy', '/api/project-secrets/enroll', '/api/project-secrets/review', '/api/project-secrets/publish', '/api/project-secrets/recover', '/api/project-secrets/reindex', '/api/project-secrets/recovery-export', '/api/project-secrets/recovery-verify', '/api/project-secrets/recovery-restore'}
+                actions = {'/api/project-import/prepare', '/api/project-import/chunk', '/api/project-import/finish', '/api/project-import/review', '/api/project-import/publish', '/api/project-import/plan', '/api/oci/review', '/api/oci/build', '/api/review', '/api/apply', '/api/confirm', '/api/rollback', '/api/cancel', '/api/migrate-layout', '/api/operation', '/api/users', '/api/recovery-export', '/api/cancel-backup', '/api/deploy-guests', '/api/project/initialize', '/api/project/review', '/api/project/publish', '/api/project/rollback', '/api/project/cancel', '/api/project/recover', '/api/project/deploy', '/api/project-secrets/enroll', '/api/project-secrets/review', '/api/project-secrets/publish', '/api/project-secrets/recover', '/api/project-secrets/reindex', '/api/project-secrets/recovery-export', '/api/project-secrets/recovery-verify', '/api/project-secrets/recovery-restore'}
                 if self.path not in actions:
                     return reply(self, 404, {'error': 'Unknown action'})
                 body['_actor'] = session['username']
@@ -1236,6 +1249,11 @@ if __name__ == '__main__':
             sys.exit('Command failed; check inputs and host status before retrying')
     elif action == 'projects' and os.geteuid() == 0:
         project_cli(sys.argv[2:])
+    elif action == 'oci-build-job' and os.geteuid() == 0:
+        if len(sys.argv) != 3:
+            sys.exit('Expected one OCI build review ID')
+        from oci_builds import OCIBuilds
+        OCIBuilds().run(sys.argv[2])
     elif action == 'project-deploy-job' and os.geteuid() == 0:
         if len(sys.argv) != 3:
             sys.exit('Expected one project deployment ID')

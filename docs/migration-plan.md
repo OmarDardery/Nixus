@@ -45,7 +45,7 @@ Each copy links back to its original, which holds the full specification.
 
 ### M2: Feature parity (incus-native plan, phases 1–3)
 - [ ] Projects: reviewed publication, deploy, logs and revisions (#41, #45).
-- [ ] Isolated OCI builder and Compose preflight (#47; NixLab PR OmarDardery/nixlab#152 is not yet ported).
+- [ ] Isolated OCI builder and Compose preflight (#47): NixLab PR OmarDardery/nixlab#152 is ported with its sandbox fixed. Digest-verified Incus import and `incus-compose up` are still open.
 - [ ] SOPS/age delivery and rotation (#46): NixLab PRs OmarDardery/nixlab#153 and OmarDardery/nixlab#154 are ported. Production runtime delivery into Incus Compose is still open.
 - [ ] Zero-secret output and credential work: #26, #27, #28, #29.
 
