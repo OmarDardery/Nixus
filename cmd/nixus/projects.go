@@ -325,8 +325,12 @@ func exactKeys(m M, want ...string) bool {
 }
 
 func validateInventory(raw M) (M, error) {
-	if !exactKeys(raw, "schemaVersion", "projects") || raw["schemaVersion"] != float64(1) && raw["schemaVersion"] != 1 {
+	if !(exactKeys(raw, "schemaVersion", "projects") || exactKeys(raw, "schemaVersion", "projects", "backups")) || raw["schemaVersion"] != float64(1) && raw["schemaVersion"] != 1 {
 		return nil, Public("Unsupported typed project inventory")
+	}
+	backups, err := validateBackupPolicy(raw["backups"])
+	if err != nil {
+		return nil, err
 	}
 	projects := obj(raw["projects"])
 	if projects == nil || len(projects) > 128 {
@@ -426,7 +430,7 @@ func validateInventory(raw M) (M, error) {
 	if len(incusProjects) != len(results) {
 		return nil, Public("Multiple projects claim a single Incus project")
 	}
-	return M{"schemaVersion": 1, "projects": results}, nil
+	return M{"schemaVersion": 1, "backups": backups, "projects": results}, nil
 }
 
 // --- plans ----------------------------------------------------------------------

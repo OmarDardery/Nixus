@@ -187,6 +187,49 @@ let
     };
   };
 
+  runtimePath = types.strMatching "/(var/lib|run|etc)/[A-Za-z0-9._/-]+";
+  backupSchema = { lib, ... }: {
+    options.nixus.backups = {
+      enable = mkOption { type = types.bool; default = false; };
+      includeProjects = mkOption {
+        type = types.either (types.enum [ "all" ]) (types.listOf (types.strMatching "[a-z][a-z0-9-]{0,62}"));
+        default = "all";
+        description = "\"all\" includes every project discovered at backup time, including new ones.";
+      };
+      schedule = mkOption { type = types.enum [ "hourly" "daily" "weekly" ]; default = "daily"; };
+      data = mkOption { type = types.bool; default = true; description = "Also export Incus instances and custom volumes."; };
+      retention = {
+        daily = mkOption { type = types.ints.between 1 365; default = 7; };
+        weekly = mkOption { type = types.ints.between 0 104; default = 4; };
+        monthly = mkOption { type = types.ints.between 0 120; default = 6; };
+      };
+      verification = mkOption { type = types.enum [ "none" "metadata" "full" ]; default = "metadata"; };
+      restic = {
+        repository = mkOption {
+          type = types.strMatching "(rclone:[A-Za-z0-9_-]+:[A-Za-z0-9._/-]+|sftp:[A-Za-z0-9._/-]+|s3:[A-Za-z0-9._:/-]+|b2:[A-Za-z0-9._:/-]+|rest:https://[A-Za-z0-9._:/-]+|/[A-Za-z0-9._/-]+)";
+          description = "Repository reference only; credentials live in root-owned runtime files.";
+        };
+        passwordFile = mkOption { type = runtimePath; default = "/var/lib/nixus-secrets/project-restic-password"; };
+        environmentFile = mkOption { type = types.nullOr runtimePath; default = null; };
+        rcloneConfigFile = mkOption { type = types.nullOr runtimePath; default = null; };
+        initialize = mkOption { type = types.bool; default = false; };
+      };
+      github = mkOption {
+        type = types.nullOr (types.submodule {
+          options = {
+            repository = mkOption { type = types.strMatching "git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git"; };
+            branch = mkOption { type = types.strMatching "[A-Za-z0-9._/-]{1,100}"; default = "main"; };
+          };
+        });
+        default = null;
+        description = "Private repository that receives non-secret project configuration and SOPS ciphertext.";
+      };
+    };
+  };
+  backups = if (rootEntries."backups.nix" or null) == "regular"
+    then (lib.evalModules { modules = [ backupSchema (root + "/backups.nix") ]; }).config.nixus.backups
+    else null;
+
   rootEntries = entriesAt root;
   projectDirs = builtins.filter (name:
     let kind = rootEntries.${name};
@@ -244,6 +287,7 @@ in
   else if !(noDuplicates claims) then fail "Conflicting declared resource claims"
   else {
     schemaVersion = 1;
+    inherit backups;
     projects = builtins.listToAttrs (map (project: {
       name = project.name;
       value = project;

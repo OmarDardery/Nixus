@@ -174,6 +174,8 @@ func brokerGet(p string) (any, error) {
 		return NewSecrets("", "", "").inventory()
 	case strings.HasPrefix(p, "/deployment/"):
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
+	case p == "/project-backups":
+		return projectBackupStatus(), nil
 	case p == "/users":
 		return M{"users": listUsers()}, nil
 	case p == "/browser-certificates":
@@ -613,7 +615,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}
