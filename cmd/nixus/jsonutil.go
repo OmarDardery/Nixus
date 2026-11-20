@@ -336,3 +336,5 @@ func check(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
 func environ(extra ...string) []string { return append(os.Environ(), extra...) }
 
 func utf8Valid(b []byte) bool { return utf8.Valid(b) }
+
+func sortSlice(s []string) { sort.Strings(s) }
