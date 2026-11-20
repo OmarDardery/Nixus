@@ -340,8 +340,11 @@ func validateInventory(raw M) (M, error) {
 		if !fullmatch(projectName, name) || p == nil {
 			return nil, Public("Invalid declarative project identity")
 		}
-		if !exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules") {
+		if !exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances") {
 			return nil, Public("Unknown project inventory field")
+		}
+		if err := validateNativeDeclarations(p); err != nil {
+			return nil, err
 		}
 		backend := str(p["backend"])
 		if str(p["name"]) != name || str(p["source"]) != name || (backend != "incus-native" && backend != "incus-compose") {
@@ -523,6 +526,9 @@ var composeOwned = func(incusProject string) bool {
 var composeAdapterFactory = func() *composeAdapter { return newComposeAdapter() }
 
 func planObserve(project, resource M) (M, error) {
+	if strings.HasPrefix(str(resource["kind"]), "native-") {
+		return nativeObserveAgain(project, resource)
+	}
 	if str(resource["kind"]) == "compose" {
 		return composeAdapterFactory().observe(str(resource["sourceProject"]), str(resource["project"]), str(resource["revision"]))
 	}
@@ -531,11 +537,16 @@ func planObserve(project, resource M) (M, error) {
 
 func projectPlan(inventory M, sourceRefs M) (M, error) {
 	items := []any{}
+	retained := []any{}
 	var hostOwned map[string]bool
 	projects := obj(inventory["projects"])
 	for _, key := range keys(projects) {
 		project := obj(projects[key])
 		if !isTrue(project["enable"]) {
+			if len(obj(project["instances"])) > 0 || len(obj(project["volumes"])) > 0 {
+				retained = append(retained, M{"project": project["incusProject"], "name": "project:" + str(project["incusProject"]),
+					"reason": "project disabled; its instances and volumes are left untouched"})
+			}
 			continue
 		}
 		if str(project["backend"]) == "incus-compose" {
@@ -551,11 +562,20 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 			}
 			continue
 		}
+		declaredItems, kept, err := nativeDeclaredPlan(project)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, declaredItems...)
+		retained = append(retained, kept...)
 		claims, _ := anyStrings(project["claims"])
 		sort.Strings(claims)
 		for _, claim := range claims {
 			m := claimRe.FindStringSubmatch(claim)
 			kind, name := m[1], m[2]
+			if obj(project["instances"])[name] != nil {
+				continue
+			}
 			if str(project["backend"]) != "incus-native" || kind != "instance" {
 				return nil, Public("Unsupported Incus resource claim; #133 adapter required")
 			}
@@ -591,11 +611,14 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 		actions = append(actions, M{"project": item["project"], "name": item["name"], "action": item["action"],
 			"before": item["before"], "after": item["after"], "potentialDisruption": disruption})
 	}
-	return normalize(M{"format": 1, "inventoryHash": digestJSON(inventory), "resources": items, "actions": actions,
-		"boundary": "Existing Nixus-owned native instances, and Compose projects brought up with incus-compose up --no-build; volumes and data are never removed"}).(M), nil
+	return normalize(M{"format": 1, "inventoryHash": digestJSON(inventory), "resources": items, "actions": actions, "retained": retained,
+		"boundary": "Declared native projects, volumes and instances are created or reconciled; existing Nixus-owned instances and Compose projects are updated in place; nothing is stopped, resized or deleted because a declaration disappeared"}).(M), nil
 }
 
 func recheckAndApply(project, approved M, verifyOnly bool) (M, error) {
+	if strings.HasPrefix(str(approved["kind"]), "native-") {
+		return nativeApply(project, approved, verifyOnly)
+	}
 	if str(approved["kind"]) == "compose" {
 		return composeAdapterFactory().recheckAndApply(approved, verifyOnly)
 	}

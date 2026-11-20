@@ -132,7 +132,8 @@ func TestInventoryRejectsOverlappingClaims(t *testing.T) {
 	project := func(name, incus string) M {
 		return M{"name": name, "enable": true, "backend": "incus-native", "incusProject": incus,
 			"resources": M{"cpus": float64(2), "memory": "2GiB"}, "secrets": M{"file": nil, "bindings": M{}},
-			"backup": M{"enable": true, "consistency": "stop"}, "claims": []any{"instance/web"}, "source": name, "modules": []any{}}
+			"backup": M{"enable": true, "consistency": "stop"}, "claims": []any{"instance/web"}, "source": name, "modules": []any{},
+			"storagePool": nil, "volumes": M{}, "instances": M{}}
 	}
 	if _, err := validateInventory(M{"schemaVersion": float64(1), "projects": M{"alpha": project("alpha", "alpha")}}); err != nil {
 		t.Fatal(err)

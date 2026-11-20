@@ -125,6 +125,59 @@ let
         type = types.enum [ "stop" "quiesce" "none" ];
         default = "stop";
       };
+      # Optional explicit pool; null uses the host guest storage pool.
+      storagePool = mkOption {
+        type = types.nullOr (types.strMatching "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}");
+        default = null;
+      };
+      # Custom volumes are created once and never resized or deleted by Nixus.
+      volumes = mkOption {
+        type = types.attrsOf (types.submodule {
+          options.size = mkOption { type = types.strMatching "[1-9][0-9]*(MiB|GiB|TiB)"; default = "10GiB"; };
+        });
+        default = {};
+      };
+      # Declared native guests. Declaring an instance claims it exclusively.
+      instances = mkOption {
+        type = types.attrsOf (types.submodule {
+          options = {
+            type = mkOption { type = types.enum [ "container" "virtual-machine" ]; default = "container"; };
+            image = mkOption {
+              type = types.strMatching "images:[a-z0-9][a-z0-9._/-]{0,127}";
+              description = "Public images: remote alias used only when the instance is first created.";
+            };
+            cpus = mkOption { type = types.nullOr types.ints.positive; default = null; };
+            memory = mkOption { type = types.nullOr (types.strMatching "[1-9][0-9]*(KiB|MiB|GiB)"); default = null; };
+            autostart = mkOption { type = types.bool; default = true; };
+            network = mkOption {
+              type = types.nullOr (types.strMatching "[a-zA-Z0-9][a-zA-Z0-9_.-]{0,14}");
+              default = null;
+              description = "Incus network for eth0; null uses the host guest bridge.";
+            };
+            disks = mkOption {
+              type = types.attrsOf (types.submodule {
+                options = {
+                  volume = mkOption { type = types.strMatching "[a-z][a-z0-9-]{0,62}"; };
+                  path = mkOption { type = types.strMatching "/[A-Za-z0-9._/-]*"; };
+                  readOnly = mkOption { type = types.bool; default = false; };
+                };
+              });
+              default = {};
+            };
+            usb = mkOption {
+              type = types.attrsOf (types.submodule {
+                options = {
+                  vendorId = mkOption { type = types.strMatching "[0-9a-f]{4}"; };
+                  productId = mkOption { type = types.strMatching "[0-9a-f]{4}"; };
+                };
+              });
+              default = {};
+              description = "Reviewed USB passthrough by vendor/product ID.";
+            };
+          };
+        });
+        default = {};
+      };
       # Reserved identities used by later reconcilers; collisions are rejected
       # before anyone is authorized to mutate Incus.
       claims = mkOption {
@@ -161,11 +214,18 @@ let
       fail "Project ${directoryName} has an unsafe ciphertext reference"
     else if p.secrets.bindings != {} && secret == null then
       fail "Project ${directoryName} cannot bind secrets without encrypted SOPS ciphertext"
+    else if p.backend == "incus-compose" && (p.instances != {} || p.volumes != {}) then
+      fail "Compose project ${directoryName} cannot declare native instances or volumes"
+    else if lib.any (i: lib.any (d: !(p.volumes ? ${d.volume})) (builtins.attrValues i.disks)) (builtins.attrValues p.instances) then
+      fail "Project ${directoryName} attaches an undeclared volume"
+    else if lib.any (n: builtins.match "[a-z][a-z0-9-]{0,62}" n == null) (builtins.attrNames p.instances ++ builtins.attrNames p.volumes) then
+      fail "Project ${directoryName} has an invalid instance or volume name"
     else if builtins.length sources > 256 then
       fail "Project ${directoryName} exceeds 256 Nix module files"
     else {
       name = p.name;
-      inherit (p) enable backend incusProject resources secrets backup claims;
+      inherit (p) enable backend incusProject resources secrets backup storagePool volumes instances;
+      claims = lib.unique (p.claims ++ map (name: "instance/${name}") (sorted (builtins.attrNames p.instances)));
       source = directoryName;
       modules = map (path:
         lib.removePrefix ("${toString directory}/") (toString path)
