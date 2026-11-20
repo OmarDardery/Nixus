@@ -466,3 +466,16 @@ td code{font-size:12px}
 .status-dot.warning{background:var(--warning)}
 .status-dot.unknown{background:var(--subtle)}
 .sidebar-server .host-state{color:var(--text);font:650 11px/1.5 var(--body);margin:2px 0}
+
+/* First-run setup walkthrough */
+.setup-meter { height: 8px; background: var(--line, #2a313b); border-radius: 4px; overflow: hidden; margin: 12px 0 18px; }
+.setup-meter span { display: block; height: 100%; background: var(--green, #8fbf5a); }
+.setup-steps { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
+.setup-step { display: grid; grid-template-columns: 32px 1fr auto auto; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid var(--line, #2a313b); }
+.setup-step.current { border-color: var(--green, #8fbf5a); }
+.setup-step.done .setup-copy h3 { opacity: .7; }
+.setup-mark { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-weight: 600; }
+.setup-step.done .setup-mark { color: var(--green, #8fbf5a); }
+.setup-copy h3 { margin: 0 0 4px; font-size: 1rem; }
+.setup-state { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
+@media (max-width: 640px) { .setup-step { grid-template-columns: 28px 1fr; } .setup-state, .setup-step button { grid-column: 2; justify-self: start; } }

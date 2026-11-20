@@ -82,6 +82,22 @@ A fresh installation finishes with browser enrollment open:
 Approval expires after ten minutes or at reboot; refreshing the page shows a new
 code. Retrying the install command before the claim keeps enrollment open.
 
+After the claim the portal opens **Setup**, a checklist the host recomputes on
+every visit, so you can close the browser or reboot and continue later:
+
+| Step | Where | Required |
+|---|---|---|
+| Administrator account | Accounts | yes |
+| Activate the hypervisor | Changes | yes |
+| Enroll this browser for the Incus UI | Access | yes |
+| Cockpit operator password (when Nixus manages it) | Services | yes |
+| Secrets encryption key (age) | Projects | yes |
+| Encrypted recovery kit, stored off the host | Projects | yes |
+| SSH key | Access | optional |
+| Off-host backups | Backups | optional |
+
+Until the required steps are done, every page shows a **Continue setup** banner.
+
 For forgotten portal access, an authorized administrator runs
 `sudo nixus-admin reset-password` from a private local/SSH/Cockpit terminal and
 chooses a new password. This is rotation, not retrieval; old sessions are rejected.

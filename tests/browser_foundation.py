@@ -34,6 +34,11 @@ def main():
     published_source = []
     submitted = []; errors = []; authenticated = [False]; requests = []
     certificate_records = []; certificate_pending = [False]; bootstrap_approved = [False]
+    def step(name, page, done, required=True):
+        return {'id': name, 'title': 'Step ' + name, 'detail': 'Fixture detail', 'page': page, 'required': required, 'done': done}
+    setup_progress = {'version': 1, 'completed': 1, 'total': 3, 'complete': False, 'items': [
+        step('administrator', 'accounts', True), step('activation', 'review', False),
+        step('incusBrowser', 'security', False), step('backup', 'operations', False, required=False)]}
     class Quiet(SimpleHTTPRequestHandler):
         def log_message(self, *_): pass
     server = ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Quiet, directory=str(BASE / 'admin/static')))
@@ -128,6 +133,7 @@ def main():
                                 'project-sources': {'available': True, 'sourceHash': 'a'*64, 'fileCount': 3, 'bytes': 412, 'projects': [{'name': 'sample', 'entrypoint': 'sample/default.nix', 'moduleCount': 1}]},
                                 'project-imports': {'projects': published_source},
                                 'main-revision': {'revision': 'b' * 40},
+                                'setup-progress': setup_progress,
                                 'browser-certificates': {'certificates': certificate_records},
                                 'operations': {'jobs': [], 'archives': [], 'generations': [], 'backupStatus': {}},
                                 'health': {'checkedAt': int(time.time()), 'services': [], 'certificates': {}, 'guestsAwaitingRestart': 0}, 'users': {'users': []}}.get(endpoint, {})
@@ -152,7 +158,25 @@ def main():
             assert 'browser-host-proof-password' not in page.evaluate('JSON.stringify(state)')
             page.get_by_role('button', name='Create administrator', exact=True).click()
             page.wait_for_function('state.principal?.username === "portalowner" && state.csrf === "example"')
+            # A fresh host opens the server-derived setup walkthrough first.
+            page.get_by_role('heading', name='Set up your hypervisor', exact=True).wait_for()
+            assert page.get_by_text('1 of 3 required steps done.', exact=True).is_visible()
+            assert page.locator('.setup-step').count() == 4
+            assert page.locator('.setup-step.current').get_attribute('data-step') == 'activation'
+            assert page.locator('.setup-step.done').count() == 1
+            page.locator('.setup-step.current button').click()
+            page.wait_for_function('state.page === "review"')
+            assert page.locator('.banner', has_text='Setup 1/3').count() == 1
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.locator('.banner [data-go="setup"]').click()
+            page.wait_for_function('state.page === "setup"')
+            setup_progress.update(complete=True, completed=3)
+            for item in setup_progress['items']: item['done'] = item['required']
+            page.locator('[data-action="setup-refresh"]').first.click()
+            page.get_by_text('Setup complete.', exact=False).wait_for()
+            page.locator('.sidebar [data-go="overview"]').click()
             page.get_by_role('heading', name='Overview', exact=True).wait_for()
+            assert page.locator('.banner', has_text='Setup').count() == 0
             claim = next(body for endpoint, body in submitted if endpoint == 'bootstrap/claim')
             assert claim['username'] == 'portalowner' and 'hostPassword' not in claim
             authenticated[0] = False
@@ -173,7 +197,7 @@ def main():
             assert page.evaluate("document.fonts.check('16px Space Grotesk')")
             assert page.get_by_role('heading', name='Guests & addresses', exact=True).is_visible()
             assert page.get_by_text('10.77.0.20', exact=True).count() == 2
-            assert page.locator('.nav > button').count() == 15
+            assert page.locator('.nav > button').count() == 16
             assert page.locator('.nav [aria-current="page"]').count() == 1
             page.screenshot(path=str(args.output / 'overview.png'), full_page=True)
             page.set_viewport_size({'width': 390, 'height': 844})

@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const bootstrap = source.lastIndexOf('\n(async () =>');
 assert.ok(bootstrap > 0);
 const context = vm.createContext({document:{querySelector:()=>({})},setInterval:()=>0,URL});
-for (const name of ['projects.js', 'foundation.js', 'operations.js', 'incus-projects.js', 'commands.js'])
+for (const name of ['projects.js', 'foundation.js', 'operations.js', 'incus-projects.js', 'commands.js', 'setup.js'])
   vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context);
 vm.runInContext(source.slice(0, bootstrap), context);
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/defaults.json'), 'utf8'));
