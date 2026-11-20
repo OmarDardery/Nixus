@@ -215,35 +215,6 @@ def ensure_web_enrollment():
         raise recovery_error()
 
 
-def ensure_legacy_account():
-    """Private installer compatibility, never an anonymous recovery mechanism."""
-    with rt.locked():
-        state = reconcile()
-        if state and state['phase'] in {'unclaimed', 'host-verified'}:
-            return
-        if account_valid():
-            return
-        if state and state['phase'] != 'legacy-provisioning':
-            raise recovery_error()
-        if any(present(name) for name in ('auth.json', 'users.json')):
-            raise recovery_error()
-        if state is None:
-            if present('web-enrollment'):
-                raise rt.PublicError('Approve the browser again from the host console to migrate legacy enrollment')
-            # A legacy private setup value is preserved and migrated, never returned.
-            if host_history():
-                raise recovery_error()
-            save('legacy-provisioning')
-        path = rt.STATE / 'setup-password'
-        if path.is_symlink():
-            raise recovery_error()
-        if not path.exists():
-            rt.atomic(path, secrets.token_urlsafe(24) + '\n')
-        verifier = rt.password_record(path.read_text().strip())
-        rt.write_json(rt.STATE / 'auth.json', verifier, mode=0o640)
-        save('migrated')
-
-
 def observe(*, locked=False):
     if locked:
         reconcile()

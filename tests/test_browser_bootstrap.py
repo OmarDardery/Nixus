@@ -51,7 +51,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(accounts.matches('owner', SECRETS['setup']))
         self.assertFalse(accounts.matches('admin', SECRETS['setup']))
         self.assertEqual(accounts.list_users(), [{'username': 'owner', 'role': 'admin'}])
-        enrollment.ensure_legacy_account()  # An update must not create a new legacy identity.
+        enrollment.ensure_web_enrollment()  # An update must not create a new legacy identity.
         self.assertFalse((self.state / 'auth.json').exists())
         for session in (browser, other):
             with self.assertRaises(ValueError): bootstrap.claim(*self.fields(session), 'owner', SECRETS['setup'])

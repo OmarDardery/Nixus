@@ -68,7 +68,8 @@ def cockpit_password_set(settings):
     if settings.get('secrets', {}).get('enable'):
         import host_secrets
         return host_secrets.operator_password_set(rt.ROOT)
-    return rt.SECRET_PATHS['cockpitPassword'].exists()
+    return (rt.SECRET_PATHS['cockpitPassword'].exists()
+            and not (rt.STATE / 'operator-password-unset').exists())
 
 
 def progress(status, *, state=None, identity=None, account_valid=None):
