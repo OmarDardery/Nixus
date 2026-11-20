@@ -2,8 +2,9 @@
 
 Nix expressions are evaluated in a separate unprivileged systemd sandbox,
 never by the root broker. Only owned existing native Incus guests may receive
-in-place CPU/memory updates. Creating VMs, changing storage, Compose and USB
-devices belongs to #133 and is deliberately refused until qualified.
+in-place CPU/memory updates. A Compose project with a bound, built and
+imported source revision is deployed by compose_deploy.py (#45). Creating VMs,
+changing storage and USB devices are still refused until qualified.
 """
 import hashlib
 import json
@@ -264,12 +265,36 @@ def _host_claims():
     return owners
 
 
-def plan(inventory):
+def _compose_owned(incus_project):
+    """True when the Incus project belongs to the Compose adapter."""
+    import compose_deploy
+    import oci_images
+    current = compose_deploy._query("/1.0/projects/" + incus_project, compose_deploy._incus)
+    return ((current or {}).get("config") or {}).get(oci_images.BACKEND_KEY) == oci_images.COMPOSE_BACKEND
+
+
+def observe(project, resource):
+    """Fresh observation of a reviewed resource, whichever adapter owns it."""
+    if resource.get("kind") == "compose":
+        import compose_deploy
+        return compose_deploy.observe(resource["sourceProject"], resource["project"], resource["revision"])
+    return _observation(project, resource["name"])
+
+
+def plan(inventory, source_refs=None):
     """Fail closed on resource types the #133 adapter cannot yet manage."""
     items = []
     host_owned = None
     for key, project in inventory["projects"].items():
         if not project["enable"]:
+            continue
+        if project["backend"] == "incus-compose":
+            if project["claims"]:
+                raise ValueError("Compose projects cannot claim native Incus resources")
+            bound = (source_refs or {}).get(key)
+            if bound is not None:
+                import compose_deploy
+                items.append(compose_deploy.observe(key, project["incusProject"], bound["revision"]))
             continue
         for claim in sorted(project["claims"]):
             kind, name = CLAIM.fullmatch(claim).groups()
@@ -281,18 +306,24 @@ def plan(inventory):
                 host_owned = _host_claims()
             if (project["incusProject"], name) in host_owned:
                 raise ValueError("Instance is already host-flake owned; explicit #133 migration required")
+            if _compose_owned(project["incusProject"]):
+                raise ValueError("The native adapter never edits resources in a Compose-owned Incus project")
             items.append(_observation(project, name))
     return {"format": 1, "inventoryHash": digest(inventory), "resources": items,
             "actions": [{
                 "project": item["project"], "name": item["name"],
                 "action": item["action"], "before": item["before"],
                 "after": item["after"],
-                "potentialDisruption": item["action"] == "update" and item["observedStatus"] == "Running",
-            } for item in items], "boundary": "Existing Nixus-owned native Incus instances only; volumes/VM images/Compose/data are never replaced"}
+                "potentialDisruption": (bool(item.get("recreates")) if item.get("kind") == "compose"
+                                        else item["action"] == "update" and item["observedStatus"] == "Running"),
+            } for item in items], "boundary": "Existing Nixus-owned native instances, and Compose projects brought up with incus-compose up --no-build; volumes and data are never removed"}
 
 
 def recheck_and_apply(project, approved, *, verify_only=False):
     """Read the fresh ETag/ownership, then write only a reviewed native config."""
+    if approved.get("kind") == "compose":
+        import compose_deploy
+        return compose_deploy.recheck_and_apply(approved, verify_only=verify_only)
     name = approved["name"]
     actual = _observation(project, name)
     if actual != approved:

@@ -282,6 +282,27 @@ class OCIBuilds:
             "id", "project", "revision", "status", "planHash", "createdAt",
             "expires", "intentHash", "services", "artifacts", "errorCode", "importedAt")}
 
+    def imported(self, project, revision):
+        """The newest build of exactly this reviewed revision whose images are
+        imported into Incus, with its root-held intent; None if there is none."""
+        best = None
+        for directory in sorted(self.jobs.iterdir()):
+            if directory.is_symlink() or not directory.is_dir() or not ID.fullmatch(directory.name):
+                continue
+            try:
+                record = rt.read_job_record(directory / "job.json")
+            except (OSError, ValueError):
+                continue
+            if (record.get("project") == project and record.get("revision") == revision
+                    and record.get("status") == "imported"
+                    and (best is None or record.get("importedAt", 0) > best[0].get("importedAt", 0))):
+                best = (record, directory)
+        if best is None:
+            return None
+        record, directory = best
+        return {"id": record["id"], "intentHash": record["intentHash"], "artifacts": record["artifacts"],
+                "services": record["services"], "intent": rt.read_json(directory / "intent.json")}
+
     def review(self, project, revision, *, principal="root"):
         with rt.locked(blocking=False):
             self._active()

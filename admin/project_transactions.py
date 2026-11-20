@@ -347,7 +347,7 @@ class ProjectTransactions:
                 # Uploaded Dockerfile/Compose contexts stay private: only
                 # their sealed revision hashes join the immutable plan.
                 source_refs = _attest_sources(source_revisions, inventory)
-                reviewed_runtime = project_plans.plan(inventory)
+                reviewed_runtime = project_plans.plan(inventory, source_refs)
                 if before["sourceHash"] == after["sourceHash"]:
                     raise ValueError("Project source has no changes to publish")
                 # A changed source outside the approved paths is never promoted.
@@ -412,7 +412,7 @@ class ProjectTransactions:
             if project_plans.digest(runtime_inventory) != project_plans.digest(planned_inventory):
                 raise ValueError("Reviewed typed project inventory changed")
             _recheck_sources(record.get("sourceRefs", {}), runtime_inventory)
-            current_plan = project_plans.plan(runtime_inventory)
+            current_plan = project_plans.plan(runtime_inventory, record.get("sourceRefs"))
             if current_plan != rt.read_json(self._job(identity) / "runtime-plan.json"):
                 raise ValueError("Incus observation changed since review; prepare a new project plan")
             staged, previous, reverted = self._paths(identity)
@@ -543,10 +543,11 @@ class ProjectTransactions:
                 # Approved ciphertext is not a delivered runtime secret. A
                 # partial CPU/VM apply before decryption would be misleading.
                 raise ValueError("Scoped SOPS runtime delivery requires the approved #134 adapter")
-            if job.get("sourceRefs"):
-                # A verified source revision is not a built OCI image or a
-                # running Compose guest. Never mark it deployed prematurely.
-                raise ValueError("OCI source deployment requires the approved #139 builder and #133 Incus adapter")
+            for name in job.get("sourceRefs") or {}:
+                # A bound source deploys only through the Compose adapter,
+                # which requires its built and imported images (#47).
+                if inventory["projects"][name]["backend"] != "incus-compose":
+                    raise ValueError("Only Compose projects deploy uploaded Dockerfile/Compose source")
             existing = rt.read_json(directory / "deployment.json", {})
             if existing and not resume:
                 if existing.get("status") == "verified":
@@ -557,7 +558,7 @@ class ProjectTransactions:
             if not existing:
                 # All ETags checked before the worker is launched. The worker
                 # checks them again immediately before each individual write.
-                if project_plans.plan(inventory) != plan:
+                if project_plans.plan(inventory, job.get("sourceRefs")) != plan:
                     raise ValueError("Incus state differs from approved deployment")
                 existing = {
                     "format": 1, "status": "queued", "createdAt": time.time(),
@@ -622,7 +623,7 @@ class ProjectTransactions:
                         # resource remains in declared desired state.
                         project = next(p for p in inventory["projects"].values()
                                        if p["incusProject"] == resource["project"])
-                        current = project_plans._observation(project, resource["name"])
+                        current = project_plans.observe(project, resource)
                         if (current["action"] != "noop" or
                                 current["etag"] != journal["resources"][key].get("newEtag")):
                             raise ValueError("Previously verified Incus resource drifted; re-review")

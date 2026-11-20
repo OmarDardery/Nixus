@@ -62,6 +62,9 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
         self.host_owners_patch = patch.object(project_plans, "_host_claims", return_value=set())
         self.host_owners_patch.start()
         self.addCleanup(self.host_owners_patch.stop)
+        compose_owned = patch.object(project_plans, "_compose_owned", return_value=False)
+        compose_owned.start()
+        self.addCleanup(compose_owned.stop)
         self.manager = tx.ProjectTransactions(workspace=self.workspace, state=self.state)
 
     def edit(self, **patches):
@@ -352,9 +355,37 @@ class ProjectSourceTransactionsTests(unittest.TestCase):
             self.assertNotIn(content.decode(), json.dumps(reviewed))
             published = self.manager.publish(reviewed["id"], reviewed["planHash"])
             self.assertEqual(published["status"], "published-source")
-            with self.assertRaisesRegex(ValueError, "approved #139 builder"):
+            with self.assertRaisesRegex(ValueError, "Only Compose projects deploy"):
                 self.manager.deploy(reviewed["id"], reviewed["planHash"])
             self.assertFalse((self.manager._job(reviewed["id"]) / "deployment.json").exists())
+
+    def test_compose_project_with_bound_source_deploys_through_the_adapter(self):
+        root, revision, _ = self._published_source()
+        self.inventory["projects"]["alpha"]["backend"] = "incus-compose"
+        observed = {"kind": "compose", "project": "alpha", "name": "compose", "sourceProject": "alpha",
+                    "revision": revision, "buildId": "c" * 32, "intentHash": "d" * 64, "images": [],
+                    "services": ["app"], "instances": {}, "action": "compose-up",
+                    "observedStatus": "Pending", "before": {"services": []},
+                    "after": {"services": ["app"], "revision": revision}, "recreates": [], "etag": "e"}
+        import compose_deploy
+        with patch.dict(os.environ, {"NIXUS_PROJECT_SOURCES": str(root)}), \
+                patch.object(compose_deploy, "observe", return_value=observed) as observe:
+            reviewed = self.review_with_sources({"alpha": revision})
+            self.assertEqual(reviewed["runtimeActions"][0]["action"], "compose-up")
+            observe.assert_called_with("alpha", "alpha", revision)
+            self.manager.publish(reviewed["id"], reviewed["planHash"])
+            with patch.object(tx.subprocess, "run", return_value=None):
+                self.manager.deploy(reviewed["id"], reviewed["planHash"])
+            with patch.object(compose_deploy, "recheck_and_apply",
+                              return_value={"status": "verified", "newEtag": "f", "health": "Running"}) as apply:
+                done = self.manager.run_deployment(reviewed["id"])
+        apply.assert_called_once()
+        self.assertEqual(apply.call_args.args[0]["kind"], "compose")
+        self.assertEqual(done["deployment"], "verified")
+
+    def review_with_sources(self, sources):
+        return self.manager.review({"alpha/modules/network.nix": "{ ... }: { }"},
+                                   principal="admin", source_revisions=sources)
 
     def test_missing_runtime_sops_adapter_refuses_before_guest_mutation(self):
         # Reviewing and publishing encrypted references is permitted, but

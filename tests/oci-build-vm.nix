@@ -4,9 +4,9 @@ let
   tool = import ../admin/package.nix { inherit pkgs; };
 in pkgs.testers.runNixOSTest {
   name = "nixus-oci-isolated-builder";
-  globalTimeout = 900;
+  globalTimeout = 2400;
   nodes.host = { ... }: {
-    virtualisation = { memorySize = 3072; diskSize = 7168; };
+    virtualisation = { memorySize = 3072; diskSize = 10240; };
     # Real Incus (containers only, no KVM claim) to qualify the verified import.
     virtualisation.incus = {
       enable = true;
@@ -45,5 +45,6 @@ in pkgs.testers.runNixOSTest {
     host.wait_for_unit("multi-user.target")
     host.wait_for_unit("incus-preseed.service")
     host.succeed("PYTHONPATH=${../admin}:${../scripts} python3 ${./oci-build-integration.py}", timeout=720)
+    host.succeed("PYTHONPATH=${../admin}:${../scripts} python3 ${./compose-deploy-integration.py}", timeout=1500)
   '';
 }

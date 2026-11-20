@@ -21,9 +21,32 @@ This document covers source intake, the isolated build and the verified Incus im
 
 The `oci-builder` VM test runs the whole path for real: build in the sandbox, import into Incus, check the alias and fingerprint, then start the image as an OCI container and read a file from it.
 
+## Deploy (#45)
+
+A project with `nixus.project.backend = "incus-compose"` and a bound source revision deploys through the existing project transaction (review, publish, deploy, resumable journal):
+
+- **Preconditions**, rechecked immediately before apply:
+  - an `imported` build of exactly that revision exists;
+  - every built alias still points at its verified fingerprint;
+  - the Incus project carries `user.nixus.owner=true` and `user.nixus.backend=incus-compose`.
+- **Exclusive ownership:**
+  - A Compose project may not claim native resources.
+  - The native adapter refuses Compose-owned Incus projects.
+  - The Compose adapter refuses any instance in its project that lacks incus-compose's service label, or that is native-owned.
+  - The `default` and `lab` projects are never used.
+- **Apply:** `incus-compose up --detach --no-build --pull missing --no-healthd --no-dns` runs on a root-only copy of the reviewed source with the image override.
+  - Nixus never runs `down`, `--volumes` or `--recreate`.
+  - The review lists services whose image changes and are therefore recreated.
+  - `up` is idempotent, so an interrupted deploy is resumed by running it again.
+- **Verify:** every service must have running instances on the reviewed image fingerprints. The deployed intent is recorded on the Incus project, so an unchanged project plans as a no-op.
+
+The `oci-builder` VM test deploys a two-service app, writes into a named volume, deploys a changed revision, then checks that the changed service was recreated and the volume data kept. It also checks that a stray instance blocks the adapter.
+
 ## Still open
 
-- **#45:** `incus-compose up --no-build`, start order, recreate/outage review, named-volume protection, ownership and rollback.
+- **#45 follow-ups:**
+  - Native project creation, claim adoption and native instance templates (image, network, storage, USB).
+  - The incus-compose health daemon and DNS sidecar (currently disabled because they pull registry images).
 - **#46:** delivering Compose `.env`/`env_file:` secrets from SOPS at runtime only.
 - **Base images:** builds are offline, so `FROM` must be `scratch` or an image already in local Buildah storage. Images whose files belong to non-root users cannot be built yet, because the sandbox maps only one user.
 

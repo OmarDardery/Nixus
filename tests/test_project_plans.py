@@ -119,8 +119,9 @@ class ProjectInventoryTests(unittest.TestCase):
                 pp.validate_inventory(item)
 
     def test_unsupported_compose_volume_and_network_claims_do_not_mutate_incus(self):
+        with self.assertRaisesRegex(ValueError, "Compose projects cannot claim"):
+            pp.plan(pp.validate_inventory(inventory(backend="incus-compose", claims=["instance/app"])))
         for backend, claims in (
-            ("incus-compose", ["instance/app"]),
             ("incus-native", ["volume/data"]),
             ("incus-native", ["network/private"]),
         ):
@@ -132,9 +133,16 @@ class ProjectInventoryTests(unittest.TestCase):
 
 class OwnedNativeIncusTests(unittest.TestCase):
     def setUp(self):
-        self.claims_patch = patch.object(pp, "_host_claims", return_value=set())
-        self.claims_patch.start()
-        self.addCleanup(self.claims_patch.stop)
+        for item in (patch.object(pp, "_host_claims", return_value=set()),
+                     patch.object(pp, "_compose_owned", return_value=False)):
+            item.start()
+            self.addCleanup(item.stop)
+
+    def test_native_adapter_refuses_a_compose_owned_incus_project(self):
+        with patch.object(pp, "_compose_owned", return_value=True), \
+                patch.object(reconcile, "read_instance", side_effect=AssertionError("should not inspect")):
+            with self.assertRaisesRegex(ValueError, "Compose-owned"):
+                pp.plan(pp.validate_inventory(inventory(claims=["instance/toolhead"])))
 
     def test_existing_owned_cpu_limit_update_etag_rechecked_and_verified(self):
         state = current_owned()

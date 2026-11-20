@@ -186,6 +186,7 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(result["fingerprint"], self.expected)
         self.assertEqual(incus.projects["sample"]["features.images"], "true")
         self.assertEqual(incus.projects["sample"][oci_images.OWNER_KEY], "true")
+        self.assertEqual(incus.projects["sample"][oci_images.BACKEND_KEY], oci_images.COMPOSE_BACKEND)
         self.assertEqual(incus.aliases[("sample", self.alias)], self.expected)
         self.assertNotIn("copy", {c[0] + " " + c[1] for c in incus.calls if len(c) > 1})
         # Idempotent: a retry neither re-imports nor moves the alias.
@@ -203,12 +204,25 @@ class ImportTests(unittest.TestCase):
     def test_alias_on_other_content_and_shared_image_store_are_refused(self):
         incus = FakeIncus()
         incus.aliases[("sample", self.alias)] = "e" * 64
-        incus.projects["sample"] = {"features.images": "true"}
+        incus.projects["sample"] = {"features.images": "true", oci_images.OWNER_KEY: "true",
+                                    oci_images.BACKEND_KEY: oci_images.COMPOSE_BACKEND}
         with self.assertRaisesRegex(ValueError, "different content"):
             self.run_import(incus)
         self.assertEqual(incus.aliases[("sample", self.alias)], "e" * 64)
+        owned = {oci_images.OWNER_KEY: "true", oci_images.BACKEND_KEY: oci_images.COMPOSE_BACKEND}
         with self.assertRaisesRegex(ValueError, "default image store"):
-            oci_images.ensure_project("shared", FakeIncus({"shared": {"features.images": "false"}}))
+            oci_images.ensure_project("shared", FakeIncus({"shared": {"features.images": "false", **owned}}))
+
+    def test_projects_not_owned_for_compose_are_never_adopted(self):
+        for config in ({"features.images": "true"},
+                       {"features.images": "true", oci_images.OWNER_KEY: "true"},
+                       {"features.images": "true", oci_images.OWNER_KEY: "true",
+                        oci_images.BACKEND_KEY: "incus-native"}):
+            with self.subTest(config=config), self.assertRaisesRegex(ValueError, "not owned"):
+                oci_images.ensure_project("other", FakeIncus({"other": config}))
+        for reserved in ("default", "lab"):
+            with self.subTest(reserved=reserved), self.assertRaises(ValueError):
+                oci_images.ensure_project(reserved, FakeIncus())
 
 
 if __name__ == "__main__":

@@ -25,6 +25,8 @@ LOCAL_IMAGE = re.compile(r"localhost/(nixus-[a-z0-9-]{1,50}):([0-9a-f]{1,64})\Z"
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 FINGERPRINT = re.compile(r"[0-9a-f]{64}\Z")
 OWNER_KEY = "user.nixus.owner"
+BACKEND_KEY = "user.nixus.backend"
+COMPOSE_BACKEND = "incus-compose"
 MAX_ARGS = 256
 
 
@@ -146,13 +148,19 @@ def _query(incus, path):
 
 
 def ensure_project(project, incus):
-    """Use the Incus project incus-compose will use; it must hold its own images."""
+    """Use the Incus project incus-compose will use. Nixus owns it exclusively
+    for Compose: it must hold its own images and carry both ownership markers."""
+    if project in ("default", "lab"):
+        raise ValueError("Compose apps never use the default or host-owned lab Incus project")
     current = _query(incus, "/1.0/projects/" + project)
     if current is None:
         incus("project", "create", project, "-c", "features.images=true",
-              "-c", "features.profiles=true", "-c", OWNER_KEY + "=true")
+              "-c", "features.profiles=true", "-c", OWNER_KEY + "=true",
+              "-c", BACKEND_KEY + "=" + COMPOSE_BACKEND)
         return
     config = current.get("config") or {}
+    if config.get(OWNER_KEY) != "true" or config.get(BACKEND_KEY) != COMPOSE_BACKEND:
+        raise ValueError("The Incus project is not owned by Nixus for Compose; refusing to adopt it")
     if config.get("features.images") != "true":
         raise ValueError("The Incus project shares the default image store; refusing to import into it")
 
