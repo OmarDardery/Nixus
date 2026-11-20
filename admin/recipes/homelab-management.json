@@ -1,0 +1,1 @@
+{"id":"homelab-management","title":"Homelab laptop management","description":"Stage Cockpit on the host and lid-closed laptop operation. Enter the Linux operator credential, then review before activation. Does not change disks or network addresses.","settings":{"cockpit":{"enable":true},"maintenance":{"laptopMode":true}}}

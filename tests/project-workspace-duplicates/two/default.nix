@@ -1,0 +1,1 @@
+{ ... }: { nixus.project.name = "duplicate"; }

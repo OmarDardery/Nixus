@@ -1,0 +1,1 @@
+{ ... }: { nixus.project.enable = true; }
