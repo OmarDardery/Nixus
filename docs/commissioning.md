@@ -19,11 +19,9 @@ unreliable. Check host time, `timedatectl`, NTP, DNS and network reachability.
 
 Routine collection runs fixed, bounded read-only probes; it never installs an app,
 reboots, stops a guest, exports data or runs a disruptive test. It checks local
-management, the KVM ioctl, a running unprivileged container and (when enabled) the
-real apps VM agent/Docker plus authentication using existing Arcane credentials.
+management, the KVM ioctl, and a running unprivileged container.
 It writes only its own report/lock under `/var/lib/nixus-admin/commissioning`.
-No raw command output or credentials enter that report. Changed Arcane passwords
-must be supplied through the existing supported credential mechanism, not a report.
+No raw command output or credentials enter that report.
 
 ```sh
 sudo nixus commissioning collect --mode fresh
@@ -55,8 +53,8 @@ Replace `--check` accordingly. Record `failed`, `skipped`, `unsupported` or `unk
 honestly; none satisfies a required check. An integrity check/upload alone does not
 satisfy `offhost-restore`. The initial gate requires hardware reconnect when stable
 serial aliases are declared; other device qualification is still part of the
-checklist and release review. For a host with no apps VM, app checks are optional
-and the report qualifies only the core profile.
+checklist and release review. Application checks are part of the project
+qualification (#44); the report qualifies the core profile.
 
 ```sh
 sudo nixus commissioning export --mode fresh > fresh-report.json
@@ -81,11 +79,11 @@ See the [qualification matrix](qualification.md) for publication and limits.
 - Interrupt an installation and rerun the same command. Verify automatic resume
   and unchanged credentials. Confirm completed installs do not duplicate resources.
 - Test password SSH from a trusted laptop, Cockpit login and host terminal, Incus
-  browser enrollment and Arcane authentication. Verify URLs match the assigned
+  browser enrollment. Verify URLs match the assigned
   address and the console CA fingerprint before trusting the management CA.
 - Reboot twice with delayed DHCP if applicable, without manual service restarts.
   Run `sudo nixus doctor`; check `nixus-management-health.service`, Cockpit
-  socket/service, apps VM, proxy and usable credentials after each boot.
+  socket/service and usable credentials after each boot.
 - Test explicit key-only SSH with a client public key and console recovery available.
   Check trusted source CIDRs and absence of public management ingress.
 
@@ -107,9 +105,8 @@ See the [qualification matrix](qualification.md) for publication and limits.
 ## Upgrade, roles and recovery
 
 - Enable the management stack and enroll the Linux operator password separately
-  from portal accounts. Test Cockpit host terminal/sudo, Incus guest consoles and
-  Arcane stack consoles. Verify private source restrictions, custom ports, TLS
-  renewal and access after Docker restart. Exercise guarded password rollback
+  from portal accounts. Test Cockpit host terminal/sudo and Incus guest consoles.
+  Verify private source restrictions, custom ports and TLS renewal. Exercise guarded password rollback
   with console access available. See [homelab management](homelab.md).
 
 - Exercise a module upload, settings-only change, package refresh and exact-SHA source

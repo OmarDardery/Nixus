@@ -6,8 +6,8 @@
 The Web UI reviews and applies independently stored declarative project files,
 optionally uses **Incus Compose** for OCI stacks, and generates a one-time
 declarative backup policy that automatically covers newly added managed projects.
-**Remove Arcane and the Docker apps VM completely** after a non-destructive
-legacy migration. See [target architecture](target-architecture.md).
+Arcane and the Docker applications VM have been removed. See
+[target architecture](target-architecture.md).
 
 **Source of truth:** One independent workspace flake at `/srv/nixus/projects/flake.nix`
 discovers `*/default.nix` and sorted recursively imported `*/modules/**/*.nix`,
@@ -24,12 +24,8 @@ recovery. `backups.nix` is the one-time, dynamically evaluated backup policy.
 [#41](https://github.com/OmarDardery/Nixus/issues/41) (Compose + Projects Web UI) →
 [#42](https://github.com/OmarDardery/Nixus/issues/42) (declarative backups) →
 [#43](https://github.com/OmarDardery/Nixus/issues/43) (GitHub/Drive destinations) →
-[#40](https://github.com/OmarDardery/Nixus/issues/40) (final Arcane/Docker apps VM retirement, gated by pre-cutover restore proof) →
-[#44](https://github.com/OmarDardery/Nixus/issues/44) (final Arcane-free exact-revision qualification).
-Deprecation of new Arcane onboarding may begin earlier; never delete legacy
-operator data without a proven replacement and recovery. This **replaces** conflicting future Arcane/Portainer
-and Docker-VM plans below. Existing-delivery descriptions remain historical/current,
-not the desired architecture. The current code is **not yet Arcane-free**.
+[#44](https://github.com/OmarDardery/Nixus/issues/44) (exact-revision end-to-end qualification).
+All steps up to #43 are implemented; #44 is the remaining qualification gate.
 
 ## Present implementation and historical roadmap
 
@@ -41,13 +37,13 @@ virtualization UI. See the [ownership contract](ownership.md).
 | Host lifecycle | Single-command preserved-installation setup, reviewed changes, source/OS updates, confirmation recovery |
 | Ethernet | Host bridges/VLANs, management addressing, guest firewall integration, trusted LAN access, narrow outbound LAN exceptions |
 | Hardware | USB serial discovery, selected stable aliases, native Incus attachment guidance, existing UUID filesystems/ZFS datasets |
-| Native tools | Enabled Incus/Cockpit links plus legacy Arcane link (to remove in #40), upstream credits/docs, all-project read-only guest IPs, pinned Community Scripts Incus CLI wizard, explicit verification labels |
+| Native tools | Enabled Incus/Cockpit links, upstream credits/docs, all-project read-only guest IPs, pinned Community Scripts Incus CLI wizard, explicit verification labels |
 | Ownership | Ordinary native/helper resources remain native; declared infrastructure drift is refused before preseed |
 | Recovery | Atomic generations, per-group downtime, shared-volume grouping, maintenance exclusions, independent restic, archive recovery |
 
 The portal has no guest lifecycle/console/snapshot editor, application store or
 arbitrary script runner. Legacy guest CLI/API actions remain for compatibility.
-Docker and metrics history stay optional. Nixus does not ship
+Metrics history stays optional. Nixus does not ship
 application-specific guests or install recipes as core features.
 
 Source checks/Nix evaluation are distinct from live evidence. CI includes a real

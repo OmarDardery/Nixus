@@ -94,13 +94,13 @@ The installer does not overwrite a pre-existing Incus database.
 
 Verify the CA fingerprint against the installer output **before signing in**. The login page
 provides a CA download without authentication; it is a public certificate, not a private key.
-The HTTPS certificate chain also includes the local CA. In installer mode the Incus server and Arcane portal use that CA too; existing ACME configuration, if present, retains certificate ownership. Trust it on your administrator devices
+The HTTPS certificate chain also includes the local CA. In installer mode the Incus server uses that CA too; existing ACME configuration, if present, retains certificate ownership. Trust it on your administrator devices
 only after checking the fingerprint. You can then use ordinary HTTPS for the private portal.
 
 The portal is at `https://HOST_IP:9440` by default. Sign in with the initial password and configure:
 
 - **Network:** preserve the installed uplink or declare a static address/gateway/DNS. Set trusted
-  management CIDRs. Select a non-overlapping guest subnet, bridge address, DHCP range and apps IP.
+  management CIDRs. Select a non-overlapping guest subnet, bridge address and DHCP range.
   “Suggest an unused subnet” proposes a new private range from detected routes; review disconnected
   LAN/VPN networks too. It is a proposal, not a discovered host address.
 - **Storage:** choose detected existing filesystem UUIDs and a role. Select no additional disk to
@@ -108,8 +108,6 @@ The portal is at `https://HOST_IP:9440` by default. Sign in with the initial pas
   duplicate UUIDs, mismatched filesystem types and mount paths that hide files are rejected.
 - **Access:** paste an SSH public key for the `operator` account. Existing local accounts remain
   in the imported installation. SSH password login is enabled by default for non-root Linux accounts; Access can select key-only login.
-- **Applications:** optionally enable Docker/Arcane (off by default) and set the initial Arcane password. VM CPU/RAM defaults use
-  detected hardware. The optional demo also needs a database initialization password.
 - **Radios:** choose Wi-Fi/Bluetooth on or off. Wi-Fi uses NetworkManager with the iwd backend.
   Existing NetworkManager profiles can remain; an old Nix wpa_supplicant profile requires entering
   its SSID/password in the wizard. WPA personal networks are supported, not enterprise 802.1X.
@@ -161,39 +159,20 @@ the architecture guide. This wizard does not turn a filesystem into a ZFS pool o
 
 An initialized Incus pool mount cannot be removed, rebound to another UUID or moved in this UI.
 Use an export/restore or supported pool migration procedure first. Snapshot/backup data lives outside
-NixOS generations. Increasing the apps disk may require a guest reboot to grow its filesystem;
-shrinking/moving storage needs migration. A backup staging disk alone is not an independent backup.
+NixOS generations. Shrinking or moving storage needs migration. A backup staging disk alone is not an independent backup.
 
-## Applications without guest SSH setup
+## Applications
 
-On first activation the Nix-built apps image is created through Incus. The onboarding service
-waits for its native agent, transfers the reviewed NixOS closure through authenticated Incus when
-needed, then switches the guest OS generation. Future wizard changes therefore also update the
-existing VM's NixOS configuration; importing a new image alone would not do that.
+Applications are not part of the host wizard. After setup, manage them on the **Projects**
+page: upload original Dockerfile and Compose source, build images offline, and deploy a
+reviewed project revision into its own Incus project. Native guests are declared in the
+project's `default.nix`. See [administration](administration.md#compose-applications).
 
-Runtime credentials and a separate application TLS key are delivered through Incus file/exec
-operations. Arcane remains stopped until its required files exist. The host portal links to:
-
-- `https://HOST_IP:8443` is the Incus Web UI. Under access settings, enter a device name
-  and a dedicated bundle passphrase, then choose **Create an Incus browser identity**.
-  Import the encrypted PKCS#12 file using that passphrase. Open Incus and select the
-  `lab` project. The identity is restricted to that project and expires after 90 days.
-  To revoke it, use the displayed fingerprint in the native Incus trust list.
-- `https://HOST_IP:9441`: Arcane through Nginx. The proxy checks the applications VM's TLS
-  chain/name against the local CA. It permits trusted management CIDRs and supports WebSockets.
-  The host TLS key is not shared with the VM. Log in with the Arcane bootstrap credential.
-
-The apps VM's backend TLS port is inside the private guest network; host forwarding rules exclude
-it from ordinary LAN access. Guests on that bridge are one shared application trust zone. Arcane
-still has VM-root-equivalent Docker access. The portal and the Docker dashboard are separate
-control planes with separate credentials. Browser identity import is a client-side trust step,
-not a hand-written Nix configuration change.
-
-Disabling the applications VM stops only the owned VM and disables its autostart; its disk and data are retained. An unowned guest named apps is left untouched while the feature is disabled. Deleting a guest remains an explicit Incus operation after backup.
-
-Bootstrap passwords only initialize Arcane/PostgreSQL; changing those password files later does
-not rotate existing database/UI accounts. Rotate inside the application with a coordinated data
-backup. The setup UI does not claim otherwise.
+The Incus Web UI is at `https://HOST_IP:8443`. Under access settings, enter a device name
+and a dedicated bundle passphrase, then choose **Create an Incus browser identity**. Import
+the encrypted PKCS#12 file using that passphrase. Restricted identities expire after 90 days;
+revoke one by its displayed fingerprint in the native Incus trust list. Browser identity
+import is a client-side trust step, not a hand-written Nix configuration change.
 
 ## Ongoing use and security boundary
 
@@ -239,7 +218,7 @@ For diagnostics:
 
 ```console
 journalctl -u nixus-admin-backend -u nixus-ui -u nixus-rollback-guard
-journalctl -u nixus-apps-onboarding -u nginx
+journalctl -u nixus-project-backup -u nginx
 systemctl --failed
 nixos-rebuild switch --flake /etc/nixos#hypervisor
 ```
@@ -252,49 +231,41 @@ restores it; the portal's managed rollback restores its recorded radio state aut
 
 ## Lightweight defaults and declarative ownership
 
-A new installation starts with Incus, its embedded web UI, the small Python setup frontend/root
+A new installation starts with Incus, its embedded web UI, the Go setup frontend and root
 broker, and a host node exporter. There is no Node.js runtime, SPA build service, Cockpit,
 libvirtd, host Docker, Grafana or database for the setup portal. Browser assets are static files
 served by the authenticated HTTPS process that is already needed for configuration requests.
 Adding BusyBox httpd, Apache httpd or a separate static web server here would add a daemon
 without removing that API process. Authentication, TLS and source checks also apply to assets.
 
-Docker/Arcane is **opt-in** on the Applications page. Disabled means no new apps VM, Docker
-engine or Arcane proxy is started on the host. An existing owned apps VM is stopped and retained.
-Initial resource suggestions are capped at 2 vCPUs/2 GiB, based on detected hardware; this is a
-starting allocation, not a promise that every application fits it. Increase it for real workloads.
-Wi-Fi, Bluetooth, the demo, Cloudflare and backups also remain opt-in. Backup protection still
+No Docker engine, applications VM or application proxy runs on the host. Wi-Fi, Bluetooth,
+Cloudflare and backups remain opt-in. Backup protection still
 requires configuring an independent destination; the lightweight preset is not a backup policy.
 
 Local metrics collection and Prometheus history are **opt-in** on Host preferences. With both disabled,
 Incus live resource views, persistent journal and systemd service health remain available; there
-is no local historical database or Prometheus alert evaluation. The apps VM node exporter is
-started only with history enabled. Enable history for trend graphs/alert rules, with a default
+is no local historical database or Prometheus alert evaluation.  Enable history for trend graphs/alert rules, with a default
 60-second interval and 14-day retention. External alert delivery still requires a receiver.
 
-Nginx runs only when the application portal is enabled, with one worker and 256 connections.
-It provides verified upstream HTTPS, client CIDR restrictions and WebSocket forwarding. This is
-why it is retained for Arcane instead of a basic static httpd. No throughput or RAM benchmark
-is implied by these configuration choices. Incus, QEMU and the application workloads dominate
+Nginx only redirects port 80 to the HTTPS portal. No throughput or RAM benchmark is implied
+by these configuration choices. Incus, QEMU and the application workloads dominate
 resource requirements; ordinary containers avoid the overhead of an additional guest kernel.
 
-All of these choices flow through typed desired settings into native NixOS modules. Existing
-installations retain their explicit applications setting; a source update does not silently
-turn off an opted-in VM. The UI exports desired settings JSON without secret values for review
+All of these choices flow through typed desired settings into native NixOS modules.  The UI exports desired settings JSON without secret values for review
 and backup. After activation the authoritative inputs are the machine settings JSON and modules; back these
 up together with the source revision, `flake.lock`, preserved installation modules and separate
 secrets. Imported settings must be reviewed for the target machine rather than blindly restored.
 
 Nix declares services, packages, mounts, firewall rules, radios, Compose definitions and desired
 Incus resources. Native options are preferred; guarded initialization/reconciliation covers
-Incus state and runtime credentials. VM disks, snapshots, Arcane-created stacks, database
+Incus state and runtime credentials. VM disks, snapshots, volume and database
 contents, certificate enrollment and backup contents are mutable state, not reproducible Nix
-configuration. To make an application reproducible, keep its Compose project in Git or the
-Nix-owned project definitions; editing it only in Arcane does not make it declarative.
+configuration. Applications are reproducible through published project source and reviewed project
+revisions; changes made only in the Incus UI are not declarative.
 
 ## Homepage launcher
 
-The overview links to active Incus and optional Arcane endpoints, upstream Incus helper scripts
+The overview links to active Incus and Cockpit endpoints, upstream Incus helper scripts
 and the Community Scripts catalog, SSH administration, Cloudflare, project guides and source.
 Disabled tools link to their configuration page. Management URLs use the currently active address,
 not an unsaved edit. Only configured non-wildcard tunnel hostnames become public application links;

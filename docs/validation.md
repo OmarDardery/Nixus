@@ -9,22 +9,16 @@ for the exact source revision being installed.
 
 The workflow runs these checks on every pull request:
 
-- Python tests for installation planning/resume, source preservation, credentials,
-  adoption/export, transactions, rollback, recovery and guest reconciliation.
-- JavaScript and Chromium workflow checks against a controlled backend.
-- Nix parsing, direct conversion evaluation and configuration variants, including
-  preserved boot/users/mounts/stateVersion, NetworkManager, Wi-Fi, storage and apps.
-- `checks.x86_64-linux.portal`: real NixOS UNIX-socket permissions, HTTPS portal,
-  PAM login, Cockpit WebSocket terminal, origin rejection and password SSH policy.
-- `checks.x86_64-linux.startup`: NetworkManager/DHCP startup and reboot with the real
-  apps-enabled nginx proxy. Verify trusted TLS, actual-address URLs, Cockpit login
-  and terminal, password SSH and the automatic management health service on each boot.
-  Incus/Arcane HTTPS backends are controlled fixtures in this test.
-- `checks.x86_64-linux.management`: Docker forwarding boundaries, including restart.
-- `checks.x86_64-linux.foundation`: real Incus containers, guest preservation,
-  network access, shared-profile impact/ETag observation and drift refusal,
-  backup/export and isolated restore data integrity.
-- Complete host, apps guest disk/metadata, installer and administration tool builds.
+- Go formatting, `go vet` and unit tests, also run inside the Nix package build.
+- JavaScript syntax and UI tests for every portal script.
+- Nix parsing; pure settings, project, secret and management contract checks; and
+  evaluation of every `validation-*` configuration, including preserved
+  boot/users/mounts/stateVersion, NetworkManager, Wi-Fi and storage.
+- Builds of the Go runtime, admin, installer and helper packages, service units and
+  the complete hypervisor.
+
+The earlier NixOS VM suites drove the retired Python modules and were removed in the Go
+migration; their Go rewrites are tracked in #14.
 
 Run the lightweight source checks locally:
 
@@ -36,17 +30,10 @@ node tests/test_operations_ui.js
 node tests/test_foundation_ui.js
 ```
 
-Run integration checks on a NixOS-capable builder with KVM:
-
-```sh
-nix build .#checks.x86_64-linux.portal .#checks.x86_64-linux.startup --no-link -L
-nix build .#checks.x86_64-linux.management .#checks.x86_64-linux.foundation --no-link -L
-```
-
 ## Target-host acceptance
 
 Automated fixtures do not establish physical NIC/USB behavior, a complete nested-KVM
-apps deployment, live registry/helper recovery or independent off-host restore.
+project deployment, live registry/helper recovery or independent off-host restore.
 Follow [commissioning](commissioning.md) on a recoverable host. Record the exact
 source revision, installed hardware, reboot results and redacted failure reports.
 The installer is not run against a production machine from this development workspace.

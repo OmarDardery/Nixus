@@ -74,11 +74,8 @@ Use `nixos-rebuild boot` and activate on reboot when a maintenance window is req
 Rebuilds do not format disks or delete omitted instances. They can still change profile
 limits/live networking and restart services; review the diff before each deployment.
 
-The host derivation includes the Nix-built apps VM image. First deployment is a large build.
-Nix imports that image automatically, creates `lab/apps` if absent, applies the reserved NIC,
-CPU/RAM/root-disk size and starts it. It enables the native Incus agent for exec and console.
-The guest root password is explicitly locked despite the upstream image module's development
-console defaults. Secure Boot for this guest image is disabled; host firmware policy is separate.
+Applications are not part of the host derivation. Deploy them as reviewed projects after
+installation; see [administration](administration.md#compose-applications).
 
 ## Secrets and first boot
 
@@ -174,7 +171,7 @@ user, boot startup and restart-on-failure; a ten-second retry delay is configure
 No incoming firewall ports are opened for the tunnel. Default NixOS outbound policy permits
 Cloudflare connectivity; restrictive egress gateways must allow its documented endpoints on
 UDP/TCP 7844 and DNS. Protect application identities with application auth/Cloudflare Access
-as appropriate. Never add Incus, Arcane, SSH, Prometheus or Cockpit hostnames to public ingress.
+as appropriate. Never add Incus, SSH, Prometheus or Cockpit hostnames to public ingress.
 
 Sources: [NixOS module](https://github.com/NixOS/nixpkgs/blob/718f670e845328e9c2cecdd832835712b2cbd065/nixos/modules/services/networking/cloudflared.nix),
 [locally managed tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/),

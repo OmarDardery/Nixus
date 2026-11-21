@@ -2,12 +2,9 @@
 
 Nixus is the NixOS host foundation for Incus, not a second virtualization UI.
 
-**Target decision (2026-11-17):** [Arcane-free Web UI, Incus, Cockpit and
-declarative project/backup ownership](target-architecture.md) supersedes
-Arcane/Docker assignments below. The following tables document the *current
-legacy implementation*, not a new promise to continue Arcane. Full removal
-and non-destructive preservation are tracked in
-[#40](https://github.com/OmarDardery/Nixus/issues/40).
+Nixus has no Docker daemon, Arcane or applications VM. Applications are Incus
+OCI containers managed through reviewed Nixus projects; see the
+[target architecture](target-architecture.md).
 
 | Layer | Authoritative owner |
 |---|---|
@@ -15,7 +12,8 @@ and non-destructive preservation are tracked in
 | Ordinary guests, lifecycle, consoles, limits, device attachment, snapshots | Incus UI/API/CLI |
 | Additional managed guest networks, DHCP, reservations, forwards, ACLs, pools/volumes | Incus |
 | Community Scripts application installation/updates | Upstream Incus wizard/application tooling |
-| Optional Docker stacks and their consoles/logs | Arcane or existing declared Compose source |
+| Compose applications | Nixus projects: published source plus `incus-compose` in a Nixus-owned Incus project |
+| Declared native project instances and volumes | Nixus project reconciler (one owner per resource) |
 | Independent backup scheduling, coverage and whole-host recovery | Nixus |
 
 ## Control and data boundaries for maintainers
@@ -27,9 +25,9 @@ read-only status from several systems:
 |---|---|---|
 | What host configuration should exist? | Typed Nix settings and locally approved Nix modules, evaluated by Nix | Validate input, review impact and use the existing Manager/worker transaction and rollback guard |
 | Which host endpoints are exposed? | NixOS service listeners and firewall policy | Show evaluated exposure and guard access; one consolidated policy is tracked by #16 |
-| Who may administer the host or specialist UI? | Linux/PAM for Cockpit, Nixus portal accounts, Incus trust, Arcane identity (independent) | Set up/recover each by its documented owner; **no implicit SSO** or plaintext password recovery |
+| Who may administer the host or specialist UI? | Linux/PAM for Cockpit, Nixus portal accounts, Incus trust (independent) | Set up/recover each by its documented owner; **no implicit SSO** or plaintext password recovery |
 | What guests and devices exist? | Incus; source owns only explicitly declared resources | Read/preview native changes; reconcile source-owned fields using last-applied/ETags and refuse drift; never delete an undeclared guest |
-| What containers and Compose stacks exist? | Arcane/Docker or the operator's source checkout, within the apps VM | Link to Arcane and provide reviewed handoff templates, not a competing stack editor |
+| What containers and Compose stacks exist? | Reviewed Nixus project revisions and their published source; Incus for everything undeclared | Review, build, deploy and report through the project transaction; never adopt or delete undeclared resources |
 | Is an application or host recoverable? | Backup staging, restic repository and recorded isolated restore results | Present independently sourced evidence, exclusions and freshness rather than claiming a green backup means a working restore |
 | Which upstream versions and release checks are required? | `flake.lock`, reviewed OCI inputs (planned #23), CI/release checks (planned #21) | Use a single published evidence contract; absence of physical proof cannot be auto-qualified |
 
@@ -47,12 +45,12 @@ owners and migration conditions.
 
 A host generation rollback restores supported NixOS configuration and the
 recorded source/settings; it is **not** a rollback of arbitrary Incus guest
-filesystems, databases, Docker volumes or Arcane state. Native Incus changes
+filesystems, databases or Incus volumes. Native Incus changes
 must remain native unless a specific field was explicitly declared and reviewed.
 An inaccessible or partial inventory is **unknown**, not proof that no guests,
 volumes or conflicts exist. Reboots, worker loss and network changes must leave
-a recovery route using a previous generation and local console even if the portal,
-apps VM or remote link is unavailable.
+a recovery route using a previous generation and local console even if the portal
+or remote link is unavailable.
 
 Retirement of old API aliases, machine layouts and compatibility adapters is
 a **separate, migration-tested** change (#21). Insecure defaults and disclosure
@@ -68,7 +66,7 @@ separates processes and narrows interfaces, but the web process is trusted: a
 compromised frontend that can invoke broker operations is not a hostile-code
 security boundary. Configuration changes go through the existing Manager and
 worker review, build, activation and rollback path. Local console recovery must
-not depend on the apps VM or its application services.
+not depend on application workloads.
 
 Adoption preserves the installed host and does not format disks. Disk preparation
 is a separate explicitly destructive operation. JSON settings use schema version 1, independently of directory-layout versions.

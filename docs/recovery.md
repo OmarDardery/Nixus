@@ -18,14 +18,14 @@ and an unknown status are not authorization to create a competing transaction.
 The guarded worker also owns existing-install source and installation-metadata
 publication. A rollback restores their exact saved predecessors, the matching
 platform baseline and the old host generation. This does **not** revert arbitrary
-Incus guest disks, Docker volumes or an incompatible Incus database change.
+Incus guest disks, custom volumes or an incompatible Incus database change.
 
 After a disconnected initial wizard, rerun the installer with `--wizard` to resume
 its transaction. After a disconnected full installation, rerun without that flag.
 Do not delete pending/job/recovery files to force a retry. Inspect the transaction
 and root worker journal from a local console if recovery fails; the retained
 original OS generation and bootloader remain the fallback. Recovery does not need
-the apps VM, Arcane or an application identity service.
+any application workload or identity service.
 
 ## Scheduled repository verification
 
@@ -95,8 +95,9 @@ read-only/full state filesystem fails verification rather than reporting success
 
 The shipped baseline creates an Incus **directory** pool under its dedicated state tree.
 It does not create a host filesystem, consume a raw device, or promise redundancy.
-Persistent data lives under `/var/lib/incus`, application volumes inside the VM's persistent
-disk, Compose definitions under `/srv/compose`, Arcane state under `/srv/arcane`.
+Persistent data lives under `/var/lib/incus` (instances and custom volumes, including Compose
+named volumes). Project source lives under `/srv/nixus/projects` and published
+Dockerfile/Compose sources under `/srv/nixus/project-sources`.
 Nix source/store and runtime state have separate lifecycles.
 
 For ZFS, first review physical disk identity/contents, backups and a recovery plan. Obtain
@@ -199,30 +200,19 @@ backup age. External alert delivery requires your real Alertmanager/notification
 
 ## Database restore drill
 
-First test in a separate project/guest and avoid duplicate LAN addresses, DNS registrations,
-webhooks or public ingress. The full offline VM export includes PostgreSQL's cleanly stopped
-volume as well as the logical dump. The logical dump can restore into a compatible fresh PG
-service independently:
-
-```console
-# Inside apps VM, with the intended demo PostgreSQL started and an explicitly chosen dump:
-cd /srv/compose/demo
-docker compose stop web
-docker compose exec -T postgres pg_restore -U demo -d demo --clean --if-exists < /path/to/verified-demo.dump
-docker compose start web
-```
-
-This overwrites database objects. Take a current backup first and test on an isolated copy.
-Use the same Compose digest override files if present. A schema-changing application upgrade
-may require a matching older application version. Test `/health` and expected persistent data.
-An Immich deployment needs its own PostgreSQL version/extensions and upload/library backup;
-do not substitute this demo hook for Immich's documented backup workflow.
+First test in a separate project or guest and avoid duplicate LAN addresses, DNS registrations,
+webhooks or public ingress. A cold export of a Compose project includes each database volume as
+it was when cleanly stopped. To restore a logical dump, stop the application service, restore
+into the database container with its own client tools through `incus exec`, then start the
+application again. This overwrites database objects: take a current backup first and test on an
+isolated copy. A schema-changing application upgrade may require a matching older application
+version. Follow each application's documented backup workflow (for example Immich's uploads
+and library) rather than relying on volume exports alone.
 
 Configured recovery credentials and SOPS links must live under trusted root-owned
 parent directories; writable non-sticky or unprivileged-owned parents make
 coverage incomplete. Move affected credentials to root-controlled storage and
-review their configured paths. Arcane reset metadata is optional on fresh
-bootstrap but must be included safely once it exists. This preflight refuses
+review their configured paths. This preflight refuses
 backup before guest shutdown.
 
 ## Host-loss restore
@@ -328,8 +318,8 @@ consistency require separate qualification before relying on them.
 7. Validate restored data using Incus exec/console on the isolated targets.
    Guests have no NICs/profiles, autostart or snapshot schedule. Their imported
    root disks and separate recovered custom volumes remain attached. Start and
-   stop selected guests explicitly for the drill, check application records,
-   Arcane state/credentials and Compose definitions, then stop them again.
+   stop selected guests explicitly for the drill, check application records
+   and data, then stop them again.
    Runtime jobs inside a guest still need review before any connectivity is added.
    Archived snapshots retain their original configuration; review isolation before
    restoring one. Do not claim success merely because imports succeeded.
@@ -387,13 +377,13 @@ The provided backup does not raw-copy a live Incus database.
 
 ## Security upkeep
 
-Review pinned Nixpkgs/sops inputs, Arcane release notes and Compose image digests regularly.
+Review pinned Nixpkgs/sops inputs, incus-compose release notes and Compose base image digests regularly.
 Use a branch/PR and `nix flake update`, build/evaluate, then deploy during a maintenance window.
 No unattended flake update or reboot changes the hypervisor behind your back. Kernel updates
 require a planned reboot. Incus database/API upgrades may make an old daemon generation
 incompatible; consult release notes before downgrading. NixOS rollback is not a database backup.
 
-Trusted Incus socket/certificates, Docker socket, passwordless sudo and Arcane admin are all
+Trusted Incus socket/certificates, passwordless sudo and Nixus administrator accounts are all
 privileged control planes. Keep them private, use distinct identities, revoke lost keys, and
 protect backups because they include guest secrets. The default firewall restricts management
 by interface/source; it is not a substitute for authentication or physical network security.
@@ -445,8 +435,7 @@ the repository cannot unlock that repository after total host loss.
 
 A completed export is not an off-host transfer, `restic check` is not an application
 restore, and these new records initially say `restore: unverified`. Prove actual
-Arcane state, Compose definitions, Docker volume records and any external data
-through an isolated restore drill. Incus server identity/administrator enrollment,
+project source, Compose volumes and any external data through an isolated restore drill. Incus server identity/administrator enrollment,
 external writers, arbitrary custom module secrets and application-specific
 consistency still require review; this change alone does not close #6 or qualify
 a whole-host release. No new application integration or retention policy is added.

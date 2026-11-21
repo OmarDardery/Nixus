@@ -7,12 +7,12 @@ changing them. Planned changes are not claims that a feature already exists.
 
 | Boundary | Current owner | Regression coverage |
 |---|---|---|
-| Settings defaults, types and Nix module overrides | `site-defaults.nix`, `site.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `modules/settings.nix`; Python validates interactive input | `tests/settings-checks.nix`, the Go unit tests |
+| Settings defaults, types and Nix module overrides | `site-defaults.nix`, `site.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `modules/settings.nix`; the Go broker validates interactive input | `tests/settings-checks.nix`, the Go unit tests |
 | Host review, activation and rollback | `cmd/nixus/controller.go` Manager and `cmd/nixus/worker.go`; installer and update commands call them | the Go unit tests, the Go unit tests, the Go unit tests |
 | Host network and management exposure | `modules/networking.nix` and individual service modules; firewall, binding and application checks are currently separate | `tests/management-vm.nix`, the Go unit tests |
 | Management identity and TLS | `cmd/nixus/runtime.go` and the management identity service in `modules/admin-ui.nix` | `tests/management-vm.nix`, the Go unit tests |
 | Reserved Incus infrastructure and explicitly managed instances | `cmd/nixus/incus.go`, `cmd/nixus/incus.go`; native objects remain Incus-owned | the Go unit tests, the Go unit tests |
-| Docker applications | Arcane or the operator's declared Compose source in the apps VM | `tests/apps-integration.nix`, `tests/guest-deployments-kvm.nix` |
+| OCI and Compose applications | Nixus projects: published original source, offline Buildah build, `incus-compose up --no-build` in a Nixus-owned Incus project (`cmd/nixus/oci.go`, `ocibuilds.go`, `projects.go`) | the Go unit tests, `tests/project-workspace` |
 | Independent backup and restore evidence | `cmd/nixus/backup.go`, `cmd/nixus/operations.go`, `cmd/nixus/recovery.go` | the Go unit tests, the Go unit tests |
 | Dependencies and qualification | `flake.lock` pins Nix inputs; `cmd/nixus/tools.go` validates release evidence | the Go unit tests, `.github/workflows/release.yml` |
 
@@ -26,13 +26,13 @@ not replace the evaluated NixOS/Incus and rollback integration tests.
 
 | Boundary | Canonical source / data owner | Public/stable surface | Failure or migration gate |
 |---|---|---|---|
-| Host settings, defaults, and legacy schema | `site-defaults.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `site.nix`; Python only validates request inputs | `machine/settings.json` (layout v1), legacy `local/settings.json`, `schemaVersion`, file-module overrides | OmarDardery/nixlab#49; default/list/override/legacy tests and reject unknown future versions |
+| Host settings, defaults, and legacy schema | `site-defaults.nix`, `lib/settings-migrations.nix`, `lib/settings.nix`, `site.nix`; the Go broker only validates request inputs | `machine/settings.json` (layout v1), legacy `local/settings.json`, `schemaVersion`, file-module overrides | OmarDardery/nixlab#49; default/list/override/legacy tests and reject unknown future versions |
 | Host mutation | `cmd/nixus/controller.go` `Manager` + `cmd/nixus/worker.go` | Review, build, impact plan, apply, confirm, rollback, cancel; `active.json`, `pending.json`, `last-confirmed.json`, `jobs/` | OmarDardery/nixlab#50/#17; preserved previous generation, live access check, interrupt and stopped-worker tests |
 | Entry points and HTTPS API | `installer/package.nix`, `admin/package.nix`, `cmd/nixus/server.go` | `nix run .#install`, `nix run .#update`, `nixus-admin` and authenticated `/api/*` paths/response fields | OmarDardery/nixlab#50/#20/#27; public alias/route/shape regression before renaming; sensitive output is **not** protected compatibility |
 | Listener/exposure policy | `modules/settings.nix`, `modules/networking.nix`, `modules/admin-ui.nix`, service-owned listeners | Management HTTPS, Cockpit, Incus, optional app proxy and explicit trusted CIDRs | #16; collision/bind/scope tests, management access/rollback. Present fragmented policy is a gap |
-| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `cmd/nixus/runtime.go` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI, Arcane DB for apps | Existing portal session and separate Cockpit/Incus/Arcane identity; `nixus-management-identity.service` | #22/#26–#68; never freeze credential printing, blanket trust or weak onboarding |
+| Identity and certificate lifecycle | `modules/admin-ui.nix` management identity; `cmd/nixus/runtime.go` certificate and password primitives; Linux PAM for Cockpit, Incus trust for UI | Existing portal session and separate Cockpit/Incus identity; `nixus-management-identity.service` | #22/#26–#68; never freeze credential printing, blanket trust or weak onboarding |
 | Incus declared infrastructure | Native Incus preseed + `cmd/nixus/incus.go`; reconciled instance fields via `cmd/nixus/incus.go` | Reserved project/profile/network/pool, last-applied state, ETag/ownership; **native** guests survive source changes | #15/OmarDardery/nixlab#9; drift and changed-precondition refusal, no deletion of unowned guest state |
-| Apps VM and Compose | Incus owns apps VM/disk; Docker/Arcane or user's Compose repository owns containers/stacks and Arcane DB | Persistent guest disks, volumes and specialist UI | #4/#10/#23; updates cannot claim data rollback or overwrite existing specialist identity |
+| Projects and Compose | Each Incus instance and volume has exactly one owner: the native reconciler or `incus-compose` in a Nixus-owned project | Published source revisions, reviewed project revisions, persistent volumes | #45/#10/#23; updates cannot claim data rollback; removed declarations are retained, never deleted |
 | Backup and restore evidence | `cmd/nixus/backup.go`, `cmd/nixus/operations.go`, `cmd/nixus/recovery.go` and restic | Staged manifest, independent archive, integrity result and **actual restore proof** are distinct | #5/#6/#18; incomplete stage, exclusions and interruption never count as verified restore |
 | Monitoring and alerts | `modules/monitoring.nix`, `modules/notifications.nix` | Prometheus/optional historical metrics, failure notification | #18; Alertmanager is the planned normal router, **not currently assumed implemented** |
 | Nix/OCI dependencies | Single `flake.lock`; OCI image/template references currently live in their owning services | `nixosModules`, `nixosConfigurations`, `packages`, `apps`, `checks` | #19/#23; one lock and planned reviewed OCI manifest, no second dependency authority |
@@ -94,9 +94,7 @@ Incus backend through a local CLI, with no portal script execution.
 
 The [installer/portal architecture](setup.md) adds a preserved-installation bootstrap, typed JSON
 Nix input, separate unprivileged HTTPS process/local root broker, reviewed rebuild transactions,
-UUID-backed mounts, modular radios and a persistent rollback guard. In installer mode the
-existing apps VM is also deployed through Incus, and a TLS-verified Arcane proxy provides
-a LAN portal without guest SSH setup. Manual mode retains the original direct/SSH workflow.
+UUID-backed mounts, modular radios and a persistent rollback guard. Manual mode retains the original direct/SSH workflow.
  The lock file pins Nixpkgs to
 `718f670e845328e9c2cecdd832835712b2cbd065` on `nixos-26.05`.
 26.05 is the current stable release; 26.11 is not selected as a stable release in October.
@@ -154,41 +152,21 @@ Sources: [packaged UI](https://github.com/zabbly/incus-ui-canonical),
 [upstream status discussion](https://discuss.linuxcontainers.org/t/introducing-ixui-a-proxmox-esxi-style-web-ui-for-incus/27118),
 [Operations Center](https://github.com/lxc/operations-center).
 
-## Compose management
+## Compose applications
 
-| Candidate | Strengths | Limits | Decision |
-|---|---|---|---|
-| Arcane | Compose stacks, Git source, UI editor, logs/console, per-container stats, local authentication | Persistent database and encryption key require protected backups; Nix-owned projects remain owned by Git/Nix | Primary UI, immutable Arcane v3.0.1 manager image |
-| Dockge | Simple on-disk Compose projects and responsive editor/logs | Latest release 1.5.0 dated 2025-03-30; narrower Git/permissions/monitoring surface, console disabled by default for security | Good smaller alternative; not installed alongside Arcane |
-| Komodo | Active repository (pushed 2026-10-23), Git-backed deployments, procedures, resource management | Core + periphery + database add components and privileged credentials | Consider when multi-host build/deploy workflows justify it |
+Compose applications run as Incus OCI containers. No Docker daemon, Docker socket or
+separate applications VM is involved:
 
-One Compose project groups the web app, PostgreSQL and Redis. Named volumes survive
-`down`; helpers never pass `--volumes`. UI-created stacks support editing and deployment.
-The included `demo` is owned by Nix/CLI; it appears as an external stack in Arcane and
-must be edited in Git. Do not let two reconcilers manage the same stack. For a UI-owned
-stack use Arcane's Git stack workflow with a different project name, then back up its
-Arcane state and application data. Arcane backups alone exclude application volumes.
+1. The original Dockerfile, build context and Compose files are uploaded, hash-manifested
+   and published as an immutable source revision.
+2. Images are built offline in a non-root, CPU/memory-limited Buildah sandbox and imported
+   into the project's own Incus image store with verified fingerprints.
+3. A reviewed project revision links that exact source and runs
+   `incus-compose up --no-build` in a Nixus-owned Incus project.
 
-Sources: [Arcane release](https://github.com/getarcaneapp/arcane/releases/tag/v3.0.1),
-[Git/Compose stack creation](https://getarcane.app/docs/docker/projects),
-[Arcane backup scope](https://getarcane.app/docs/get-started/installation),
-[Dockge](https://github.com/louislam/dockge), [Dockge releases](https://github.com/louislam/dockge/releases),
-[Komodo](https://github.com/moghtech/komodo).
-
-## Docker placement
-
-- Host Docker is efficient but gives application workloads host-root-equivalent socket
-  access and introduces host FORWARD/firewall interactions with Incus.
-- Nested Docker in an unprivileged Incus container saves memory but shares the host
-  kernel and needs nesting/storage/syscall compatibility. It is a supported specialist choice,
-  not the reliability/isolation default.
-- The dedicated VM has a memory/disk overhead and requires its own OS rebuilds. It gives
-  Docker a separate kernel and firewall. This is the default. VM management is through
-  Incus; Docker management is through Arcane/Compose inside that VM.
-
-[Incus firewall/Docker guidance](https://linuxcontainers.org/incus/docs/main/howto/network_bridge_firewalld/)
-and [Docker firewall behavior](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
-explicitly describe the FORWARD-policy conflict. Neither firewall nor Docker's rules are disabled.
+Named volumes become Incus custom volumes and survive redeployments; Nixus never runs
+`down --volumes`. The native reconciler never edits a Compose-owned project, and Compose
+never adopts native resources. See [OCI source uploads](oci-source-intake.md).
 
 ## Declarative boundaries
 
@@ -197,12 +175,11 @@ explicitly describe the FORWARD-policy conflict. Neither firewall nor Docker's r
 | Host/guest services, packages, firewall, helper programs | NixOS modules; pinned inputs, OS generations |
 | Reserved projects, profiles, pools, bridge and server bind address | Native `virtualisation.incus.preseed`; source-named infrastructure is checked for native drift before applying; omitted resources are never removed |
 | Named instance desired state | Ownership-aware reconciler; compares before updating; refuses unowned name collisions or type changes; never deletes |
-| Instance image creation | Nix-built apps VM image imported automatically; image alias updates do not replace disks |
+| Instance image creation | Declared native instances use an `images:` alias only at first creation; Compose images are built offline and imported by fingerprint; image changes never replace disks |
 | Config/device overlays | Three-way last-applied tracking removes previously managed keys when runtime has not diverged; unowned keys survive. Whole-device removal/backing changes require migration |
 | Profiles on owned instances | Authoritative ordered list; changes may affect live guests |
 | Guest processes, disks, snapshots, custom volumes, UI-created instances | Mutable Incus runtime state; exports/backup required |
-| Arcane users, endpoints, stacks, Git credentials | Mutable `/srv/arcane` state; bootstrap admin secret is used only on first creation |
-| Compose definitions | Demo file is immutable Nix source; additional CLI projects can be checked-out Git files under `/srv/compose` |
+| Compose definitions | Published original upload bytes per project revision; Nix project revisions link an exact source revision |
 | Cloudflare tunnel/account/DNS creation | External control-plane initialization; locally managed ingress is Nix-authoritative afterward |
 | Passwords, tunnel JSON, age private keys, restic credentials | Runtime secret files/sops-nix; never Nix string secrets |
 
@@ -219,8 +196,8 @@ No HA/fencing/shared-storage cluster is configured. A single host and its power/
 single points of failure. No automatic disk formatting, disk replacement, router changes,
 certificate enrollment or cloud-account creation is hidden in a rebuild. Directory-backed
 container storage cannot promise hard per-container quotas; use ZFS for that requirement.
-Offline scheduled backups impose downtime and need staging space. Registry-provided
-PostgreSQL, Redis and Arcane require reviewed digest pinning for byte-level reproducibility.
+Offline scheduled backups impose downtime and need staging space. Base images
+referenced by uploaded Dockerfiles need digest pinning for byte-level reproducibility (#23).
 Default guest IPv6 is disabled until a real routed prefix/firewall plan exists.
 
 Generic USB/serial prerequisites and stable aliases are provided; assignment stays in Incus.
@@ -230,10 +207,9 @@ configuration deployment. Update an existing NixOS VM through `nixos-rebuild` ov
 
 ## Resource policy
 
-The default deployment is an Incus host without an idle Docker VM or Prometheus history database.
-Both are opt-in through declared settings. The setup portal serves its own static assets using
-its existing authenticated Python HTTP service. Only the optional Arcane portal needs Nginx,
-limited to one worker and providing verified TLS/WebSocket proxying. See [setup](setup.md#lightweight-defaults-and-declarative-ownership)
+The default deployment is an Incus host without a Prometheus history database, which is opt-in
+through declared settings. The portal serves its own static assets from the Go HTTPS service.
+Nginx only redirects port 80 to the HTTPS portal. See [setup](setup.md#lightweight-defaults-and-declarative-ownership)
 for service ownership, monitoring trade-offs and state that must be backed up separately.
 
 ## HTTPS request limits
