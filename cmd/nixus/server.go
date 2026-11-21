@@ -174,6 +174,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return NewSecrets("", "", "").inventory()
 	case strings.HasPrefix(p, "/deployment/"):
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
+	case p == "/image-updates":
+		return readObj(imageUpdatesPath()), nil
 	case p == "/project-overview":
 		return projectOverview(), nil
 	case p == "/project-file":
@@ -370,6 +372,10 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			fullAdmin = false
 		}
 		return browserIssue(STATE, body["device"], body["passphrase"], actor, fullAdmin, body["renew"])
+	case "/image-updates/check":
+		return checkImageUpdates()
+	case "/image-updates/prepare":
+		return prepareImageUpdate(actor, body["project"])
 	case "/revoke-browser-certificate":
 		return browserRevoke(STATE, body["fingerprint"], actor)
 	}
@@ -621,7 +627,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}
@@ -632,7 +638,7 @@ func init() {
 		/api/cancel /api/migrate-layout /api/operation /api/users /api/recovery-export /api/cancel-backup /api/deploy-guests /api/project/initialize
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
-		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore`) {
+		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare`) {
 		portalActions[a] = true
 	}
 }
@@ -979,7 +985,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build":
+	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare":
 		if strings.HasPrefix(path, "/api/oci/") && !ack(body["acknowledge"]) {
 			return Public("Explicitly acknowledge the offline OCI build and resource costs")
 		}

@@ -113,7 +113,7 @@ function projectBackupCard() {
 }
 
 function projectConsoleCards() {
-  return projectOverviewCard() + projectBackupCard();
+  return projectOverviewCard() + imageUpdatesCard() + projectBackupCard();
 }
 
 async function refreshProjectConsole() {
@@ -188,6 +188,7 @@ function projectGeneratePolicy() {
 }
 
 function bindProjectConsole() {
+  bindImageUpdates();
   if (!projectConsole.overview && !projectConsole.overviewLoading && !projectConsole.overviewError) void refreshProjectConsole();
   document.querySelector("#project-overview-refresh")?.addEventListener("click", () => void refreshProjectConsole());
   for (const button of document.querySelectorAll("[data-project-expand]")) {
@@ -208,4 +209,69 @@ function bindProjectConsole() {
     const path = document.querySelector("#native-nix-path")?.value?.trim() || "";
     void projectLoadFile(path);
   });
+}
+
+// --- image updates -----------------------------------------------------------
+
+const imageUpdates = { status: null, loading: false, busy: false, error: "", message: "" };
+
+function imageUpdatesCard() {
+  const status = imageUpdates.status || {};
+  const projects = Object.entries(status.projects || {});
+  const checked = status.checkedAt ? new Date(status.checkedAt * 1000).toLocaleString() : "never";
+  const rows = projects.map(([name, project]) => (project.images || []).map(img =>
+    "<tr><td>" + esc(name) + "</td><td><code>" + esc(img.file) + "</code></td><td><code>" + esc(img.ref) + "</code></td><td>" +
+    projectStatusBadge(img.status) + (img.detail ? " " + esc(img.detail) : "") + "</td><td>" +
+    (img.latest && img.latest !== img.digest ? "<code>" + esc(img.latest.slice(7, 19)) + "</code>" : "") + "</td></tr>").join("")).join("");
+  const updatable = projects.filter(([, p]) => p.updates > 0).map(([name]) => name);
+  return card("Image updates",
+    "<p>Last check: " + esc(checked) + ". A daily check asks each registry for the current digest of every tracked tag. Nothing is pulled or changed.</p>" +
+    '<button type="button" id="image-updates-check"' + (imageUpdates.busy ? " disabled" : "") + ">Check now</button>" +
+    (rows ? '<div class="table-wrap"><table><thead><tr><th>Project</th><th>File</th><th>Image</th><th>Status</th><th>New digest</th></tr></thead><tbody>' +
+      rows + "</tbody></table></div>" : "<p>No published project images yet.</p>") +
+    (updatable.length ? "<p>Preparing an update stages a new source revision with only the changed digests replaced. Review, publish, build and deploy it as usual; the previous revision stays available for rollback.</p>" +
+      '<label class="field"><span>Current administrator password</span><input type="password" id="image-update-password" autocomplete="current-password"></label>' +
+      updatable.map(name => '<button type="button" data-image-update="' + esc(name) + '">Prepare update for ' + esc(name) + "</button> ").join("") : "") +
+    (imageUpdates.error ? '<p class="error" role="alert">' + esc(imageUpdates.error) + "</p>" : "") +
+    (imageUpdates.message ? '<p role="status">' + esc(imageUpdates.message) + "</p>" : ""));
+}
+
+async function refreshImageUpdates() {
+  if (imageUpdates.loading) return;
+  imageUpdates.loading = true;
+  try { imageUpdates.status = await api("image-updates"); }
+  catch { imageUpdates.status = {}; }
+  finally { imageUpdates.loading = false; if (state.page === "projects") shell(); }
+}
+
+async function imageUpdateAction(project) {
+  if (imageUpdates.busy) return;
+  imageUpdates.busy = true;
+  imageUpdates.error = imageUpdates.message = "";
+  try {
+    if (!project) {
+      imageUpdates.status = await api("image-updates/check", {});
+    } else {
+      const current = document.querySelector("#image-update-password")?.value || "";
+      if (!current) throw Error("Enter your administrator password.");
+      const result = await api("image-updates/prepare", { project, current });
+      nativeImportState.result = result;
+      nativeImportState.review = null;
+      nativeImportState.published = null;
+      imageUpdates.message = "Staged update " + result.id + " for " + project + " (" + (result.imageChanges || []).length +
+        " digest changes). Continue with “Review source publication” below.";
+    }
+  } catch (error) {
+    imageUpdates.error = error.message || "Image update action failed.";
+  } finally {
+    imageUpdates.busy = false;
+    if (state.page === "projects") shell();
+  }
+}
+
+function bindImageUpdates() {
+  if (!imageUpdates.status && !imageUpdates.loading) void refreshImageUpdates();
+  document.querySelector("#image-updates-check")?.addEventListener("click", () => void imageUpdateAction(""));
+  for (const button of document.querySelectorAll("[data-image-update]"))
+    button.addEventListener("click", () => void imageUpdateAction(button.dataset.imageUpdate));
 }

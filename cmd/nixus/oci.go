@@ -128,12 +128,16 @@ func sourcePlan(project, revision any, publisher *PublishedSources) (M, error) {
 	default:
 		reasons = append(reasons, "no-compose-or-dockerfile-entrypoint")
 	}
+	lock := imageLock(folder, files)
+	if unpinnedBases(lock) {
+		reasons = append(reasons, "dockerfile-base-image-must-be-pinned-by-digest")
+	}
 	reasons = append(reasons, "isolated-oci-builder-not-qualified", "source-qualified-image-import-not-qualified",
 		"incus-compose-owned-deployment-not-qualified")
 	return M{"format": 1, "project": p, "revision": attestation["revision"], "fileCount": attestation["fileCount"],
 		"bytes": attestation["bytes"], "sourceFiles": entriesAny(files), "mode": mode, "entrypoint": selected,
 		"generatedCompose": generated, "proposedImage": image, "composeSecretPolicy": policy, "buildContextHash": rev,
-		"buildIdentity": sha256str(p + "\x00" + rev), "canBuild": false, "canDeploy": false, "blocking": strings2any(reasons),
+		"buildIdentity": sha256str(p + "\x00" + rev), "imageLock": lock, "canBuild": false, "canDeploy": false, "blocking": strings2any(reasons),
 		"note": "Source-only planning: no OCI image, Incus resources or volume created"}, nil
 }
 
