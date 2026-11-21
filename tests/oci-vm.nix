@@ -465,14 +465,26 @@ in pkgs.testers.runNixOSTest {
         assert broker("/apps")["badhw"]["status"] == "failed", broker("/apps")["badhw"]
 
     with subtest("apps repository: connect over SSH, push the server's apps, review and deploy a pushed app"):
-        code, out = machine.execute("install -d -o git -g git -m 755 /srv/git && "
-                                    "runuser -u git -- ${pkgs.git}/bin/git init -q --bare --initial-branch=main /srv/git/apps.git 2>&1")
+        # A throwaway git-over-SSH server on :2222, created at runtime.
+        code, out = machine.execute(
+            "id git >/dev/null 2>&1 || useradd -r -M -d /srv/git -s ${pkgs.git}/bin/git-shell git; usermod -p '*' git; "
+            "install -d -o git -g git -m 755 /srv/git && "
+            "runuser -u git -- ${pkgs.git}/bin/git init -q --bare --initial-branch=main /srv/git/apps.git 2>&1")
         assert code == 0, out
         key = broker("/apps-repo/key", {})["publicKey"]
         machine.succeed("install -d -o git -g git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
                         "chown git:git /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
-        machine.wait_for_unit("sshd.service")
-        url = "ssh://git@localhost:22/srv/git/apps.git"
+        machine.succeed("id sshd >/dev/null 2>&1 || useradd -r -M -d /var/empty -s /run/current-system/sw/bin/nologin sshd")
+        machine.succeed("mkdir -p /etc/test-sshd /var/empty && ${pkgs.openssh}/bin/ssh-keygen -q -t ed25519 -N \"\" -f /etc/test-sshd/host_key")
+        machine.succeed("cat > /etc/test-sshd/config <<'EOF'\nPort 2222\nListenAddress 127.0.0.1\nHostKey /etc/test-sshd/host_key\nUsePAM no\n"
+                        "PasswordAuthentication no\nKbdInteractiveAuthentication no\nAuthorizedKeysFile /srv/git/.ssh/authorized_keys\n"
+                        "PidFile /run/test-sshd.pid\nEOF")
+        machine.succeed("systemd-run --unit=test-sshd ${pkgs.openssh}/bin/sshd -D -e -f /etc/test-sshd/config")
+        code, _ = machine.execute("${pkgs.netcat}/bin/nc -z -w 30 127.0.0.1 2222")
+        if code != 0:
+            machine.succeed("journalctl -u test-sshd --no-pager | tail -n 20 >&2")
+        machine.wait_for_open_port(2222)
+        url = "ssh://git@localhost:2222/srv/git/apps.git"
         assert broker("/apps-repo/scan", {"url": url})["fingerprints"]
         view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
         assert view["configured"] and "error" not in view["status"], view
