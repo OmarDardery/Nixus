@@ -175,7 +175,7 @@ func brokerGet(p string, query url.Values) (any, error) {
 	case strings.HasPrefix(p, "/deployment/"):
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
 	case p == "/image-updates":
-		return readObj(imageUpdatesPath()), nil
+		return imageUpdatesView(), nil
 	case p == "/project-overview":
 		return projectOverview(), nil
 	case p == "/project-file":
@@ -376,6 +376,10 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return checkImageUpdates()
 	case "/image-updates/prepare":
 		return prepareImageUpdate(actor, body["project"])
+	case "/image-updates/apply":
+		return startImageUpdate(actor, body["project"])
+	case "/image-updates/hold":
+		return setHold(actor, body["project"], body["digest"], ack(body["hold"]), "held by an administrator")
 	case "/revoke-browser-certificate":
 		return browserRevoke(STATE, body["fingerprint"], actor)
 	}
@@ -638,7 +642,8 @@ func init() {
 		/api/cancel /api/migrate-layout /api/operation /api/users /api/recovery-export /api/cancel-backup /api/deploy-guests /api/project/initialize
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
-		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare`) {
+		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
+		/api/image-updates/apply /api/image-updates/hold`) {
 		portalActions[a] = true
 	}
 }
@@ -985,7 +990,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare":
+	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply":
 		if strings.HasPrefix(path, "/api/oci/") && !ack(body["acknowledge"]) {
 			return Public("Explicitly acknowledge the offline OCI build and resource costs")
 		}

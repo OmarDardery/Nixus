@@ -34,7 +34,7 @@ in {
     environment.etc."nixus/backup-verification.json".text = builtins.toJSON {
       version = 1; inherit (verification) enable schedule mode;
     };
-    # Detects newer digests for tracked image tags; never applies an update.
+    # Detects newer digests; applies them only for projects with updates.policy = "auto".
     systemd.timers.nixus-image-updates = {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = "daily"; Persistent = true; RandomizedDelaySec = "1h"; };
@@ -96,11 +96,11 @@ in {
       # Stable unit: project backup policy lives in the reviewed workspace
       # backups.nix, so policy edits never need a host rebuild.
       nixus-image-updates = {
-        description = "Check registries for newer digests of tracked project images";
+        description = "Check tracked project images and apply updates allowed by each project policy";
         restartIfChanged = false;
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin image-updates check"; TimeoutStartSec = "30min"; UMask = "0077"; };
+        serviceConfig = { Type = "oneshot"; ExecStart = [ "${admin}/bin/nixus-admin image-updates check" "${admin}/bin/nixus-admin image-updates auto" ]; TimeoutStartSec = "6h"; UMask = "0077"; };
       };
       nixus-project-backup = {
         description = "Run the reviewed declarative project backup policy when due";
