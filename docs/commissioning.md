@@ -124,6 +124,13 @@ See the [qualification matrix](qualification.md) for publication and limits.
 - Recover an archive from off-host storage, register it, restore the guest/custom volumes
   and verify an application/database. Record recovery time. A successful upload is not
   a restore drill.
+- Run `nixus-admin project-backup restore` from the real off-host destination
+  (Google Drive or SFTP) onto a second, empty host. Verify the restored workspace,
+  source revisions, a two-service Compose project with a database and named
+  volume, reboot persistence and real application state. Record the report and
+  recovery time.
+- Pass through a USB device by stable `/dev/serial/by-id/...` path to a native
+  guest; unplug and replug it (and reboot) and confirm the guest still sees it.
 - Download configuration and encrypted-secret kits, decrypt off-host, verify manifests,
   and stage on a spare NixOS machine. Test recovery with that machine's own hardware/boot
   configuration and deliberate NIC/disk remapping.
