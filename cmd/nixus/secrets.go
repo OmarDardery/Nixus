@@ -926,6 +926,7 @@ const maxKit = 256 * 1024
 var kitFiles = map[string]string{
 	"host-age-identity":  "/var/lib/sops-nix/key.txt",
 	"restic-password":    "/var/lib/nixus-secrets/restic-password",
+	"project-restic":     "/var/lib/nixus-secrets/project-restic-password",
 	"restic-environment": "/var/lib/nixus-secrets/restic-environment",
 	"remote-access":      "/var/lib/nixus-secrets/cloudflared.json",
 }

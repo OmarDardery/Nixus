@@ -139,3 +139,26 @@ Useful upstream references: [sops-nix README](https://github.com/Mic92/sops-nix/
 ## Source publication credential guard (incremental)
 
 The source-only importer now rejects Dockerfile `ENV`/`ARG` declarations with credential-bearing names and Compose `environment`/build `args` entries with credential-bearing names during both review and publish. These are **fail-closed guardrails**, not a complete secret scanner. Credentials in arbitrary `RUN` scripts, unusual filenames or dynamically generated content remain unsafe until the isolated OCI builder and full deployment preflight are qualified. No source is rewritten: owners must remove credential-bearing declarations and use the native SOPS UI with explicit scoped runtime-file bindings. Plain `.env` uploads remain blocked. Source-only publication still never deploys or injects a secret.
+
+## How apps receive secrets
+
+Add values on the **Apps** page (Secrets). On every deploy, right after a value is
+published, at boot and every 10 minutes, Nixus decrypts the app's secrets on the host and
+writes each one into the app's running containers and VMs as a file:
+
+```
+/run/secrets/<KEY>    (root-owned, mode 0444)
+```
+
+This is the Docker/Compose secrets convention, so most images work with their `*_FILE`
+variables, e.g. `POSTGRES_PASSWORD_FILE=/run/secrets/POSTGRES_PASSWORD`. Plaintext only
+passes through a root-only tmpfs file on the host. To send one key to one service or a
+different file name, declare `nixus.project.secrets.bindings` in the app's `default.nix`.
+Compose `secrets:` blocks are refused; use the files above instead.
+
+## Secrets in backups
+
+Project backups put the age identities and backup credentials inside the encrypted restic
+snapshot. Restoring a server needs only the backup destination and its repository password;
+the recovery kit is an optional extra copy.
+

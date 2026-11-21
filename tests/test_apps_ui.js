@@ -23,7 +23,7 @@ assert.match(updates, /data-image-hold="web" data-digest="sha256:b" data-held="0
 assert.doesNotMatch(updates, /<x>/);
 
 // No explanatory filler: every paragraph is a value, status or error.
-const page = vm.runInContext("appsCard() + addAppCard() + updatesCard() + backupsCard()", context);
+const page = vm.runInContext("appsCard() + addAppCard() + updatesCard() + importCard()", context);
 assert.doesNotMatch(page, /<p class="note">/, "no note paragraphs");
 assert.doesNotMatch(page, /private|by default|nothing is|is never|only the|reviewed|safely/i, "no reassurance copy");
 
@@ -39,12 +39,17 @@ assert.throws(() => vm.runInContext("appFiles()", context), /Duplicate/);
 vm.runInContext('appView.entries = [{ path: "compose.yaml", text: "services: {}" }]', context);
 assert.equal(vm.runInContext("appFiles()[0].nixusPath", context), "compose.yaml");
 
-// Backup policy text round-trips the form.
-const policy = vm.runInContext(`policyText({ schedule: "daily", data: true, verification: "full",
-  repository: "rclone:gdrive:nixus", rcloneConfigFile: "/var/lib/nixus-secrets/rclone.conf", initialize: true, github: "" })`, context);
-assert.match(policy, /repository = "rclone:gdrive:nixus";/);
-assert.match(policy, /initialize = true;/);
-assert.doesNotMatch(policy, /github/);
+// The VM/container form generates a valid native declaration.
+const nix = vm.runInContext(`nixInstance("printer", { type: "virtual-machine", image: "images:debian/13", cpus: 2, memory: 4, disk: 20, usb: "1d50:614e" })`, context);
+for (const want of ['backend = "incus-native";', 'instances.printer = {', 'type = "virtual-machine";', 'image = "images:debian/13";',
+  'cpus = 2;', 'memory = "4GiB";', 'volumes.data.size = "20GiB";', 'usb.device = { vendorId = "1d50"; productId = "614e"; };'])
+  assert.ok(nix.includes(want), "missing " + want + " in\n" + nix);
+assert.doesNotMatch(vm.runInContext(`nixInstance("c", { type: "container", image: "images:alpine/3.20", cpus: 1, memory: 1, disk: 5, usb: "" })`, context), /usb/);
+assert.match(vm.runInContext("addAppCard()", context), /id="app-pin"/, "pin action offered for pasted files");
+vm.runInContext('appView.mode = "nix"', context);
+assert.match(vm.runInContext("addAppCard()", context), /id="vm-generate"/, "VM/container form offered");
+vm.runInContext('appView.mode = "files"', context);
+assert.match(vm.runInContext("importCard()", context), /value="web\/&lt;b&gt;app&lt;\/b&gt;"/, "import targets escaped");
 assert.match(vm.runInContext('NIX_TEMPLATES.native("printer")', context), /instances\.printer/);
 
 const index = read("index.html");

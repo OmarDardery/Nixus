@@ -498,6 +498,17 @@ mounts outside Incus volumes, is listed under `unknowns`. Keep the
 passphrase-encrypted recovery kit separately: without it, the restic password
 and age identity are lost with the host.
 
+### Set up and restore from the console
+
+**Backups → Set up backups**: choose Google Drive/rclone (paste the config from
+`rclone config show`), S3, Backblaze B2 or a local disk, then **Save**. On first setup Nixus
+generates the repository password and shows it **once**; keep it in your password manager.
+**Back up now** runs immediately; snapshots are listed on the same page.
+
+On a fresh install with no apps, **Backups → Restore this server from a backup** takes the
+same destination fields and the repository password, and runs the restore described below.
+Apps, their data, their secrets and the age identity come back together.
+
 ### Restore onto an empty host
 
 On a freshly installed Nixus host (no `/srv/nixus/projects` yet), with the

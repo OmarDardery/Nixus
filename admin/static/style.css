@@ -489,3 +489,6 @@ pre.log{max-height:360px;overflow:auto;white-space:pre-wrap;font-size:12px}
 .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem; margin-bottom: .75rem; }
 .quick-actions > div { display: flex; flex-direction: column; gap: .25rem; }
 .quick-actions small { color: var(--muted, #8b949e); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 1rem; }
+.tabs .active { border-color: var(--accent, #58a6ff); }

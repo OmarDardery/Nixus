@@ -20,13 +20,9 @@ const pages = [
   ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Help"],
 ];
-const navigationGroups = [
-  ["WORKSPACE",["setup","overview","projects","guests"]],
-  ["INFRASTRUCTURE",["network","storage","hardware","integrations"]],
-  ["SECURITY",["security","accounts","ingress"]],
-  ["OPERATIONS",["operations","review","system","files"]],
-  ["RESOURCES",["commands"]],
-];
+// Six top-level destinations; the settings pages share one tab bar.
+const settingsPages = ["network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Help"]];
 const pageIcons = {setup:"✓",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
@@ -148,11 +144,16 @@ function stagedBanner() {
   return n ? `<div class="draft-bar" role="status"><div><strong>${n} staged change${n === 1 ? "" : "s"}</strong><span>Not applied to your host</span></div><div class="draft-actions"><button class="small" data-ui-discard>Discard drafts</button><button class="primary" data-go="review">Review changes</button></div></div>` : "";
 }
 function navigationHtml() {
-  return navigationGroups.map(([heading, ids]) =>
-    `<div class="nav-group"><div class="nav-label">${heading}</div><nav class="nav" aria-label="${heading.toLowerCase()}">${ids.map(id => {
-      const label = pages.find(([key]) => key === id)[1];
-      return `<button type="button" data-go="${id}" class="${state.page === id ? "active" : ""}" ${state.page === id ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${pageIcons[id]}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
-    }).join("")}</nav></div>`).join("");
+  return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
+    const active = state.page === id || (id === "network" && settingsPages.includes(state.page));
+    const icon = id === "network" ? "⚙" : pageIcons[id];
+    return `<button type="button" data-go="${id}" class="${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${icon}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
+  }).join("")}</nav></div>`;
+}
+function settingsTabs() {
+  if (!settingsPages.includes(state.page)) return "";
+  return `<nav class="tabs" aria-label="Settings">${settingsPages.map(id =>
+    `<button type="button" class="small${state.page === id ? " active" : ""}" data-go="${id}"${state.page === id ? ' aria-current="page"' : ""}>${esc(pages.find(([key]) => key === id)[1])}</button>`).join("")}</nav>`;
 }
 function bindUiChrome() {
   const sidebar = document.querySelector("#ui-sidebar");
@@ -222,7 +223,7 @@ function shell() {
       <button class="theme-toggle" id="ui-theme-toggle" aria-label="Toggle light and dark theme" type="button">◐</button>
       <a class="pill" href="/docs/beta.md">${esc(state.status.release?.version || "Development")}</a>
       <span class="principal" title="Signed-in portal identity">${esc(state.principal.username)} · ${esc(state.principal.role)}</span></div>
-  </header><main id="main" class="page" tabindex="-1">${pendingBanner()}${setupBanner()}${ownershipBanner()}${renderPage()}${stagedBanner()}
+  </header><main id="main" class="page" tabindex="-1">${pendingBanner()}${setupBanner()}${ownershipBanner()}${settingsTabs()}${renderPage()}${stagedBanner()}
      <footer class="footer-note">NixOS owns the host · Incus owns guests · <a href="/docs/projects.md">Upstream credits</a></footer>
   </main></div></div>
   <dialog id="ui-jump" class="ui-dialog" aria-label="Navigate to a console page"><div class="ui-dialog-heading"><strong>Go to a page</strong><form method="dialog"><button aria-label="Close page search" type="submit">✕</button></form></div><label for="ui-search-input">Search navigation</label><input id="ui-search-input" type="search" placeholder="Guests, backups, access…" autocomplete="off"><nav aria-label="Search results">${pages.map(([id,label]) => `<button type="button" data-go="${id}">${esc(label)}</button>`).join("")}</nav></dialog>`;
@@ -234,6 +235,7 @@ function shell() {
   bind();
   bindOperations();
   bindApps();
+  if (typeof bindBackups === "function") bindBackups();
   if (typeof bindQuickActions === "function") bindQuickActions();
   bindFoundation();
   bindCommands();

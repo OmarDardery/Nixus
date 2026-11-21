@@ -28,7 +28,7 @@ function makeContext(responses) {
   vm.runInContext('Object.assign(quick, { loaded: true, apps: { projects: [] }, backups: {}, updates: { projects: {} } })', context);
   assert.deepEqual([...vm.runInContext("nextStep()", context)], ["Add your first app", "projects"]);
   vm.runInContext('quick.apps = { projects: [{ name: "web" }] }', context);
-  assert.deepEqual([...vm.runInContext("nextStep()", context)], ["Set up backups", "projects"]);
+  assert.deepEqual([...vm.runInContext("nextStep()", context)], ["Set up backups", "operations"]);
   vm.runInContext("quick.backups = { lastSuccess: 1 }", context);
   assert.equal(vm.runInContext("nextStep()", context), null);
   const html = vm.runInContext("quickActions()", context);

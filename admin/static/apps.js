@@ -1,13 +1,14 @@
 "use strict";
 
-// Apps page: running apps, one-step add/update, image updates and backups.
+// Apps page: running apps, one-step add/update and image updates.
 // Deploy runs the same reviewed, hash-checked steps as the broker API.
 
 const appView = {
   overview: null, jobs: {}, updates: null, backups: null, loading: false, error: "", message: "",
   busy: false, log: null, mode: "files",
   entries: [{ path: "Dockerfile", text: "" }], uploads: [], nix: "",
-  policy: { schedule: "daily", data: true, verification: "metadata", repository: "", rcloneConfigFile: "", initialize: false, github: "" },
+  instance: { type: "container", image: "images:debian/13", cpus: 2, memory: 2, disk: 10, usb: "" },
+  importTarget: "", importError: "", importMessage: "",
 };
 
 const APP_TEMPLATES = {
@@ -27,7 +28,17 @@ const NIX_TEMPLATES = {
     "    updates = { policy = \"auto\"; window = \"02:00-05:00\"; healthSeconds = 60; };\n  };\n}\n",
 };
 
-const BACKUP_PHASES = [["config", "Config"], ["data", "Data"], ["offHost", "Upload"], ["verification", "Check"], ["github", "GitHub"]];
+// nixInstance turns the VM/container form into a native app declaration.
+function nixInstance(name, o) {
+  const usb = /^[0-9a-f]{4}:[0-9a-f]{4}$/.test(o.usb || "")
+    ? "      usb.device = { vendorId = \"" + o.usb.slice(0, 4) + "\"; productId = \"" + o.usb.slice(5) + "\"; };\n" : "";
+  return "{ ... }: {\n  nixus.project = {\n    backend = \"incus-native\";\n" +
+    "    volumes.data.size = \"" + Number(o.disk) + "GiB\";\n    instances." + name + " = {\n" +
+    "      type = \"" + (o.type === "virtual-machine" ? "virtual-machine" : "container") + "\";\n" +
+    "      image = \"" + o.image + "\";\n      cpus = " + Number(o.cpus) + ";\n      memory = \"" + Number(o.memory) + "GiB\";\n" +
+    "      disks.data = { volume = \"data\"; path = \"/srv/data\"; };\n" + usb + "    };\n  };\n}\n";
+}
+
 const APP_MAX_FILES = 256, APP_MAX_FILE = 64 * 1024 * 1024, APP_MAX_TOTAL = 128 * 1024 * 1024;
 
 function badge(value) {
@@ -110,6 +121,13 @@ async function stageAppFiles(project, files, current) {
 
 // --- cards ------------------------------------------------------------------
 
+function consoleLink(project, instance) {
+  const incus = typeof managementServices === "function" ? managementServices().find(s => s.name === "Incus" && s.url) : null;
+  if (!incus) return "";
+  return ' <a class="small" target="_blank" rel="noopener noreferrer" href="' + esc(incus.url.replace(/\/$/, "") + "/ui/project/" +
+    encodeURIComponent(project) + "/instance/" + encodeURIComponent(instance) + "/console") + '">Console</a>';
+}
+
 function appsCard() {
   const view = appView.overview;
   const updates = appView.updates?.projects || {};
@@ -124,7 +142,7 @@ function appsCard() {
       (update.updates > 0 ? '<button type="button" class="small" data-app-update="' + esc(p.name) + '">Update</button> ' : "") +
       '<button type="button" class="small" data-app-edit="' + esc(p.name) + '">Edit</button> ' +
       instances.map(i => '<button type="button" class="small" data-app-log="' + esc(p.incusProject + "/" + i.name) + '">' +
-        esc(i.name) + " log</button>").join(" ") + "</td></tr>";
+        esc(i.name) + " log</button>" + consoleLink(p.incusProject, i.name)).join(" ") + "</td></tr>";
   }).join("");
   const log = appView.log
     ? "<h3>" + esc(appView.log.project + "/" + appView.log.instance) + '</h3><pre class="log">' + esc(appView.log.log || "") +
@@ -150,17 +168,48 @@ function addAppCard() {
     (files
       ? '<div class="actions"><button type="button" class="small" data-app-template="dockerfile">Dockerfile template</button>' +
         '<button type="button" class="small" data-app-template="compose">Compose template</button></div>' + entries +
-        '<button type="button" class="small" id="app-add-file">Add file</button>' +
+        '<button type="button" class="small" id="app-add-file">Add file</button> ' +
+        '<button type="button" class="small" id="app-pin">Pin image digests</button>' +
         '<label class="field"><span>Upload files</span><input id="app-upload" type="file" multiple></label>' +
         '<label class="field"><span>Upload folder</span><input id="app-upload-dir" type="file" webkitdirectory></label>' +
         (appView.uploads.length ? "<p>" + appView.uploads.length + " uploaded file(s)</p>" : "")
-      : '<div class="actions"><button type="button" class="small" data-nix-template="native">Incus instance template</button>' +
-        '<button type="button" class="small" data-nix-template="compose">Compose settings template</button></div>' +
+      : instanceForm() +
+        '<div class="actions"><button type="button" class="small" data-nix-template="compose">Compose settings template</button></div>' +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
     '<label class="field"><span>Password</span><input id="app-password" type="password" autocomplete="current-password"></label>' +
     '<button type="button" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button>" +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
     (appView.message ? '<p role="status">' + esc(appView.message) + "</p>" : ""));
+}
+
+function instanceForm() {
+  const o = appView.instance;
+  const num = (id, label, value, min, max) => '<label class="field"><span>' + label + '</span><input id="vm-' + id +
+    '" type="number" min="' + min + '" max="' + max + '" value="' + esc(value) + '"></label>';
+  return "<fieldset><legend>VM or container</legend>" +
+    '<label class="field"><span>Type</span><select id="vm-type"><option value="container"' + (o.type === "container" ? " selected" : "") +
+    '>Container</option><option value="virtual-machine"' + (o.type === "virtual-machine" ? " selected" : "") + ">VM</option></select></label>" +
+    '<label class="field"><span>Image</span><input id="vm-image" type="text" spellcheck="false" value="' + esc(o.image) + '"></label>' +
+    num("cpus", "CPUs", o.cpus, 1, 64) + num("memory", "Memory (GiB)", o.memory, 1, 512) + num("disk", "Data disk (GiB)", o.disk, 1, 16384) +
+    '<label class="field"><span>USB device (vendor:product, optional)</span><input id="vm-usb" type="text" spellcheck="false" placeholder="1d50:614e" value="' +
+    esc(o.usb) + '"></label>' +
+    '<button type="button" class="small" id="vm-generate">Generate Nix</button></fieldset>';
+}
+
+function importCard() {
+  const view = appView.overview;
+  const options = (view?.projects || []).flatMap(p => (p.instances || []).map(i =>
+    '<option value="' + esc(p.incusProject + "/" + i.name) + '"' + (appView.importTarget === p.incusProject + "/" + i.name ? " selected" : "") + ">" +
+    esc(p.name + " · " + i.name) + "</option>")).join("");
+  if (!options) return "";
+  return card("Import data",
+    '<label class="field"><span>Into</span><select id="import-target">' + options + "</select></label>" +
+    '<label class="field"><span>Folder inside the instance</span><input id="import-path" type="text" spellcheck="false" placeholder="/srv/data"></label>' +
+    '<label class="field"><span>.tar or .tar.gz file</span><input id="import-file" type="file" accept=".tar,.tgz,.tar.gz,application/x-tar,application/gzip"></label>' +
+    '<label class="field"><span>Password</span><input id="import-password" type="password" autocomplete="current-password"></label>' +
+    '<button type="button" id="import-start">Import</button>' +
+    (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
+    (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : ""));
 }
 
 function updatesCard() {
@@ -177,46 +226,11 @@ function updatesCard() {
     '<button type="button" class="small" id="image-updates-check">Check now</button>');
 }
 
-function policyText(p) {
-  const lines = ["{ ... }: {", "  nixus.backups = {", "    enable = true;", '    includeProjects = "all";',
-    "    schedule = " + JSON.stringify(p.schedule) + ";", "    data = " + (p.data ? "true" : "false") + ";",
-    "    verification = " + JSON.stringify(p.verification) + ";", "    restic = {",
-    "      repository = " + JSON.stringify(p.repository) + ";"];
-  if (p.rcloneConfigFile) lines.push("      rcloneConfigFile = " + JSON.stringify(p.rcloneConfigFile) + ";");
-  if (p.initialize) lines.push("      initialize = true;");
-  lines.push("    };");
-  if (p.github) lines.push("    github.repository = " + JSON.stringify(p.github) + ";");
-  lines.push("  };", "}", "");
-  return lines.join("\n");
-}
 
-function backupsCard() {
-  const status = appView.backups || {};
-  const phases = status.phases || {};
-  const p = appView.policy;
-  const last = status.lastSuccess ? new Date(status.lastSuccess * 1000).toLocaleString() : "never";
-  const select = (id, values, current) => '<select id="' + id + '">' +
-    values.map(v => '<option value="' + v + '"' + (current === v ? " selected" : "") + ">" + v + "</option>").join("") + "</select>";
-  return card("Backups",
-    "<p>Last success: " + esc(last) + "</p><p>" +
-    BACKUP_PHASES.map(([id, label]) => esc(label) + " " + badge(phases[id]?.state || "—")).join(" · ") + "</p>" +
-    '<button type="button" class="small" id="backup-run">Run now</button>' +
-    '<label class="field"><span>Repository</span><input id="backup-repository" type="text" spellcheck="false" placeholder="rclone:gdrive:nixus-backups" value="' + esc(p.repository) + '"></label>' +
-    '<label class="field"><span>rclone config</span><input id="backup-rclone" type="text" spellcheck="false" placeholder="/var/lib/nixus-secrets/rclone.conf" value="' + esc(p.rcloneConfigFile) + '"></label>' +
-    '<label class="field"><span>GitHub mirror</span><input id="backup-github" type="text" spellcheck="false" placeholder="git@github.com:you/nixus-config.git" value="' + esc(p.github) + '"></label>' +
-    '<label class="field"><span>Schedule</span>' + select("backup-schedule", ["hourly", "daily", "weekly"], p.schedule) + "</label>" +
-    '<label class="field"><span>Verify</span>' + select("backup-verification", ["none", "metadata", "full"], p.verification) + "</label>" +
-    '<label><input type="checkbox" id="backup-data"' + (p.data ? " checked" : "") + "> Include app data</label> " +
-    '<label><input type="checkbox" id="backup-initialize"' + (p.initialize ? " checked" : "") + "> New repository</label>" +
-    '<label class="field"><span>Password</span><input id="backup-password" type="password" autocomplete="current-password"></label>' +
-    '<button type="button" id="backup-save">Save policy</button>' +
-    (appView.backupError ? '<p class="error" role="alert">' + esc(appView.backupError) + "</p>" : "") +
-    (appView.backupMessage ? '<p role="status">' + esc(appView.backupMessage) + "</p>" : ""));
-}
 
 function appsPage() {
   if (!appView.overview && !appView.loading) void refreshApps();
-  return title("", "Apps", "Deploy, update and back up your apps.") + appsCard() + addAppCard() + updatesCard() + backupsCard() +
+  return title("", "Apps", "Deploy and update your apps, VMs and containers.") + appsCard() + addAppCard() + importCard() + updatesCard() +
     (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
 
@@ -314,32 +328,67 @@ async function appRequest(path, body, message) {
   void refreshApps();
 }
 
-async function saveBackupPolicy() {
-  const p = appView.policy;
-  const value = id => (document.querySelector(id)?.value || "").trim();
-  Object.assign(p, {
-    schedule: value("#backup-schedule") || "daily", verification: value("#backup-verification") || "metadata",
-    repository: value("#backup-repository"), rcloneConfigFile: value("#backup-rclone"), github: value("#backup-github"),
-    data: document.querySelector("#backup-data")?.checked === true, initialize: document.querySelector("#backup-initialize")?.checked === true,
-  });
-  const passwordInput = document.querySelector("#backup-password");
+
+async function pinApp() {
+  syncForm();
+  appView.error = appView.message = "";
+  try {
+    const files = appView.entries.filter(e => e.path && e.text);
+    if (!files.length) throw Error("Paste a Dockerfile or compose.yaml first.");
+    const result = await api("image-updates/pin", { files });
+    const byPath = new Map(result.files.map(f => [f.path, f.text]));
+    for (const entry of appView.entries) if (byPath.has(entry.path)) entry.text = byPath.get(entry.path);
+    appView.message = result.changes.length ? "Pinned " + result.changes.length + " image(s)." : "Already pinned.";
+  } catch (error) {
+    appView.error = error.message || "Could not pin images.";
+  }
+  rerender();
+}
+
+function generateInstance() {
+  syncForm();
+  const value = id => document.querySelector("#vm-" + id)?.value || "";
+  appView.instance = { type: value("type"), image: value("image").trim(), cpus: value("cpus"), memory: value("memory"), disk: value("disk"), usb: value("usb").trim().toLowerCase() };
+  appView.error = "";
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(appView.name || "")) appView.error = "Name: lowercase letters, digits and dashes.";
+  else if (!/^images:[a-z0-9][a-z0-9._/-]{0,127}$/.test(appView.instance.image)) appView.error = "Image: e.g. images:debian/13 or images:ubuntu/24.04";
+  else if (appView.instance.usb && !/^[0-9a-f]{4}:[0-9a-f]{4}$/.test(appView.instance.usb)) appView.error = "USB: vendor:product, e.g. 1d50:614e";
+  else appView.nix = nixInstance(appView.name, appView.instance);
+  rerender();
+}
+
+async function importData() {
+  appView.importError = appView.importMessage = "";
+  const target = document.querySelector("#import-target")?.value || "";
+  const folder = (document.querySelector("#import-path")?.value || "").trim();
+  const file = document.querySelector("#import-file")?.files?.[0];
+  const passwordInput = document.querySelector("#import-password");
   const current = passwordInput?.value || "";
   if (passwordInput) passwordInput.value = "";
-  appView.backupError = appView.backupMessage = "";
+  appView.importTarget = target;
   try {
-    if (!/^(rclone:[A-Za-z0-9_-]+:[A-Za-z0-9._/-]+|sftp:[A-Za-z0-9._@:/-]+|s3:[A-Za-z0-9._:/-]+|b2:[A-Za-z0-9._:/-]+|rest:https:\/\/[A-Za-z0-9._:/-]+|\/[A-Za-z0-9._/-]+)$/.test(p.repository))
-      throw Error("Invalid repository.");
-    if (p.repository.startsWith("rclone:") && !/^\/(var\/lib|run|etc)\/[A-Za-z0-9._/-]+$/.test(p.rcloneConfigFile))
-      throw Error("rclone repositories need an rclone config path.");
-    if (p.github && !/^git@github\.com:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/.test(p.github))
-      throw Error("GitHub mirror: git@github.com:owner/repo.git");
+    const [project, instance] = target.split("/");
+    if (!file) throw Error("Choose a .tar or .tar.gz file.");
+    if (!/^\/[A-Za-z0-9._\/-]*$/.test(folder)) throw Error("Folder: an absolute path such as /srv/data");
     if (!current) throw Error("Enter your password.");
-    await api("apps/backup-policy", { policy: policyText(p), current });
-    appView.backupMessage = "Saved.";
+    const sha256 = await sha256Hex(file);
+    const started = await api("apps/import-data/start", { project, instance, path: folder, size: file.size, sha256, current });
+    const step = 128 * 1024;
+    for (let offset = 0; offset < file.size; offset += step) {
+      const bytes = new Uint8Array(await file.slice(offset, Math.min(offset + step, file.size)).arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      await api("apps/import-data/chunk", { id: started.id, offset, data: btoa(binary) });
+      appView.importMessage = "Uploading " + Math.round(100 * Math.min(offset + step, file.size) / file.size) + "%";
+      rerender();
+    }
+    const done = await api("apps/import-data/finish", { id: started.id });
+    appView.importMessage = "Imported " + done.files + " file(s) into " + instance + ":" + folder + ".";
   } catch (error) {
-    appView.backupError = error.message || "Could not save the policy.";
+    appView.importError = error.message || "Import failed.";
+    appView.importMessage = "";
   }
-  void refreshApps();
+  rerender();
 }
 
 function bindApps() {
@@ -349,9 +398,10 @@ function bindApps() {
   on("#app-log-close", () => { appView.log = null; rerender(); });
   on("#app-deploy", () => void deployApp());
   on("#app-add-file", () => { syncForm(); appView.entries.push({ path: "", text: "" }); rerender(); });
+  on("#app-pin", () => void pinApp());
+  on("#vm-generate", generateInstance);
+  on("#import-start", () => void importData());
   on("#image-updates-check", () => void appRequest("image-updates/check", {}, "Checked."));
-  on("#backup-run", () => void appRequest("apps/backup-run", {}, "Backup started."));
-  on("#backup-save", () => void saveBackupPolicy());
   for (const input of ["#app-upload", "#app-upload-dir"]) {
     document.querySelector(input)?.addEventListener("change", event => { syncForm(); appView.uploads = [...event.target.files]; rerender(); });
   }

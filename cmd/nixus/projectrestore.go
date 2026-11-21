@@ -20,7 +20,7 @@ import (
 var restoreRoot = envPath("NIXUS_RESTORE_DIRECTORY", "/var/lib/nixus/restores")
 
 type restoreOptions struct {
-	Repository, PasswordFile, RcloneConfig, Snapshot string
+	Repository, PasswordFile, RcloneConfig, EnvironmentFile, Snapshot string
 }
 
 func restoreEnv(o restoreOptions) ([]string, error) {
@@ -34,6 +34,22 @@ func restoreEnv(o restoreOptions) ([]string, error) {
 			return nil, Public("The rclone configuration file is missing")
 		}
 		env = append(env, "RCLONE_CONFIG="+o.RcloneConfig)
+	}
+	if o.EnvironmentFile != "" {
+		raw, err := os.ReadFile(o.EnvironmentFile)
+		if err != nil || !fullmatch(runtimeFile, o.EnvironmentFile) {
+			return nil, Public("The credentials file is unreadable")
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if k, _, ok := strings.Cut(line, "="); !ok || !ENV_KEYS[k] {
+				return nil, Public("The credentials file has an unsupported variable")
+			}
+			env = append(env, line)
+		}
 	}
 	return env, nil
 }
@@ -310,6 +326,7 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	report := M{"format": 1, "startedAt": now(), "snapshot": snapshot, "repository": o.Repository, "status": "restoring"}
 	writeReport := func() { writeJSONMode(filepath.Join(STATE, "project-restore-report.json"), report, 0o640, "") }
+	writeReport()
 	failWith := func(stage string, err error) (M, error) {
 		report["status"], report["failedStage"], report["error"] = "failed", stage, publicError(err)
 		writeReport()
@@ -382,6 +399,7 @@ func projectRestoreCLI(args []string) error {
 	fs.StringVar(&o.Repository, "repository", "", "restic repository")
 	fs.StringVar(&o.PasswordFile, "password-file", "", "root-only restic password file")
 	fs.StringVar(&o.RcloneConfig, "rclone-config", "", "rclone configuration file for rclone: repositories")
+	fs.StringVar(&o.EnvironmentFile, "environment-file", "", "KEY=VALUE credentials for S3/B2")
 	fs.StringVar(&o.Snapshot, "snapshot", "latest", "restic snapshot ID")
 	if err := fs.Parse(args); err != nil {
 		return Public("usage: nixus-admin project-backup restore --repository REPO --password-file FILE [--rclone-config FILE] [--snapshot ID]")

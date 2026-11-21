@@ -122,6 +122,10 @@ in pkgs.testers.runNixOSTest {
         digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
 
+    with subtest("pin: unpinned references resolve to the registry's digest"):
+        pinned = broker("/image-updates/pin", {"files": [{"path": "Dockerfile", "text": "FROM localhost:5000/nixus/base:1\nCOPY a /a\n"}]})
+        assert pinned["files"][0]["text"] == "FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY a /a\n", pinned
+
     with subtest("stage, review and publish the original source bytes"):
         files = {
             "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
@@ -256,8 +260,20 @@ in pkgs.testers.runNixOSTest {
         fresh.succeed("tar -C /var/lib -xzf /tmp/restic-repo.tgz && mv /var/lib/nixus-restic-drill /var/lib/nixus-restic-in")
         fresh.succeed("install -d -m 0700 /var/lib/nixus-secrets && install -m 0600 /dev/stdin /var/lib/nixus-secrets/restore-password <<'EOF'\n" + password + "EOF")
         fresh.fail("test -e /srv/nixus/projects")
-        report = json.loads(fresh.succeed("nixus-admin project-backup restore --repository /var/lib/nixus-restic-in "
-                                          "--password-file /var/lib/nixus-secrets/restore-password"))
+        def fbroker(path, body=None):
+            if body is None:
+                return json.loads(fresh.succeed("curl -sf --unix-socket /run/nixus-admin/backend.sock http://localhost" + path))
+            body = dict(body, _actor="admin")
+            return json.loads(fresh.succeed("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                            "--data @- http://localhost" + path + " <<'EOF'\n" + json.dumps(body) + "\nEOF"))
+        fbroker("/backups/restore", {"kind": "local", "path": "/var/lib/nixus-restic-in", "password": password.strip()})
+        deadline = time.time() + 900
+        while fbroker("/backups/restore-status").get("status") in ("starting", "restoring", None):
+            assert time.time() < deadline, fbroker("/backups/restore-status")
+            time.sleep(3)
+        report = fbroker("/backups/restore-status")
+        if report.get("status") != "restored":
+            fresh.succeed("journalctl -b --no-pager | grep -E 'nixus: ' | tail -n 40 >&2")
         assert report["status"] == "restored", report
         assert report["sources"] == {"testapp": revision}, report["sources"]
         assert "testapp/" + json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"] in report["incus"]["started"], report["incus"]
@@ -374,6 +390,16 @@ in pkgs.testers.runNixOSTest {
         code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
                                     "--data '{\"_actor\": \"admin\"}' http://localhost/image-updates/apply-all")
         assert code != 0 and "up to date" in out, out
+        machine.succeed("mkdir -p /tmp/imp/sub && echo imported-ok > /tmp/imp/sub/hello.txt && tar -C /tmp/imp -cf /tmp/imp.tar sub")
+        tarball = machine.succeed("base64 -w0 /tmp/imp.tar").strip()
+        raw = base64.b64decode(tarball)
+        imp = broker("/apps/import-data/start", {"project": "notes", "instance": running[0]["name"], "path": "/srv/imported",
+                                                 "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
+        broker("/apps/import-data/chunk", {"id": imp["id"], "offset": 0, "data": tarball})
+        assert broker("/apps/import-data/finish", {"id": imp["id"]})["files"] == 1
+        assert machine.succeed("incus exec " + running[0]["name"] + " --project notes -- /bin/cat /srv/imported/sub/hello.txt") == "imported-ok\n"
+        setup = broker("/apps/backup-setup", {"kind": "local", "path": "/var/lib/nixus-restic-drill", "schedule": "weekly", "verification": "metadata"})
+        assert setup["repository"] == "/var/lib/nixus-restic-drill" and "password" not in setup, setup
         saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
         assert saved["saved"], saved
 

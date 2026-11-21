@@ -31,7 +31,7 @@ function nextStep() {
   }
   if (!quick.loaded) return null;
   if (!(quick.apps?.projects || []).length) return ["Add your first app", "projects"];
-  if (!quick.backups?.lastSuccess) return ["Set up backups", "projects"];
+  if (!quick.backups?.lastSuccess) return ["Set up backups", "operations"];
   return null;
 }
 
@@ -43,7 +43,8 @@ function quickActions() {
   const appUpdates = pendingAppUpdates();
   const lastBackup = quick.backups?.lastSuccess ? new Date(quick.backups.lastSuccess * 1000).toLocaleString() : "never";
   const busy = quick.busy ? " disabled" : "";
-  return (step ? card("Next step", '<button type="button" class="primary" data-go="' + esc(step[1]) + '">' + esc(step[0]) + " →</button>") : "") +
+  const restore = step && step[0] === "Add your first app" ? ' <button type="button" data-go="operations">Restore from a backup →</button>' : "";
+  return (step ? card("Next step", '<button type="button" class="primary" data-go="' + esc(step[1]) + '">' + esc(step[0]) + " →</button>" + restore) : "") +
     card("Quick actions",
       '<div class="quick-actions">' +
       '<div><button type="button" id="quick-update-nixus"' + busy + '>Update Nixus</button><small>' +

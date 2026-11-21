@@ -74,10 +74,9 @@ function operationsPage() {
         ? "Local export complete; off-host backup failed"
         : status.phase || "No backup recorded";
   return (
-    title(
-      "OFF-HOST RECOVERY",
-      "Host backups", "Full-server exports and restores.",
-    ) +
+    title("", "Backups", "Apps, their data and their secrets, backed up off this server.") +
+    (administrator() && typeof backupsCards === "function" ? backupsCards() : "") +
+    '<h2 class="section-title">Full-server export</h2>' +
     card(
       "Backup status",
       `<p>Current phase: <b>${esc(phase)}</b> ${status.group ? `· group ${esc(status.group)} of ${esc(status.groups)}` : ""}</p><p>${esc((status.members || []).join(", "))}</p>${status.excluded?.length ? `<p class="error">Excluded from coverage: ${esc(status.excluded.join(", "))}</p>` : ""}<p>Last full-host success: ${operationView.health?.lastBackupSuccess ? esc(new Date(operationView.health.lastBackupSuccess * 1000).toLocaleString()) : "Not recorded"}</p><p>Guests awaiting restart recovery: ${esc(operationView.health?.guestsAwaitingRestart ?? "Unknown")}</p>${operationView.error ? `<p class="error">${esc(operationView.error)}</p>` : ""}${repositoryVerification()}<button data-ops-refresh>Refresh</button> <button data-run-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Run scheduled backup</button> <button data-check-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Check restic repository</button> <button data-cancel-backup ${!administrator() || !backupRunning ? "disabled" : ""}>Cancel scheduled backup</button>`,
