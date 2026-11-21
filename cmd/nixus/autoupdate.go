@@ -277,16 +277,37 @@ var healthy = func(project, incusProject, revision string, seconds int) error {
 
 type volumeSnapshot struct{ Pool, Volume, Name string }
 
-func customVolumes(incus incusFunc, project string) ([]volumeSnapshot, error) {
-	out, err := incus(0, "storage", "volume", "list", "--project", project, "--format=json")
+// updateIncus runs Incus for update transactions and logs the hidden stderr of
+// a failing call to the root-only journal.
+var updateIncus incusFunc = func(timeout time.Duration, args ...string) (string, error) {
+	if timeout == 0 {
+		timeout = 600 * time.Second
+	}
+	out, err := incusRun(args, timeout, 2000)
 	if err != nil {
-		return nil, Public("Could not list the project's volumes")
+		fmt.Fprintln(os.Stderr, "nixus: incus", strings.Join(args, " "), "failed:", err)
+		return "", Public("Incus operation failed")
+	}
+	return out, nil
+}
+
+func customVolumes(incus incusFunc, project string) ([]volumeSnapshot, error) {
+	out, err := incus(0, "storage", "list", "--format=json")
+	if err != nil {
+		return nil, Public("Could not list storage pools")
 	}
 	var vols []volumeSnapshot
-	for _, raw := range list(must(parseJSON([]byte(out)))) {
-		v := obj(raw)
-		if str(v["type"]) == "custom" && !strings.Contains(str(v["name"]), "/") {
-			vols = append(vols, volumeSnapshot{Pool: str(v["pool"]), Volume: str(v["name"])})
+	for _, rawPool := range list(must(parseJSON([]byte(out)))) {
+		pool := str(obj(rawPool)["name"])
+		listed, err := incus(0, "storage", "volume", "list", pool, "--project", project, "--format=json")
+		if err != nil {
+			return nil, Public("Could not list the volumes of pool " + pool)
+		}
+		for _, raw := range list(must(parseJSON([]byte(listed)))) {
+			v := obj(raw)
+			if str(v["type"]) == "custom" && !strings.Contains(str(v["name"]), "/") {
+				vols = append(vols, volumeSnapshot{Pool: pool, Volume: str(v["name"])})
+			}
 		}
 	}
 	sort.Slice(vols, func(i, j int) bool { return vols[i].Pool+"/"+vols[i].Volume < vols[j].Pool+"/"+vols[j].Volume })
@@ -301,6 +322,7 @@ func snapshotVolumes(incus incusFunc, project, name string) ([]volumeSnapshot, e
 	for i := range vols {
 		vols[i].Name = name
 		if _, err := incus(0, "storage", "volume", "snapshot", "create", vols[i].Pool, vols[i].Volume, name, "--project", project); err != nil {
+			fmt.Fprintln(os.Stderr, "nixus: volume snapshot failed:", err)
 			return nil, Public("Could not snapshot volume " + vols[i].Volume + "; nothing was changed")
 		}
 	}
@@ -370,6 +392,7 @@ func applyImageUpdate(actor, project string) (M, error) {
 	save("preparing", nil)
 	audit("image-update-started", M{"principal": actor, "project": project, "from": previous})
 	fail := func(err error) (M, error) {
+		fmt.Fprintln(os.Stderr, "nixus: image update stopped before changing the project:", err)
 		save("failed", M{"error": publicError(err)})
 		audit("image-update-failed", M{"project": project, "phase": "before-change"})
 		return journal, err
@@ -402,7 +425,7 @@ func applyImageUpdate(actor, project string) (M, error) {
 				return t.abandonDeployment(failedDeployment, "image update rollback")
 			},
 			func() error { return republish(actor, project, previous) },
-			func() error { return restoreVolumes(defaultIncus, incusProject, snaps) },
+			func() error { return restoreVolumes(updateIncus, incusProject, snaps) },
 			func() error { _, err := deployRevision(actor, project, previous); return err },
 		}
 		for _, step := range steps {
@@ -434,7 +457,7 @@ func applyImageUpdate(actor, project string) (M, error) {
 	}
 	snapName := "nixus-update-" + strconv.FormatInt(time.Now().UTC().Unix(), 10)
 	save("snapshotting", nil)
-	if snaps, err = snapshotVolumes(defaultIncus, incusProject, snapName); err != nil {
+	if snaps, err = snapshotVolumes(updateIncus, incusProject, snapName); err != nil {
 		republish(actor, project, previous)
 		return fail(err)
 	}
@@ -489,7 +512,7 @@ func autoImageUpdates() (M, error) {
 			continue
 		}
 		journal, err := applyImageUpdate("nixus-auto", name)
-		results[name] = journal["status"]
+		results[name] = M{"status": journal["status"], "error": journal["error"]}
 		if err != nil {
 			failed = append(failed, name)
 		}

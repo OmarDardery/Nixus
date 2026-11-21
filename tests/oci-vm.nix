@@ -231,6 +231,12 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:" + image + " docker://localhost:5000/nixus/webbase:1")
         return machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/webbase:1 | jq -r .Digest").strip()
 
+    def run_auto(expect_ok):
+        code, out = machine.execute("nixus-admin image-updates auto 2>&1")
+        if (code == 0) != expect_ok:
+            machine.succeed("nixus-admin image-updates status >&2; journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|OCI-VM' | tail -n 60 >&2")
+        assert (code == 0) == expect_ok, out
+
     def web_instance():
         found = json.loads(machine.succeed("incus list --project web --format=json"))
         assert len(found) == 1, found
@@ -276,7 +282,7 @@ in pkgs.testers.runNixOSTest {
         checked = json.loads(machine.succeed("nixus-admin image-updates check"))
         img = [i for i in checked["projects"]["web"]["images"] if i["file"] == "Dockerfile"][0]
         assert img["status"] == "update-available" and img["latest"] == d2, img
-        machine.succeed("nixus-admin image-updates auto >&2")
+        run_auto(True)
         view = json.loads(machine.succeed("nixus-admin image-updates status"))
         assert view["projects"]["web"]["lastUpdate"]["status"] == "updated", view["projects"]["web"]
         assert web_instance()["status"] == "Running"
@@ -287,7 +293,7 @@ in pkgs.testers.runNixOSTest {
         web_exec("echo still-here > /data/marker")
         d3 = push_web("${webBroken}")
         machine.succeed("nixus-admin image-updates check >&2")
-        machine.fail("nixus-admin image-updates auto >&2")
+        run_auto(False)
         view = json.loads(machine.succeed("nixus-admin image-updates status"))
         assert view["projects"]["web"]["lastUpdate"]["status"] == "rolled-back", view["projects"]["web"]
         assert d3 in view["projects"]["web"]["holds"], view["projects"]["web"]
@@ -296,7 +302,7 @@ in pkgs.testers.runNixOSTest {
         assert web_exec("cat /data/marker").strip() == "still-here"
         rechecked = json.loads(machine.succeed("nixus-admin image-updates check"))
         assert rechecked["projects"]["web"]["updates"] == 0, rechecked["projects"]["web"]
-        machine.succeed("nixus-admin image-updates auto >&2")
+        run_auto(True)
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
