@@ -465,7 +465,9 @@ in pkgs.testers.runNixOSTest {
         assert broker("/apps")["badhw"]["status"] == "failed", broker("/apps")["badhw"]
 
     with subtest("apps repository: connect over SSH, push the server's apps, review and deploy a pushed app"):
-        machine.succeed("${pkgs.git}/bin/git init -q --bare -b main /srv/git/apps.git && chown -R git:git /srv/git")
+        code, out = machine.execute("install -d -o git -g git -m 755 /srv/git && "
+                                    "runuser -u git -- ${pkgs.git}/bin/git init -q --bare --initial-branch=main /srv/git/apps.git 2>&1")
+        assert code == 0, out
         key = broker("/apps-repo/key", {})["publicKey"]
         machine.succeed("install -d -o git -g git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
                         "chown git:git /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
