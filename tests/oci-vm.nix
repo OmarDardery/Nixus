@@ -485,7 +485,12 @@ in pkgs.testers.runNixOSTest {
             machine.succeed("journalctl -u test-sshd --no-pager | tail -n 20 >&2")
         machine.wait_for_open_port(2222)
         url = "ssh://git@localhost:2222/srv/git/apps.git"
-        assert broker("/apps-repo/scan", {"url": url})["fingerprints"]
+        code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                    "--data '{\"url\": \"" + url + "\", \"_actor\": \"admin\"}' http://localhost/apps-repo/scan")
+        if code != 0:
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |sshd' | tail -n 20 >&2; "
+                            "${pkgs.openssh}/bin/ssh-keyscan -v -T 10 -p 2222 localhost >&2 2>&1 || true; getent ahosts localhost >&2")
+        assert code == 0 and json.loads(out)["fingerprints"], out
         view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
         assert view["configured"] and "error" not in view["status"], view
         git = "${pkgs.git}/bin/git -c safe.directory=* -c user.name=t -c user.email=t@t "

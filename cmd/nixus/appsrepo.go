@@ -117,14 +117,26 @@ func scanAppsRepo(body M) (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := run([]string{"ssh-keyscan", "-T", "10", "-p", port, "-t", "ed25519,ecdsa,rsa", host}, nil, 30*time.Second, nil, "")
-	lines := []string{}
-	for _, l := range strings.Split(string(res.Stdout), "\n") {
-		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-			lines = append(lines, l)
+	// ssh-keyscan tries only the first address of a host; when IPv6 is
+	// listed but unreachable it returns nothing, so retry over IPv4.
+	var lines []string
+	for _, family := range [][]string{nil, {"-4"}} {
+		args := append(append([]string{"ssh-keyscan"}, family...), "-T", "10", "-p", port, "-t", "ed25519,ecdsa,rsa", host)
+		res, err := run(args, nil, 30*time.Second, nil, "")
+		if err != nil {
+			continue
 		}
+		for _, l := range strings.Split(string(res.Stdout), "\n") {
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+				lines = append(lines, l)
+			}
+		}
+		if len(lines) > 0 {
+			break
+		}
+		fmt.Fprintln(os.Stderr, "nixus: ssh-keyscan", strings.Join(family, ""), host, port+":", strings.TrimSpace(string(res.Stderr)))
 	}
-	if err != nil || len(lines) == 0 {
+	if len(lines) == 0 {
 		return nil, Public("Could not reach " + host + " on port " + port)
 	}
 	known := strings.Join(lines, "\n") + "\n"
