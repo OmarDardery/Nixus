@@ -32,7 +32,7 @@ On an installed host:
 
 ## Web UI information architecture
 **Overview** → guests, projects, health, quick actions.
-**Projects** → list/create/import; source tree/upload (byte exact); environment/secret references; build; review; deploy; logs; revisions; rollback; backup/restore.
+**Apps** → list/add/update; source tree/upload (byte exact); environment/secret references; build; review; deploy; logs; revisions; rollback; backup/restore.
 **Project Secrets** → masked project secrets, local dotenv import, reviewed SOPS ciphertext revisions, offline key recovery and declared consumer bindings. Runtime delivery remains gated on Incus/NixOS adapter tests. [Secrets UI contract](incus-native-secrets-ui.md). No standalone vault server.
 
 Secrets implementation boundaries (draft OmarDardery/nixlab#153): `cmd/nixus/secrets.go` manages age identity, reviewed ciphertext revisions and recipient-policy journals; `admin/native_secrets_recovery.py` handles the separately passphrase-encrypted age/restic/tunnel offline kit and its actual /run SOPS unlock test; `admin/native_source_guard.py` blocks plaintext/unsafe uploaded OCI sources without rewriting them; `admin/native_secrets_delivery.py` provides broker-owned per-workload volatile file staging with no Incus or guest master key access; `lib/project-guest-secrets.nix` derives ciphertext-only guest sops-nix service credentials. These files do **not** supply the missing #45 exact-version Incus Compose apply/ownership integration, live Incus persistence audit or NixOS guest key provisioning. Raw Dockerfile/Compose source remains immutable; forbidden env secrets fail closed.

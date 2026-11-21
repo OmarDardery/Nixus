@@ -163,7 +163,7 @@ NixOS generations. Shrinking or moving storage needs migration. A backup staging
 
 ## Applications
 
-Applications are not part of the host wizard. After setup, manage them on the **Projects**
+Applications are not part of the host wizard. After setup, manage them on the **Apps**
 page: upload original Dockerfile and Compose source, build images offline, and deploy a
 reviewed project revision into its own Incus project. Native guests are declared in the
 project's `default.nix`. See [administration](administration.md#compose-applications).

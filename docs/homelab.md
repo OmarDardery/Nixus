@@ -79,7 +79,7 @@ Nix rebuilds. Use Incus consoles for guest commands.
 
 ## Applications
 
-Applications live in **Projects** in the Nixus console:
+Applications live on the **Apps** page in the Nixus console:
 
 - **Compose apps:** upload the original Dockerfile, build context and Compose
   file, review and publish the exact bytes, build and import the images offline,

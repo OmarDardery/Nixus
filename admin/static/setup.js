@@ -42,7 +42,7 @@ function setupPage() {
   const next = progress.items.find(item => item.required && !item.done) || progress.items.find(item => !item.done);
   const percent = progress.total ? Math.round(100 * progress.completed / progress.total) : 100;
   const summary = progress.complete
-    ? "<p><b>Setup complete.</b> Optional steps remain available below.</p>"
+    ? "<p><b>Setup complete.</b></p>"
     : `<p>${esc(progress.completed)} of ${esc(progress.total)} required steps done.</p>`;
   return intro + card("Progress", `${summary}<div class="setup-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="Required setup steps completed"><span style="width:${percent}%"></span></div>
     <ol class="setup-steps">${progress.items.map((item, index) => setupStep(item, index, next)).join("")}</ol>

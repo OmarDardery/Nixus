@@ -228,37 +228,7 @@ func buildRevision(actor, project, revision string) (string, error) {
 // deployRevision binds the project to a published source revision through a
 // reviewed project transaction and waits for the deployment to verify.
 func deployRevision(actor, project, revision string) (string, error) {
-	t := NewProjectTransactions("", "")
-	review, err := t.review(M{}, actor, M{project: revision})
-	if err != nil {
-		return "", err
-	}
-	id := str(review["id"])
-	if _, err := t.publish(review["id"], review["planHash"]); err != nil {
-		return id, err
-	}
-	if _, err := t.deploy(review["id"], review["planHash"], false); err != nil {
-		return id, err
-	}
-	deadline := time.Now().Add(45 * time.Minute)
-	for time.Now().Before(deadline) {
-		status, err := t.status(id)
-		if err != nil {
-			return id, err
-		}
-		switch str(status["deployment"]) {
-		case "verified":
-			return id, nil
-		case "partial", "interrupted":
-			detail := str(status["deploymentError"])
-			if detail == "" {
-				detail = "deployment stopped"
-			}
-			return id, Public(detail)
-		}
-		time.Sleep(updatePoll)
-	}
-	return id, Public("The deployment timed out")
+	return deployChange(actor, M{}, M{project: revision})
 }
 
 // healthy waits healthSeconds, then requires every service to run the

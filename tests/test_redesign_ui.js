@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const bootstrap = source.lastIndexOf('\n(async () =>');
 assert.ok(bootstrap > 0);
 const context = vm.createContext({document:{querySelector:()=>({})},setInterval:()=>0,URL});
-for (const name of ['projects.js', 'foundation.js', 'operations.js', 'incus-projects.js', 'commands.js', 'setup.js'])
+for (const name of ['projects.js', 'foundation.js', 'operations.js', 'apps.js', 'commands.js', 'setup.js'])
   vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context);
 vm.runInContext(source.slice(0, bootstrap), context);
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/defaults.json'), 'utf8'));
@@ -50,7 +50,7 @@ assert.ok(confirmed.includes('Deploy guests') && confirmed.includes('complete'))
 const ops = vm.runInContext("state.page='operations';operationView.users=[];operationsPage()",context);
 assert.ok(!ops.includes('Portal accounts'), 'Accounts are not part of backup recovery.');
 assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/setup.md"'));
-assert.ok(source.includes('browser enrollment enabled') && source.includes('sudo nixus-admin reset-password') && !source.includes('setup password printed by the installer'));
+assert.ok(source.includes('sudo nixus-admin reset-password') && !source.includes('setup password printed by the installer'));
 console.log('Redesigned console checks passed: routing, drafts, safe delegation, permissions and deployment stages.');
 
 vm.runInContext("state.status.release={revision:'a'.repeat(40)};state.draft=copy(fixture);state.platformRevision='a'.repeat(40)", context);

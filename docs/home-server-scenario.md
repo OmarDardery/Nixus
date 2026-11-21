@@ -91,7 +91,7 @@ Restrict control interfaces to trusted LAN or VPN clients.
 
 ## 4. Deploy any Compose stack
 
-On the **Projects** page, upload the stack's original Dockerfile and Compose
+On the **Apps** page, upload the stack's original Dockerfile and Compose
 file, review and publish the exact bytes, build its images offline, then
 deploy a reviewed project revision that links that source. Choose image
 versions or digests intentionally, keep secrets in the SOPS project secrets

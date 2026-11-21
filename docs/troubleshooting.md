@@ -174,7 +174,7 @@ sudo incus list --all-projects
 sudo nixus-admin projects status
 ```
 
-The Projects page in the console shows each instance's status and a bounded
+The **Apps** page in the console shows each instance's status and a bounded
 read-only log. A failed deployment stays `partial` with its resources untouched;
 re-review and resume it rather than deleting instances.
 

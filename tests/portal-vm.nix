@@ -81,7 +81,7 @@ in pkgs.testers.runNixOSTest {
         assert bad == "400", bad
         login = json.loads(machine.succeed(base + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"admin\",\"password\":\"" + password + "\"}'"))
         assert login["role"] == "admin" and login["csrf"], login
-        for view in ["status", "session", "project-overview", "project-backups", "image-updates", "project-sources"]:
+        for view in ["status", "session", "project-overview", "project-backups", "image-updates", "project-sources", "apps"]:
             machine.succeed(base + "/api/" + view + " -f -o /dev/null")
         # A mutation without the CSRF token, or from another origin, is refused.
         nocsrf = machine.succeed(base + "/api/cancel-backup -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{}'").strip()
@@ -89,7 +89,7 @@ in pkgs.testers.runNixOSTest {
         cross = machine.succeed("curl -sk -b /tmp/jar -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' -H 'X-Nixus-CSRF: " + login["csrf"] + "' -H 'Content-Type: application/json' --data '{}' https://127.0.0.1:9440/api/cancel-backup").strip()
         assert cross == "401", cross
         # Static assets, including the new console scripts, are served.
-        for asset in ["/", "/project-console.js", "/paste-source.js", "/incus-projects.js"]:
+        for asset in ["/", "/apps.js"]:
             machine.succeed("curl -skf -o /dev/null https://127.0.0.1:9440" + asset)
 
     with subtest("root CLI uses the same broker"):

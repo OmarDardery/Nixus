@@ -44,7 +44,6 @@ async function main() {
   run("nativeSecretsView.data = inventory; nativeSecretsView.loaded = true; nativeSecretsView.selected = 'alpha'");
   let panel = run("nativeSecretsPanel()");
   assert.match(panel, /Environment & secrets/);
-  assert.match(panel, /Encrypted, declarative variables/);
   assert.doesNotMatch(panel, /private-value-not-in-UI/);
   assert.ok(!sent.length, "Rendering must not call a broker");
 

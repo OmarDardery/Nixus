@@ -277,7 +277,7 @@ async function action(name, el) {
       });
       document.querySelector("#certificate-renew").value = "";
       document.querySelector("#certificate-result").innerHTML =
-        `<div class="cert-result"><b>Browser identity registered</b><p>Claiming its one-time encrypted download. If download or import fails, refresh the identity list to revoke or reissue.</p><p>Fingerprint <code>${esc(cert.fingerprint)}</code></p><p>Scope: ${esc(cert.restricted ? cert.projects.join(", ") : "Unrestricted host administration")}. Expires: ${esc(cert.expiresAt)}.</p><p>Import the PKCS#12 file with your bundle passphrase. In Firefox use Settings → Privacy &amp; Security → Certificates → View Certificates → Your Certificates → Import. In Chromium use Settings → Privacy and security → Security → Manage certificates (or your operating system certificate manager).</p><p>Open Incus, select this identity and switch to the lab project. Revocation is independent of your Nixus sign-in.</p></div>`;
+        `<div class="cert-result"><b>Browser identity registered</b><p>Claiming its one-time encrypted download.</p><p>Fingerprint <code>${esc(cert.fingerprint)}</code></p><p>Scope: ${esc(cert.restricted ? cert.projects.join(", ") : "Unrestricted host administration")}. Expires: ${esc(cert.expiresAt)}.</p><p>Import the PKCS#12 file with your bundle passphrase. In Firefox use Settings → Privacy &amp; Security → Certificates → View Certificates → Your Certificates → Import. In Chromium use Settings → Privacy and security → Security → Manage certificates (or your operating system certificate manager).</p><p>Open Incus, select this identity and switch to the lab project.</p></div>`;
       const bytes = await claimCertificate();
       download(cert.name + ".p12", bytes, "application/x-pkcs12");
       return;
@@ -295,7 +295,7 @@ async function action(name, el) {
 
 
 function certificateRows(items) {
-  if (!items.length) return "<p>No Nixus-owned browser identities. Existing Incus trust is unchanged.</p>";
+  if (!items.length) return "<p>No browser identities.</p>";
   return `<div class="table-wrap"><table><thead><tr><th>Device / fingerprint</th><th>Scope / expiry</th><th>Status / actions</th></tr></thead><tbody>${items.map(cert => `<tr><td>${esc(cert.device)}<br><code>${esc(cert.fingerprint)}</code></td><td>${esc(cert.restricted ? cert.projects.join(", ") : "Unrestricted host administration")}<br>${esc(cert.expiresAt)}</td><td>${esc(cert.status)}<br><button data-action="certificate-renew" data-device="${esc(cert.device)}" data-fingerprint="${esc(cert.fingerprint)}">Renew</button> <button data-action="certificate-revoke" data-fingerprint="${esc(cert.fingerprint)}" ${cert.status === "revoked" ? "disabled" : ""}>Revoke</button></td></tr>`).join("")}</tbody></table></div>`;
 }
 
