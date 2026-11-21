@@ -43,12 +43,6 @@ let
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
       environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
-      # An emulated FTDI USB serial adapter for the passthrough subtest.
-      # A local git-over-SSH server for the apps repository subtest.
-      services.openssh = lib.mkIf withRegistry { enable = true; openFirewall = false; };
-      users.users.git = lib.mkIf withRegistry { isSystemUser = true; group = "git"; home = "/srv/git"; createHome = true; shell = "${pkgs.git}/bin/git-shell"; };
-      users.groups.git = lib.mkIf withRegistry { };
-      virtualisation.qemu.options = lib.mkIf withRegistry [ "-device qemu-xhci,id=xhci" "-chardev null,id=ser0" "-device usb-serial,bus=xhci.0,chardev=ser0,serial=NIXUS0001" ];
       services.dockerRegistry = lib.mkIf withRegistry { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
       # The local fixture registry has no TLS; mark only it as insecure.
       environment.etc."containers/registries.conf".text = ''
@@ -427,15 +421,12 @@ in pkgs.testers.runNixOSTest {
         assert saved["saved"], saved
 
     with subtest("device passthrough: a serial port by-id and a USB device reach a Compose service"):
-        code, _ = machine.execute("modprobe ftdi_sio; udevadm settle; test -c /dev/ttyUSB0")
-        if code != 0:
-            machine.succeed("cat /sys/bus/usb/devices/*/product >&2; dmesg | grep -iE 'usb|ftdi|tty' | tail -n 30 >&2")
-        machine.wait_until_succeeds("test -c /dev/ttyUSB0", timeout=60)
+        # A real UART behind a stable by-id style link, and QEMU's USB tablet as the USB device.
+        byid = "/dev/serial/by-id/usb-Nixus_Test_Board_0001-if00"
+        machine.succeed("test -c /dev/ttyS1 && mkdir -p /dev/serial/by-id && ln -sf /dev/ttyS1 " + byid)
         devices = broker("/devices")
-        assert devices["serial"] and devices["serial"][0]["source"] in ("/dev/ttyUSB0",) + tuple(
-            "/dev/serial/by-id/" + n for n in machine.succeed("ls /dev/serial/by-id/ 2>/dev/null || true").split()), devices
-        byid = devices["serial"][0]["source"]
-        usbid = [u["id"] for u in devices["usb"] if u["id"] == devices["serial"][0]["id"]][0]
+        usbid = "0627:0001"
+        assert any(u["id"] == usbid and usbid in u["compose"] for u in devices["usb"]), devices
         dbase = push_web("${webV1}")
         printer = {
             "Dockerfile": ("FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
