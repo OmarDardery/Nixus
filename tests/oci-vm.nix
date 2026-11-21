@@ -85,8 +85,8 @@ in pkgs.testers.runNixOSTest {
     machine.wait_for_open_port(5000)
 
     with subtest("publish a digest-pinned base image to the local registry"):
-        machine.succeed("skopeo copy --dest-tls-verify=false docker-archive:${baseImage} docker://localhost:5000/nixus/base:1")
-        digest = machine.succeed("skopeo inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${baseImage} docker://localhost:5000/nixus/base:1")
+        digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
 
     with subtest("stage, review and publish the original source bytes"):
