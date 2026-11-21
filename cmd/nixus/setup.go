@@ -68,7 +68,7 @@ func setupProgress(status M) M {
 	}
 	done := map[string]bool{
 		"administrator":   accountValid(),
-		"activation":      isTrue(status["setupComplete"]) && isTrue(status["lastConfirmed"]),
+		"activation":      isTrue(status["setupComplete"]) && status["lastConfirmed"] != nil,
 		"incusBrowser":    browserEnrolled(STATE),
 		"cockpitPassword": cockpitPasswordSet(settings),
 		"secretsKey":      key != nil,

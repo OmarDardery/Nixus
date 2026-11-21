@@ -43,9 +43,13 @@ function setupPage() {
   const summary = progress.complete
     ? "<p><b>Setup complete.</b></p>"
     : `<p>${esc(progress.completed)} of ${esc(progress.total)} required steps done.</p>`;
-  return intro + card("Progress", `${summary}<div class="setup-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="Required setup steps completed"><span style="width:${percent}%"></span></div>
-    <ol class="setup-steps">${progress.items.map((item, index) => setupStep(item, index, next)).join("")}</ol>
-    <button class="small" data-action="setup-refresh">Refresh progress</button>`);
+  // Inline styles are blocked by the console's CSP, so use a native <progress>.
+  const steps = progress.items.map((item, index) => [item, index]);
+  const done = steps.filter(([item]) => item.done), open = steps.filter(([item]) => !item.done);
+  return intro + card("Progress", `${summary}<progress class="setup-meter" max="100" value="${percent}" aria-label="Required setup steps completed">${percent}%</progress>
+    <ol class="setup-steps">${open.map(([item, index]) => setupStep(item, index, next)).join("")}</ol>
+    ${done.length ? `<details class="done-steps"><summary>${done.length} done</summary><ol class="setup-steps">${done.map(([item, index]) => setupStep(item, index, next)).join("")}</ol></details>` : ""}
+    <button class="small" data-action="setup-refresh">Refresh progress</button>`, "", { open: true });
 }
 
 function bindSetup() {

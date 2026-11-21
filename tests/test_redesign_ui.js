@@ -69,3 +69,22 @@ const platform = vm.runInContext('platformReview()',context);
 assert.ok(platform.includes('Proposed: ') && platform.includes('Historical confirmed review'));
 assert.ok(platform.includes('Historical platform files (1)'));
 assert.ok(!platform.includes('Candidate:'));
+
+// Panels: the page's first section opens, the rest collapse; Overview and Changes start collapsed.
+vm.runInContext("state.page='network'; panelIndex = 0", context);
+const first = vm.runInContext("card('One', '<p>a</p>')", context), second = vm.runInContext("card('Two', '<p>b</p>')", context);
+assert.match(first, /<details class="card panel" data-panel="network:one" open>/);
+assert.doesNotMatch(second, / open>/);
+assert.match(vm.runInContext("card('Forced', 'x', '', {open: true})", context), / open>/);
+vm.runInContext("state.page='overview'; panelIndex = 0", context);
+assert.doesNotMatch(vm.runInContext("card('Host', 'x')", context), / open>/, "Overview panels start collapsed");
+
+// The staged bar names each staged item and can undo it.
+vm.runInContext("state.page='overview'; state.platformRevision='a'.repeat(40); state.status.release={revision:'b'.repeat(40)}", context);
+const staged = vm.runInContext("stagedItems()", context);
+assert.equal(staged.length, 1);
+assert.match(staged[0].label, /Update Nixus to aaaaaaaaaaaa/);
+assert.match(vm.runInContext("stagedBanner()", context), /data-undo-staged="0"/);
+vm.runInContext("stagedItems()[0].undo()", context);
+assert.equal(vm.runInContext("stagedCount()", context), 0);
+console.log("Panels and staged items verified");

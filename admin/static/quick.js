@@ -44,19 +44,19 @@ function quickActions() {
   const lastBackup = quick.backups?.lastSuccess ? new Date(quick.backups.lastSuccess * 1000).toLocaleString() : "never";
   const busy = quick.busy ? " disabled" : "";
   const restore = step && step[0] === "Add your first app" ? ' <button type="button" data-go="operations">Restore from a backup →</button>' : "";
-  return (step ? card("Next step", '<button type="button" class="primary" data-go="' + esc(step[1]) + '">' + esc(step[0]) + " →</button>" + restore) : "") +
-    card("Quick actions",
-      '<div class="quick-actions">' +
-      '<div><button type="button" id="quick-update-nixus"' + busy + '>Update Nixus</button><small>' +
-        esc(release.version || "") + " <code>" + esc((release.revision || "").slice(0, 12)) + "</code></small></div>" +
-      '<div><button type="button" id="quick-update-apps"' + busy + (appUpdates ? "" : " disabled") + '>Update all apps</button><small>' +
-        (appUpdates ? esc(appUpdates) + " with updates" : "Up to date") + "</small></div>" +
-      '<div><button type="button" id="quick-backup"' + busy + '>Back up now</button><small>Last: ' + esc(lastBackup) + "</small></div>" +
-      "</div>" +
-      '<label class="field"><span>Password</span><input id="quick-password" type="password" autocomplete="current-password"></label>' +
-      (quick.phase ? '<p role="status">' + esc(quick.phase) + "</p>" : "") +
-      (quick.message ? '<p role="status">' + esc(quick.message) + "</p>" : "") +
-      (quick.error ? '<p class="error" role="alert">' + esc(quick.error) + "</p>" : ""));
+  return '<section class="card quick-strip">' +
+    (step ? '<div class="next-step"><span class="label">Next step</span><button type="button" class="primary" data-go="' + esc(step[1]) + '">' + esc(step[0]) + " →</button>" + restore + "</div>" : "") +
+    '<div class="quick-actions">' +
+    '<div><button type="button" id="quick-update-nixus"' + busy + '>Update Nixus</button><small>' +
+      esc(release.version || "") + " <code>" + esc((release.revision || "").slice(0, 12)) + "</code></small></div>" +
+    '<div><button type="button" id="quick-update-apps"' + busy + (appUpdates ? "" : " disabled") + '>Update all apps</button><small>' +
+      (appUpdates ? esc(appUpdates) + " with updates" : "Up to date") + "</small></div>" +
+    '<div><button type="button" id="quick-backup"' + busy + '>Back up now</button><small>Last: ' + esc(lastBackup) + "</small></div>" +
+    '<label class="field quick-password"><span>Password</span><input id="quick-password" type="password" autocomplete="current-password"></label>' +
+    "</div>" +
+    (quick.phase ? '<p role="status">' + esc(quick.phase) + "</p>" : "") +
+    (quick.message ? '<p role="status">' + esc(quick.message) + "</p>" : "") +
+    (quick.error ? '<p class="error" role="alert">' + esc(quick.error) + "</p>" : "") + "</section>";
 }
 
 function quickPassword() {

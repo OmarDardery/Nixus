@@ -64,11 +64,18 @@ function displayedSetting(path) {
   const owned = (state.status?.codeOverrides || []).some(c => c.setting === path || path.startsWith(c.setting + "."));
   return at(owned && state.status?.effectiveSettings ? state.status.effectiveSettings : state.draft, path);
 }
-function toast(message) {
+// One notification at a time. Errors stay until tapped; others fade after 4 s.
+let toastTimer = 0;
+function toast(message, kind = "") {
   const el = document.querySelector("#toast");
-  el.textContent = message;
+  if (!el) return;
+  const error = kind === "error" || (kind !== "info" && /fail|error|could not|cannot|invalid|unexpected|denied|refused|required|must |enter /i.test(String(message)));
+  clearTimeout(toastTimer);
+  el.textContent = String(message || "");
+  el.classList.toggle("error", error);
   el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 7000);
+  el.onclick = () => el.classList.remove("show");
+  if (!error) toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
 }
 function field(
   label,
@@ -103,9 +110,27 @@ function secret(label, key, hint = "", textarea = false) {
 }
 const pageGuides = {overview:"install.md",guests:"networking.md",network:"networking.md",storage:"apps.md",hardware:"apps.md",integrations:"apps.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"install.md",files:"administration.md",review:"install.md",operations:"backups.md",commands:"administration.md"};
 const title = (eyebrow, heading, text) =>
-  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
-const card = (heading, body, caption = "") =>
-  `<section class="card"><div class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</div>${body}</section>`;
+  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div></div>`;
+// Every section is a collapsible panel. Only the page's first panel starts
+// open (pages listed in panelsClosed start fully collapsed); a viewer's
+// choices are remembered per page and survive rerenders.
+const panelsClosed = new Set(["overview", "review"]);
+const panelState = (() => { try { return JSON.parse(localStorage.getItem("nixus-panels") || "{}"); } catch { return {}; } })();
+let panelIndex = 0;
+function panelKey(heading) { return state.page + ":" + String(heading).replace(/<[^>]*>/g, "").trim().toLowerCase(); }
+function savePanel(key, open) {
+  panelState[key] = open;
+  try { localStorage.setItem("nixus-panels", JSON.stringify(panelState)); } catch {}
+}
+function card(heading, body, caption = "", opts = {}) {
+  const key = panelKey(heading);
+  const first = panelIndex++ === 0 && !panelsClosed.has(state.page);
+  const open = opts.open ?? panelState[key] ?? first;
+  return `<details class="card panel" data-panel="${esc(key)}"${open ? " open" : ""}><summary class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</summary><div class="panel-body">${body}</div></details>`;
+}
+function bindPanels() {
+  for (const el of document.querySelectorAll("details.panel[data-panel]")) el.addEventListener("toggle", () => savePanel(el.dataset.panel, el.open));
+}
 function ownershipBanner() {
   const changes = state.status?.codeOverrides || [];
   return changes.length
@@ -138,10 +163,27 @@ function draftChanges() {
 function platformUpdateSelected() { return !!state.platformRevision && state.platformRevision !== state.status.release?.revision; }
 function reviewScope() { return JSON.stringify([state.principal?.username, state.platformRevision, state.modules]); }
 let renderedReviewScope = null;
-function stagedCount() { return draftChanges().length + Object.keys(state.modules).length + Object.values(state.secrets).filter(Boolean).length + (state.updateInputs ? 1 : 0) + (platformUpdateSelected() ? 1 : 0); }
+// Everything staged in this browser, each with a way to undo it.
+function stagedItems() {
+  const items = draftChanges().map(path => ({ label: "Setting " + path, undo: () => {
+    const parts = path.split("."), last = parts.pop();
+    const target = parts.reduce((o, k) => o?.[k], state.draft), source = parts.reduce((o, k) => o?.[k], state.status.settings);
+    if (!target) return;
+    if (source && last in source) target[last] = copy(source[last]); else delete target[last];
+  } }));
+  for (const name of Object.keys(state.modules)) items.push({ label: "Module " + name, undo: () => { delete state.modules[name]; } });
+  for (const [key, value] of Object.entries(state.secrets)) if (value) items.push({ label: "Secret " + key, undo: () => { delete state.secrets[key]; } });
+  if (state.updateInputs) items.push({ label: "Refresh pinned packages", undo: () => { state.updateInputs = false; } });
+  if (platformUpdateSelected()) items.push({ label: "Update Nixus to " + state.platformRevision.slice(0, 12), undo: () => { state.platformRevision = ""; } });
+  return items;
+}
+function stagedCount() { return stagedItems().length; }
 function stagedBanner() {
-  const n = stagedCount();
-  return n ? `<div class="draft-bar" role="status"><div><strong>${n} staged change${n === 1 ? "" : "s"}</strong><span>Not applied to your host</span></div><div class="draft-actions"><button class="small" data-ui-discard>Discard drafts</button><button class="primary" data-go="review">Review changes</button></div></div>` : "";
+  const items = stagedItems();
+  if (!items.length) return "";
+  const n = items.length;
+  return `<div class="draft-bar" role="status"><details class="draft-list"><summary><strong>${n} staged change${n === 1 ? "" : "s"}</strong><span>Not applied · show</span></summary><ul>${items.map((item, i) =>
+    `<li><span>${esc(item.label)}</span><button type="button" class="small" data-undo-staged="${i}">Undo</button></li>`).join("")}</ul></details><div class="draft-actions"><button class="small" data-ui-discard>Discard all</button>${state.page === "review" ? "" : '<button class="primary" data-go="review">Review</button>'}</div></div>`;
 }
 function navigationHtml() {
   return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
@@ -211,6 +253,7 @@ function shell() {
   const knownHealth = observedHealth && units.length > 0;
   const live = knownHealth && requiredUnits.every(id => units.some(u => u.Id === id && u.ActiveState === "active"));
   const hostStatus = !knownHealth ? "Unknown" : live ? "Active" : "Needs attention";
+  panelIndex = 0;
   app.innerHTML = `<div class="layout top-layout">
   <header class="topbar"><div class="topbar-left">${brandLogo()}<span class="crumb-sep" aria-hidden="true">/</span><span class="host-crumb"><span class="status-dot ${live ? "active" : knownHealth ? "warning" : "unknown"}" title="${esc(hostStatus)}" aria-hidden="true"></span><b>${esc(settings.hostName)}</b><span class="muted host-address">${esc(address)}</span></span></div>
     <div class="top-actions">${quickManagementLinks(settings)}<button type="button" class="search-trigger" id="ui-search-open" aria-label="Search pages">⌕ <kbd>Ctrl K</kbd></button>
@@ -226,6 +269,8 @@ function shell() {
     document.querySelector("#platform-ack").checked = authorization.approved;
   }
   bind();
+  bindPanels();
+  for (const el of document.querySelectorAll("[data-undo-staged]")) el.addEventListener("click", () => { stagedItems()[Number(el.dataset.undoStaged)]?.undo(); shell(); });
   bindOperations();
   bindApps();
   if (typeof bindBackups === "function") bindBackups();
@@ -405,38 +450,36 @@ function deploymentTimeline() {
     ["Confirm access", "Reconnect from a fresh session before rollback expires."],
     ["Deploy guests", "Optional reviewed guest closures, after host confirmation."],
   ];
-  return `<section class="card lifecycle-card" aria-label="Guarded activation workflow">
-    <div class="card-header"><h2>Deployment workflow</h2><span class="caption">${job ? esc(job.status.replaceAll("-", " ")) : "No candidate yet"}</span></div>
-    <ol class="lifecycle">${steps.map(([label, detail], i) => {
+  return card("Deployment workflow", `<ol class="lifecycle">${steps.map(([label, detail], i) => {
       const complete = i < phase || (i === 4 && phase === 4 && deployed);
       const active = i === phase && !complete;
       return `<li class="${complete ? "complete" : active ? "current" : ""}" ${active ? 'aria-current="step"' : ""}>
         <span class="step-num" aria-hidden="true">${complete ? "✓" : i + 1}</span>
         <div><strong>${esc(label)}</strong><p>${esc(detail)}</p></div>
       </li>`;
-    }).join("")}</ol>
-    
-  </section>`;
+    }).join("")}</ol>`, job ? esc(job.status.replaceAll("-", " ")) : "No candidate yet");
 }
 
 function review() {
   const job = state.status.job;
   const building =
     job && ["building", "applying", "rolling-back"].includes(job.status);
+  // The current state and its one next action come first; details fold away.
   return (
     title(
-      "REPRODUCIBLE DEPLOYMENT",
+      "",
       "Changes",
       "Build, activate and confirm staged host changes.",
     ) +
+    `<section class="card"><div class="card-header"><div class="status-line"><span class="progress-dot"></span><h2>${job ? esc(job.status.replaceAll("-", " ")) : "Ready to prepare your first generation"}</h2></div>${job ? `<span class="caption mono">${esc(job.id.slice(0, 10))}</span>` : ""}</div><div class="actions"><button class="primary" data-action="build" ${building || state.status.pending ? "disabled" : ""}>${job ? "Build a new review" : "Build & review configuration"}</button>${job?.status === "ready" ? `<button class="primary" data-action="apply" ${!job.impactPlan || job.impactPlan.blocked ? "disabled" : ""}>Activate reviewed generation</button>` : ""}${job && ["building", "ready", "failed"].includes(job.status) ? '<button data-action="cancel">Discard candidate</button>' : ""}${state.status.lastConfirmed && state.status.lastConfirmed.id !== job?.id ? '<button data-action="rollback-confirmed">Roll back last confirmed change</button>' : ""}${job?.status === "awaiting-confirmation" ? '<button class="primary" data-action="confirm">Confirm access</button>' : ""}${job?.previousSystem && ["confirmed", "awaiting-confirmation", "failed"].includes(job.status) ? '<button data-action="rollback">Roll back this change</button>' : ""}</div>${state.updateInputs ? '<p class="note">This review includes a Nixpkgs package refresh.</p>' : ""}${job?.error ? `<p class="error">${esc(job.error)}</p>` : ""}</section>` +
     deploymentTimeline() +
+    `${job ? card("Settings in this candidate", `${job.changes.map((d) => `<div class="diff"><code>${esc(d.setting)}</code><span class="before">${esc(JSON.stringify(d.before))}</span><span class="after">${esc(JSON.stringify(d.after))}</span></div>`).join("") || "<p>No settings changed; the build can still include package updates.</p>"}${job.secretChanges.length ? `<p class="note">Runtime secrets updated: ${esc(job.secretChanges.join(", "))}.</p>` : ""}<div class="separator"></div><p>Management address after activation: <a href="https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}">https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}</a></p>`, job.changes.length + " change(s)") + card("Build & activation output", `<pre class="log" id="build-log">${esc(job.log || "Waiting for the build worker…")}</pre>`, "Last 64 KiB", {open: ["building", "applying"].includes(job.status)}) : ""}` +
+    platformReview() +
     moduleReview() +
     settingsMigrationReview() +
     candidateOverridesReview() +
-    platformReview() +
     impactReview() +
-    guestDeploymentReview() +
-    `<section class="card"><div class="card-header"><div class="status-line"><span class="progress-dot"></span><h2>${job ? esc(job.status.replaceAll("-", " ")) : "Ready to prepare your first generation"}</h2></div>${job ? `<span class="caption mono">${esc(job.id.slice(0, 10))}</span>` : ""}</div><div class="actions"><button class="primary" data-action="build" ${building || state.status.pending ? "disabled" : ""}>${job ? "Build a new review" : "Build & review configuration"}</button>${job?.status === "ready" ? `<button class="primary" data-action="apply" ${!job.impactPlan || job.impactPlan.blocked ? "disabled" : ""}>Activate reviewed generation</button>` : ""}${job && ["building", "ready", "failed"].includes(job.status) ? '<button data-action="cancel">Discard candidate</button>' : ""}${state.status.lastConfirmed && state.status.lastConfirmed.id !== job?.id ? '<button data-action="rollback-confirmed">Roll back last confirmed change</button>' : ""}${job?.status === "awaiting-confirmation" ? '<button class="primary" data-action="confirm">Confirm access</button>' : ""}${job?.previousSystem && ["confirmed", "awaiting-confirmation", "failed"].includes(job.status) ? '<button data-action="rollback">Roll back this change</button>' : ""}</div>${state.updateInputs ? '<p class="note">This review includes a Nixpkgs package refresh.</p>' : ""}${job?.error ? `<p class="error">${esc(job.error)}</p>` : ""}</section>${job ? `<section class="card section"><div class="card-header"><h2>Settings in this candidate</h2><span class="caption">${job.changes.length} change(s)</span></div>${job.changes.map((d) => `<div class="diff"><code>${esc(d.setting)}</code><span class="before">${esc(JSON.stringify(d.before))}</span><span class="after">${esc(JSON.stringify(d.after))}</span></div>`).join("") || "<p>No settings changed; the build can still include package updates.</p>"}${job.secretChanges.length ? `<p class="note">Runtime secrets updated: ${esc(job.secretChanges.join(", "))}.</p>` : ""}<div class="separator"></div><p>Management address after activation: <a href="https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}">https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}</a></p></section><section class="card section"><div class="card-header"><h2>Build & activation output</h2><span class="caption">Last 64 KiB</span></div><pre class="log" id="build-log">${esc(job.log || "Waiting for the build worker…")}</pre></section>` : ""}`
+    guestDeploymentReview()
   );
 }
 function formatBytes(v) {

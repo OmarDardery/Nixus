@@ -76,7 +76,9 @@ function operationsPage() {
   return (
     title("", "Backups", "Apps, their data and their secrets, backed up off this server.") +
     (administrator() && typeof backupsCards === "function" ? backupsCards() : "") +
-    '<h2 class="section-title">Full-server export</h2>' +
+    // Whole-host export tooling is advanced; fold it into one panel.
+    '<details class="card panel advanced-block" data-panel="operations:advanced"' + (panelState["operations:advanced"] ? " open" : "") +
+      '><summary class="card-header"><h2>Advanced · full-server export</h2><span class="caption">' + esc(phase) + '</span></summary><div class="panel-body">' +
     card(
       "Backup status",
       `<p>Current phase: <b>${esc(phase)}</b> ${status.group ? `· group ${esc(status.group)} of ${esc(status.groups)}` : ""}</p><p>${esc((status.members || []).join(", "))}</p>${status.excluded?.length ? `<p class="error">Excluded from coverage: ${esc(status.excluded.join(", "))}</p>` : ""}<p>Last full-host success: ${operationView.health?.lastBackupSuccess ? esc(new Date(operationView.health.lastBackupSuccess * 1000).toLocaleString()) : "Not recorded"}</p><p>Guests awaiting restart recovery: ${esc(operationView.health?.guestsAwaitingRestart ?? "Unknown")}</p>${operationView.error ? `<p class="error">${esc(operationView.error)}</p>` : ""}${repositoryVerification()}<button data-ops-refresh>Refresh</button> <button data-run-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Run scheduled backup</button> <button data-check-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Check restic repository</button> <button data-cancel-backup ${!administrator() || !backupRunning ? "disabled" : ""}>Cancel scheduled backup</button>`,
@@ -111,7 +113,7 @@ function operationsPage() {
           "Portable recovery kit",
           `<div class="fields"><label class="field full"><span>age public recipient (optional)</span><input id="recovery-recipient" placeholder="age1…"></label><label class="field"><span>Your password</span><input id="recovery-password" type="password" autocomplete="current-password"></label></div><button data-download-recovery>Download recovery kit</button>`,
         )
-      : "")
+      : "") + "</div></details>"
   );
 }
 
@@ -196,7 +198,7 @@ function bindOperations() {
     try {
       await fn(el);
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     } finally {
       if (el.isConnected) el.disabled = false;
     }
