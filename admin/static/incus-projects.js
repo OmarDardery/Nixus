@@ -21,7 +21,7 @@ const NATIVE_MAX_FILE_BYTES = 64 * 1024 * 1024;
 const NATIVE_MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 
 function nativeSourcePath(file) {
-  const name = file.webkitRelativePath || file.name;
+  const name = file.nixusPath || file.webkitRelativePath || file.name;
   if (!name || name.length > 255 || name.startsWith("/") || name.includes("\\") ||
       name.split("/").some(part => !part || part === "." || part === ".." || /[\x00-\x1f]/.test(part))) {
     throw Error("Unsafe or ambiguous source path.");
@@ -208,6 +208,7 @@ function nativeProjectPage() {
     : '';
   const txPanel =
     '<p>Review a full Nix module as an independent project revision. Source changes never rebuild NixOS. Deployment creates or reconciles the declared Incus project, volumes and instances, and brings up linked Compose sources; removed declarations are kept, never deleted.</p>' +
+    (typeof nixTemplateButtons === "function" ? nixTemplateButtons() : "") +
     '<label class="field"><span>Relative workspace Nix file (for example: alpha/default.nix)</span><input id="native-nix-path" type="text" spellcheck="false" value="' +
     esc(nativeProjectTx.path) + '" placeholder="alpha/default.nix"></label>' +
     '<button type="button" id="native-nix-load" class="small">Load current file</button>' +
@@ -253,6 +254,7 @@ function nativeProjectPage() {
       '<label class="field"><span>Or import ZIP/TAR archive</span><input id="native-source-archive" type="file" accept=".zip,.tar,.tar.gz,.tgz"' + (nativeImportState.busy ? ' disabled' : '') + '></label>' +
       (nativeSourcePreflight.scanning ? '<p role="status">Computing checksums in the browser…</p>' : '') +
       (nativeSourcePreflight.error ? '<p role="alert" class="error">' + esc(nativeSourcePreflight.error) + '</p>' : '') + manifest + editorError + editor) +
+    (typeof pasteSourceCard === "function" ? pasteSourceCard() : "") +
     card("Stage source in private review storage",
       '<p>After selecting files, reauthenticate and stage their exact bytes with an immutable SHA-256 manifest. This does not publish a Nix flake or deploy applications.</p>' +
       '<label class="field"><span>Project slug</span><input id="native-import-project" type="text" maxlength="63" placeholder="my-project" pattern="[a-z][a-z0-9-]*"></label>' +
@@ -646,6 +648,7 @@ async function nativeProjectTransaction(action) {
 
 function bindNativeProjects() {
   if (typeof bindProjectConsole === "function") bindProjectConsole();
+  if (typeof bindPasteSource === "function") bindPasteSource();
   if (typeof bindNativeSecrets === "function") bindNativeSecrets();
   document.querySelector("#native-workspace-init")?.addEventListener("click", () => void nativeInitializeWorkspace());
   if (!nativeProjectTx.loaded && !nativeProjectTx.loading) void nativeRefreshProjectTransaction();

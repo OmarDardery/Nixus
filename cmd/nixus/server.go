@@ -617,7 +617,7 @@ func (a *Auth) stageCertificate(s *session, result M) (M, error) {
 var staticAssets = map[string][2]string{
 	"/": {"index.html", "text/html; charset=utf-8"}, "/app.js": {"app.js", "text/javascript; charset=utf-8"},
 	"/projects.js": {"projects.js", "text/javascript; charset=utf-8"}, "/incus-projects.js": {"incus-projects.js", "text/javascript; charset=utf-8"},
-	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/project-console.js": {"project-console.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
+	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/project-console.js": {"project-console.js", "text/javascript; charset=utf-8"}, "/paste-source.js": {"paste-source.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
 	"/events.js": {"events.js", "text/javascript; charset=utf-8"}, "/operations.js": {"operations.js", "text/javascript; charset=utf-8"},
 	"/commands.js": {"commands.js", "text/javascript; charset=utf-8"}, "/setup.js": {"setup.js", "text/javascript; charset=utf-8"},
 	"/foundation.js": {"foundation.js", "text/javascript; charset=utf-8"}, "/style.css": {"style.css", "text/css; charset=utf-8"},

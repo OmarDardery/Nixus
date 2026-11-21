@@ -135,7 +135,7 @@ func ociSnapshot(project, revision, identity string, publisher *PublishedSources
 	mode := str(plan["mode"])
 	blocked := false
 	for _, b := range list(plan["blocking"]) {
-		if str(b) == "unsupported-buildkit-feature-requires-explicit-policy" {
+		if str(b) == "unsupported-buildkit-feature-requires-explicit-policy" || str(b) == "dockerfile-base-image-must-be-pinned-by-digest" {
 			blocked = true
 		}
 	}
@@ -182,6 +182,11 @@ func ociSnapshot(project, revision, identity string, publisher *PublishedSources
 	os.Mkdir(etc, 0o700)
 	os.WriteFile(filepath.Join(etc, "passwd"), []byte("root:x:0:0:OCI builder:/work/home:/bin/sh\n"), 0o600)
 	os.WriteFile(filepath.Join(etc, "group"), []byte("root:x:0:\n"), 0o600)
+	bases := baseImages(plan)
+	if err := fetchBaseImages(scratch, bases); err != nil {
+		return "", nil, err
+	}
+	plan["bases"] = bases
 	if err := atomicString(filepath.Join(work, "intent.json"), canonicalSpaced(plan), 0o600); err != nil {
 		return "", nil, err
 	}
