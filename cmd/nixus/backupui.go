@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -240,12 +241,23 @@ func finishDataImport(actor string, body M) (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, _ := os.ReadDir(tree)
-	for _, e := range entries {
-		if _, err := updateIncus(30*time.Minute, "file", "push", "-r", "--create-dirs", filepath.Join(tree, e.Name()),
-			str(record["instance"])+str(record["path"])+"/", "--project", str(record["project"])); err != nil {
-			return nil, Public("Could not copy the files into " + str(record["instance"]))
+	// Push file by file to exact paths: a recursive push nests differently
+	// depending on whether the target folder already exists.
+	target := strings.TrimRight(str(record["path"]), "/")
+	err = filepath.WalkDir(tree, func(p string, d os.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
 		}
+		rel, _ := filepath.Rel(tree, p)
+		info, _ := d.Info()
+		if _, err := updateIncus(30*time.Minute, "file", "push", "--create-dirs", "--mode", fmt.Sprintf("%04o", info.Mode().Perm()),
+			p, str(record["instance"])+target+"/"+filepath.ToSlash(rel), "--project", str(record["project"])); err != nil {
+			return Public("Could not copy " + filepath.ToSlash(rel) + " into " + str(record["instance"]))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	audit("app-data-imported", M{"principal": actor, "project": record["project"], "instance": record["instance"], "files": count})
 	return M{"files": count}, nil
