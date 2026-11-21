@@ -6,7 +6,7 @@ let
 in pkgs.writeShellApplication {
   name = "nixus-admin";
   runtimeInputs = with pkgs; [ nix nixos-rebuild git iproute2 util-linux openssl openssh shadow coreutils systemd networkmanager
-    incus-lts.client age sops parted e2fsprogs pamtester buildah bubblewrap incusCompose restic rclone ];
+    incus-lts.client age sops parted e2fsprogs pamtester buildah bubblewrap incusCompose restic rclone skopeo ];
   text = ''
     NIXUS_ADMIN_LAUNCHER="$(readlink -f "$0")"
     NIXUS_WORKER_RUNTIME="$(dirname "$(dirname "$NIXUS_ADMIN_LAUNCHER")")"

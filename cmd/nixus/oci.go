@@ -1388,8 +1388,33 @@ func childBuild(spec M) (M, error) {
 			return nil, Public("Unsafe service identity")
 		}
 		storage := []string{tool, "--root", "/work/storage-" + name, "--runroot", "/work/run-" + name, "--storage-driver", "vfs"}
+		dockerfile := childContext + "/" + str(svc["dockerfile"])
+		if bases := list(spec["bases"]); len(bases) > 0 {
+			for _, rawBase := range bases {
+				b := obj(rawBase)
+				if !fullmatch(re(`/work/bases/[0-9a-f]{64}\.tar`), str(b["archive"])) || !fullmatch(re(`localhost/nixus-base-[0-9a-f]{16}:pinned`), str(b["local"])) {
+					return nil, Public("Invalid pinned base image record")
+				}
+				out, err := childExec(append(append([]string{}, storage...), "pull", "--signature-policy", childPolicyPath, "--quiet",
+					"oci-archive:"+str(b["archive"])), 600*time.Second, childContext)
+				if err != nil {
+					return nil, err
+				}
+				if _, err := childExec(append(append([]string{}, storage...), "tag", strings.TrimSpace(string(out)), str(b["local"])), 60*time.Second, childContext); err != nil {
+					return nil, err
+				}
+			}
+			original, err := os.ReadFile(dockerfile)
+			if err != nil {
+				return nil, Public("Reviewed Dockerfile is unreadable in the sandbox")
+			}
+			dockerfile = "/work/Dockerfile-" + name
+			if err := os.WriteFile(dockerfile, []byte(rewriteBases(string(original), bases)), 0o600); err != nil {
+				return nil, err
+			}
+		}
 		if _, err := childExec(append(append([]string{}, storage...), "bud", "--signature-policy", childPolicyPath, "--isolation", "chroot",
-			"--network=host", "--pull=never", "--layers=false", "-f", childContext+"/"+str(svc["dockerfile"]), "--tag", str(svc["image"]),
+			"--network=host", "--pull=never", "--layers=false", "-f", dockerfile, "--tag", str(svc["image"]),
 			childContext+"/"+str(svc["context"])), 1200*time.Second, childContext); err != nil {
 			return nil, err
 		}

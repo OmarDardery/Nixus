@@ -433,3 +433,97 @@ func imageUpdatesCLI(args []string) error {
 	}
 	return Public("usage: nixus-admin image-updates {check|status}")
 }
+
+// --- pinned base images for the offline builder ------------------------------------
+
+const maxBaseBytes = 4 << 30
+
+// baseImages returns the distinct digest-pinned Dockerfile bases of a plan.
+func baseImages(plan M) []M {
+	seen := map[string]bool{}
+	var out []M
+	for _, raw := range list(plan["imageLock"]) {
+		e := obj(raw)
+		if str(e["kind"]) != "dockerfile-from" || !isTrue(e["pinned"]) || seen[str(e["ref"])] {
+			continue
+		}
+		seen[str(e["ref"])] = true
+		hex := strings.TrimPrefix(str(e["digest"]), "sha256:")
+		out = append(out, M{"ref": e["ref"], "registry": e["registry"], "repository": e["repository"], "digest": e["digest"],
+			"archive": "/work/bases/" + hex + ".tar", "local": "localhost/nixus-base-" + hex[:16] + ":pinned"})
+	}
+	return out
+}
+
+const skopeoPolicy = `{"default":[{"type":"reject"}],"transports":{"docker":{"":[{"type":"insecureAcceptAnything"}]}}}`
+
+// ociFetchBase copies one digest-pinned image into an OCI archive. The digest
+// reference makes the registry content self-verifying.
+var ociFetchBase = func(base M, destination string) error {
+	policy := destination + ".policy.json"
+	if err := os.WriteFile(policy, []byte(skopeoPolicy), 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(policy)
+	source := "docker://" + str(base["registry"]) + "/" + str(base["repository"]) + "@" + str(base["digest"])
+	res, err := run([]string{"skopeo", "--policy", policy, "--override-os", "linux", "--override-arch", "amd64", "copy",
+		"--retry-times", "3", source, "oci-archive:" + destination + ":base"}, nil, 30*time.Minute,
+		[]string{"PATH=" + os.Getenv("PATH"), "HOME=/var/empty"}, "")
+	if err != nil || res.Code != 0 {
+		return Public("Could not fetch pinned base image " + str(base["ref"]) + "; check the digest and registry")
+	}
+	return nil
+}
+
+// fetchBaseImages stores every pinned base in <scratch>/work/bases.
+func fetchBaseImages(scratch string, bases []M) error {
+	if len(bases) == 0 {
+		return nil
+	}
+	dir := filepath.Join(scratch, "work", "bases")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	var total int64
+	for _, b := range bases {
+		target := filepath.Join(dir, filepath.Base(str(b["archive"])))
+		if err := ociFetchBase(b, target); err != nil {
+			return err
+		}
+		info, err := os.Stat(target)
+		if err != nil {
+			return Public("Pinned base image archive is missing")
+		}
+		if total += info.Size(); total > maxBaseBytes {
+			return Public("Pinned base images exceed the 4 GiB build quota")
+		}
+	}
+	return nil
+}
+
+// rewriteBases maps pinned FROM references to locally loaded names in a
+// private build copy of the Dockerfile; the published source is unchanged.
+func rewriteBases(text string, bases []any) string {
+	mapping := map[string]string{}
+	for _, raw := range bases {
+		b := obj(raw)
+		mapping[str(b["ref"])] = str(b["local"])
+	}
+	lines := strings.SplitAfter(text, "\n")
+	for i, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
+			continue
+		}
+		for _, f := range fields[1:] {
+			if strings.HasPrefix(f, "--") {
+				continue
+			}
+			if local, ok := mapping[f]; ok {
+				lines[i] = strings.Replace(line, f, local, 1)
+			}
+			break
+		}
+	}
+	return strings.Join(lines, "")
+}

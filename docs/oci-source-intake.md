@@ -4,6 +4,7 @@ This document covers source intake, the isolated build and the verified Incus im
 
 ## Supported source intake
 
+- Paste a Dockerfile, Compose file and small build-context files directly on the Projects page; each pasted file is staged byte-for-byte like an upload.
 - Upload multiple original files, a folder, or **one explicitly selected** ZIP, TAR, TAR.GZ or TGZ archive from the Projects browser UI. Copy original file bytes and nested relative names without rewriting YAML, Dockerfiles or `.dockerignore`.
 - Source is stored in root-owned staging, published into immutable revision directories at `/srv/nixus/project-sources/<project>/revisions/<sha256>/source/`, **never in the world-readable Nix store**. The existing separate reauthenticated review/publish contract applies.
 - Direct and unpacked source quotas: at most **256 files**, **64 MiB per file**, **128 MiB total**, **12 path components**; archives at most **64 MiB compressed** and 1024 entries including directories. Realistic binary assets are supported up to these limits without silent truncation.
@@ -57,6 +58,12 @@ registry, anonymously, which digest every tracked tag points to now. Nothing is 
 changed. The **Image updates** card on the Projects page lists each image as `current`,
 `update-available`, `untracked`, `unpinned` or `error`.
 
+Before an offline build, the broker fetches each digest-pinned `FROM` image with `skopeo` into the
+build workspace; the digest reference makes the content self-verifying, and the total is capped at
+4 GiB. Inside the sandbox, still without network access, each archive is loaded and the build uses a
+private copy of the Dockerfile whose pinned `FROM` references point at those local images. The
+published source is never modified.
+
 **Prepare update** stages a new source revision in which only the matching `@sha256:` digests
 are replaced; every other byte is unchanged. Review, publish, build and deploy it like any other
 revision. The previous revision stays published history for rollback.
@@ -65,8 +72,6 @@ revision. The previous revision stays published history for rollback.
 
 - The incus-compose health daemon and DNS sidecar (currently disabled because they pull
   registry images).
-- Fetching digest-pinned base images into the offline builder. Builds still only find
-  `scratch` or images already in local Buildah storage.
 - Images whose files belong to non-root users cannot be built yet, because the sandbox maps only
   one user.
 - Automatic, health-gated application of image updates with snapshot rollback (#61).
