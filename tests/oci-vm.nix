@@ -467,13 +467,13 @@ in pkgs.testers.runNixOSTest {
     with subtest("apps repository: connect over SSH, push the server's apps, review and deploy a pushed app"):
         # A throwaway git-over-SSH server on :2222, created at runtime.
         code, out = machine.execute(
-            "id git >/dev/null 2>&1 || useradd -r -M -d /srv/git -s ${pkgs.git}/bin/git-shell git; usermod -p '*' git; "
-            "install -d -o git -g git -m 755 /srv/git && "
+            "id git >/dev/null 2>&1 || useradd -r -U -M -d /srv/git -s ${pkgs.git}/bin/git-shell git; usermod -p '*' git; "
+            "install -d -o git -m 755 /srv/git && "
             "runuser -u git -- ${pkgs.git}/bin/git init -q --bare --initial-branch=main /srv/git/apps.git 2>&1")
         assert code == 0, out
         key = broker("/apps-repo/key", {})["publicKey"]
-        machine.succeed("install -d -o git -g git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
-                        "chown git:git /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
+        machine.succeed("install -d -o git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
+                        "chown git: /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
         machine.succeed("id sshd >/dev/null 2>&1 || useradd -r -M -d /var/empty -s /run/current-system/sw/bin/nologin sshd")
         machine.succeed("mkdir -p /etc/test-sshd /var/empty && ${pkgs.openssh}/bin/ssh-keygen -q -t ed25519 -N \"\" -f /etc/test-sshd/host_key")
         machine.succeed("cat > /etc/test-sshd/config <<'EOF'\nPort 2222\nListenAddress 127.0.0.1\nHostKey /etc/test-sshd/host_key\nUsePAM no\n"
@@ -497,7 +497,7 @@ in pkgs.testers.runNixOSTest {
         hello_dockerfile = "FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n"
         machine.succeed("mkdir -p /tmp/apps/hello && cat > /tmp/apps/hello/compose.yaml <<'EOF'\nservices:\n  hello:\n    build: .\nEOF\n"
                         "cat > /tmp/apps/hello/Dockerfile <<'EOF'\n" + hello_dockerfile + "EOF")
-        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main && chown -R git:git /srv/git/apps.git")
+        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main && chown -R git: /srv/git/apps.git")
         view = broker("/apps-repo/check", {})
         pending = view["status"]["pending"]
         assert pending["apps"] == ["hello"] and len(pending["commits"]) == 1, pending
