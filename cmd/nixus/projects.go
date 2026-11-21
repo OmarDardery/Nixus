@@ -7,6 +7,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1061,6 +1062,7 @@ func (t *ProjectTransactions) status(identity string) (M, error) {
 	}
 	rs := str(record["status"])
 	out["deployment"], out["deploymentResources"] = ds, resources
+	out["deploymentError"] = deployment["errorDetail"]
 	out["recoveryRequired"] = rs == "applying-source" || rs == "rolling-back" || rs == "recovery-required" || ds == "partial" || ds == "interrupted"
 	return out, nil
 }
@@ -1463,7 +1465,8 @@ func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M,
 		if pinErr == nil {
 			_, runErr = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-deploy-" + identity,
 				"--property=RuntimeMaxSec=3600", "--setenv=NIXUS_STATE=" + t.state, "--setenv=NIXUS_PROJECTS=" + t.workspace,
-				"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "project-deploy-job", identity}, nil, 20*time.Second)
+				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
+				adminLauncher(), "admin", "project-deploy-job", identity}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {
 			existing["status"], existing["errorCode"] = "interrupted", "worker-start-failed"
@@ -1548,6 +1551,8 @@ func (t *ProjectTransactions) runDeployment(identity string) (M, error) {
 		}()
 		if err != nil {
 			journal["status"], journal["updatedAt"], journal["errorCode"] = "partial", now(), "resource-review-required"
+			journal["errorDetail"] = publicError(err)
+			fmt.Fprintln(os.Stderr, "nixus: project deployment stopped:", err)
 			writeJSON(filepath.Join(dir, "deployment.json"), journal)
 			audit("project-deploy-partial", M{"identity": identity})
 			return t.status(identity)
