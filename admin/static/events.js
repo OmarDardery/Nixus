@@ -99,17 +99,6 @@ function bind() {
       .forEach((el) => (el.disabled = true));
   const update = document.querySelector("#update-inputs");
   if (update) update.onchange = () => (state.updateInputs = update.checked);
-  const password = document.querySelector("#password-form");
-  if (password)
-    password.onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        await api("password", Object.fromEntries(new FormData(password)));
-        login("Password changed. Sign in with your new password.");
-      } catch (err) {
-        toast(err.message, "error");
-      }
-    };
 }
 async function action(name, el) {
   el.disabled = true;

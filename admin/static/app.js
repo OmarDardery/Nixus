@@ -17,11 +17,11 @@ const app = document.querySelector("#app");
 const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
+  ["ingress","Public ingress"],["operations","Backups"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
+const settingsPages = ["network","guests","storage","hardware","integrations","security","ingress","system","files"];
 const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
@@ -295,7 +295,6 @@ function renderPage() {
     apps: integrations,
     security,
     ingress: ingressPage,
-    accounts: () => title("", "Accounts", "Who can sign in to this console.") + (administrator() ? accountCard() : card("Account permissions", "<p>Only administrators can manage portal accounts.</p>")),
     system: () => system() + card("Host health", healthSummary()),
     files,
     review,
@@ -404,7 +403,7 @@ function system() {
       "HOST PREFERENCES",
       "Maintenance", "Host name, time zone, packages, radios and monitoring.",
     ) +
-    `<div class="grid">${card("Identity & maintenance", `<div class="fields">${field("Host name", "hostName")}${field("Time zone", "maintenance.timeZone", { placeholder: "Region/City" })}${field("Setup HTTPS port", "setup.port", { type: "number" })}${field("Confirmation window, seconds", "setup.confirmationSeconds", { type: "number", hint: "300–1800 seconds after activation completes." })}</div><div class="separator"></div>${toggle("Enable scheduled filesystem TRIM", "maintenance.trim")}${toggle("Deduplicate the Nix store weekly", "maintenance.optimiseStore")}${toggle("Laptop server: keep running with lid closed", "maintenance.laptopMode")}<button data-action="export-settings">Export desired settings JSON</button>`)}${card("Wi-Fi & Bluetooth", `${toggle("Enable Wi-Fi", "radios.wifi.enable")}<div class="fields">${field("Wi-Fi interface", "radios.wifi.interface", { options: wifiChoices, full: true })}</div>${toggle("Declare a Wi-Fi connection profile", "radios.wifi.manageProfile")}<div class="fields">${field("Network name / SSID", "radios.wifi.ssid", { full: true })}${secret("WPA password", "wifiPassword", "WPA personal networks are supported. Existing NetworkManager profiles can be retained without entering a new password.")}</div><div class="separator"></div>${toggle("Enable Bluetooth and power it on at boot", "radios.bluetooth.enable")}`)}${card("Change portal password", '<form id="password-form"><div class="fields"><label class="field full"><span>Current password</span><input name="current" type="password" autocomplete="current-password" required></label><label class="field full"><span>New password</span><input name="password" type="password" autocomplete="new-password" minlength="16" required></label></div><div class="actions"><button>Update password & sign out</button></div></form>')}${card("Monitoring history", `${toggle("Collect host metrics for external monitoring", "monitoring.collection")}${toggle("Enable local Prometheus history and alert rules", "monitoring.history")}<div class="fields">${field("Retention, days", "monitoring.retentionDays", { type: "number", hint: "1–90 days; default 14." })}${field("Metrics interval, seconds", "monitoring.scrapeSeconds", { type: "number", hint: "15–300 seconds; default 60." })}</div>`)}${card("Package maintenance", `<label class="toggle"><input type="checkbox" id="update-inputs" ${state.updateInputs ? "checked" : ""}> Refresh pinned Nixpkgs for the next review</label><button data-go="review">Build a maintenance review →</button>`)}</div>`
+    `<div class="grid">${card("Identity & maintenance", `<div class="fields">${field("Host name", "hostName")}${field("Time zone", "maintenance.timeZone", { placeholder: "Region/City" })}${field("Setup HTTPS port", "setup.port", { type: "number" })}${field("Confirmation window, seconds", "setup.confirmationSeconds", { type: "number", hint: "300–1800 seconds after activation completes." })}</div><div class="separator"></div>${toggle("Enable scheduled filesystem TRIM", "maintenance.trim")}${toggle("Deduplicate the Nix store weekly", "maintenance.optimiseStore")}${toggle("Laptop server: keep running with lid closed", "maintenance.laptopMode")}<button data-action="export-settings">Export desired settings JSON</button>`)}${card("Wi-Fi & Bluetooth", `${toggle("Enable Wi-Fi", "radios.wifi.enable")}<div class="fields">${field("Wi-Fi interface", "radios.wifi.interface", { options: wifiChoices, full: true })}</div>${toggle("Declare a Wi-Fi connection profile", "radios.wifi.manageProfile")}<div class="fields">${field("Network name / SSID", "radios.wifi.ssid", { full: true })}${secret("WPA password", "wifiPassword", "WPA personal networks are supported. Existing NetworkManager profiles can be retained without entering a new password.")}</div><div class="separator"></div>${toggle("Enable Bluetooth and power it on at boot", "radios.bluetooth.enable")}`)}${card("Monitoring history", `${toggle("Collect host metrics for external monitoring", "monitoring.collection")}${toggle("Enable local Prometheus history and alert rules", "monitoring.history")}<div class="fields">${field("Retention, days", "monitoring.retentionDays", { type: "number", hint: "1–90 days; default 14." })}${field("Metrics interval, seconds", "monitoring.scrapeSeconds", { type: "number", hint: "15–300 seconds; default 60." })}</div>`)}${card("Package maintenance", `<label class="toggle"><input type="checkbox" id="update-inputs" ${state.updateInputs ? "checked" : ""}> Refresh pinned Nixpkgs for the next review</label><button data-go="review">Build a maintenance review →</button>`)}</div>`
   );
 }
 function files() {
@@ -489,8 +488,7 @@ function formatBytes(v) {
 function login(message = "") {
   clearInterval(state.timer);
   state.timer = null;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Username</span><input name="username" autocomplete="username" placeholder="Your Linux user, e.g. the one you SSH with" required autofocus></label><label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">Use your Linux account (sudo users are administrators) or a console-only account.</p><p class="note" id="enrollment-offer" hidden><button type="button" class="link" id="enrollment-open">Create a console-only account instead</button></p><p class="note"><button type="button" class="link" id="recover-access">Forgot your password? Recover access</button></p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
-  document.querySelector("#recover-access").onclick = () => showRecovery();
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Username</span><input name="username" autocomplete="username" placeholder="Your Linux user, e.g. the one you SSH with" required autofocus></label><label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">Sign in with your Linux account (one with sudo). Forgot the password? Reset it with <code>passwd</code> at the server's console.</p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
   document.querySelector("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const button = e.target.querySelector("button");
@@ -507,105 +505,9 @@ function login(message = "") {
       button.disabled = false;
     }
   };
-  const form = document.querySelector("#login-form");
-  api("enrollment").then(({available, recoveryRequired}) => {
-    if (!form.isConnected) return;
-    // Linux sign-in works right away; console-only accounts stay optional.
-    if (available) {
-      document.querySelector("#enrollment-offer").hidden = false;
-      document.querySelector("#enrollment-open").onclick = () => showEnrollment();
-    }
-    else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixus-admin reset-password from a private host terminal or restore supported account state.";
-  }).catch(() => {});
 }
-
 // Recovery: this browser holds a private request cookie; the host approves its ID.
-async function showRecovery() {
-  let request;
-  try { request = await api("recovery"); }
-  catch (err) { document.querySelector("#login-error").textContent = err.message; return; }
-  state.csrf = request.csrf;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Recover access</h1>
-    <p>On the host, open Cockpit's terminal, SSH or the physical console and run:</p>
-    <pre class="command"><code id="recovery-command">sudo nixus-admin recovery approve ${esc(request.requestId)}</code></pre>
-    <p class="note" id="recovery-status">Waiting for approval. This request expires in five minutes and only works in this browser.</p>
-    <form id="recovery-form" hidden><label class="field"><span>New portal password</span><input name="password" type="password" minlength="16" autocomplete="new-password" required></label>
-    <p class="error" id="recovery-error"></p><button class="primary">Set password and sign in →</button></form>
-    <p class="note"><button type="button" class="link" id="recovery-cancel">Back to sign in</button></p></section></main>`;
-  const form = document.querySelector("#recovery-form");
-  const update = (current) => {
-    if (!form.isConnected) return;
-    if (current.approved) {
-      form.hidden = false;
-      document.querySelector("#recovery-status").textContent = `Approved for ${current.username}. Choose a new password (16–256 characters).`;
-    }
-  };
-  update(request);
-  const timer = setInterval(async () => {
-    if (!form.isConnected || !form.hidden) return clearInterval(timer);
-    try { update(await api("recovery")); }
-    catch { clearInterval(timer); document.querySelector("#recovery-status").textContent = "This request expired. Start again from the sign-in page."; }
-  }, 3000);
-  document.querySelector("#recovery-cancel").onclick = () => { clearInterval(timer); login(); };
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const button = e.target.querySelector("button");
-    button.disabled = true;
-    try {
-      state.principal = await api("recovery/complete", Object.fromEntries(new FormData(e.target)), state.csrf);
-      state.csrf = state.principal.csrf;
-      clearInterval(timer);
-      await load();
-    } catch (err) {
-      document.querySelector("#recovery-error").textContent = err.message;
-      button.disabled = false;
-    }
-  };
-}
 
-async function showEnrollment() {
-  let bootstrap;
-  try { bootstrap = await api("bootstrap"); }
-  catch { return login("Enrollment is unavailable. Refresh or use authorized console recovery."); }
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Verify this machine</h1><p>Sign in with a local Linux administrator that has sudo.</p><form id="host-proof-form"><label class="field"><span>Linux administrator account</span><input name="hostUsername" autocomplete="username" required maxlength="32"></label><label class="field"><span>Linux administrator password</span><input name="hostPassword" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">Verify host administrator</button></form><details><summary>Use SSH keys or local console approval instead</summary><p>On the host run <code>sudo nixus-admin approve-enrollment</code> and enter this browser's code at the private prompt.</p><label class="field"><span>Browser approval code</span><input id="bootstrap-code" readonly autocomplete="off"></label></details><p id="bootstrap-status" role="status"></p><form id="enrollment-form"><label class="field"><span>New Nixus administrator username</span><input name="username" autocomplete="username" pattern="[a-z][a-z0-9_-]{0,31}" maxlength="32" required></label><label class="field"><span>New Nixus password</span><input name="password" type="password" autocomplete="new-password" minlength="16" maxlength="256" required></label><p id="enrollment-error" class="error" aria-live="polite"></p><button class="primary" disabled>Create administrator</button></form><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
-  const form = document.querySelector("#enrollment-form");
-  const proof = document.querySelector("#host-proof-form");
-  let submitting = false;
-  const update = () => {
-    document.querySelector("#bootstrap-code").value = bootstrap.approvalCode;
-    document.querySelector("#bootstrap-status").textContent = bootstrap.approved
-      ? "This browser is approved. Choose your independent Nixus account."
-      : "Host approval required. Verification expires after ten minutes and cannot be transferred to another browser.";
-    form.querySelector("button").disabled = submitting || !bootstrap.approved;
-  };
-  update();
-  proof.onsubmit = async event => {
-    event.preventDefault();
-    const button = proof.querySelector("button"); button.disabled = true;
-    const password = proof.elements.hostPassword;
-    try {
-      await api("bootstrap/verify", {hostUsername: proof.elements.hostUsername.value, hostPassword: password.value}, bootstrap.csrf);
-      bootstrap = await api("bootstrap");
-      if (form.isConnected) update();
-    } catch { if (form.isConnected) document.querySelector("#enrollment-error").textContent = "Host verification failed. Check the local sudo administrator password or use console approval; repeated attempts are limited."; }
-    finally { password.value = ""; button.disabled = false; }
-  };
-  form.onsubmit = async event => {
-    event.preventDefault(); submitting = true; const button = form.querySelector("button"); button.disabled = true;
-    try {
-      state.principal = await api("bootstrap/claim", {username: form.elements.username.value, password: form.elements.password.value}, bootstrap.csrf);
-      state.csrf = state.principal.csrf; form.elements.password.value = "";
-      await load();
-    } catch { submitting = false; if (form.isConnected) { document.querySelector("#enrollment-error").textContent = "Enrollment did not complete. Refresh to check account state; if it committed, sign in with your chosen account."; button.disabled = false; } }
-  };
-  const timer = setInterval(async () => {
-    if (!form.isConnected) return clearInterval(timer);
-    try {
-      const current = await api("bootstrap");
-      if (form.isConnected) { bootstrap = current; update(); }
-    } catch { if (form.isConnected) document.querySelector("#bootstrap-status").textContent = "Approval unavailable or enrollment completed. Refresh and sign in, or request fresh host approval."; }
-  }, 3000);
-}
 
 async function load() {
   state.status = await api("status");

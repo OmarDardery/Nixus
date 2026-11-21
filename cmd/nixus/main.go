@@ -453,12 +453,11 @@ func guestsCLI(args []string) error {
 
 func recoveryCLI(args []string) error {
 	if len(args) == 0 {
-		return Public("usage: nixus-admin recovery {coverage|export|inspect|stage|approve|plan|status|resume|release|export-report}")
+		return Public("usage: nixus-admin recovery {coverage|export|inspect|stage|plan|status|resume|release|export-report}")
 	}
 	fs := flag.NewFlagSet("recovery", flag.ContinueOnError)
 	recipient := fs.String("recipient", "", "")
 	includeSecrets := fs.Bool("include-secrets", false, "")
-	user := fs.String("user", "", "")
 	mappings := fs.String("mappings", "", "")
 	confirm := fs.Bool("confirm", false, "")
 	dataVerified := fs.Bool("data-verified", false, "")
@@ -477,15 +476,6 @@ func recoveryCLI(args []string) error {
 	var result any
 	var err error
 	switch command {
-	case "approve":
-		if err := need(1); err != nil {
-			return err
-		}
-		if _, err := recoveryApprove(positional[0], *user); err != nil {
-			return err
-		}
-		fmt.Println("Approved; return to the browser to choose a new portal password.")
-		return nil
 	case "coverage":
 		result = recoveryCoverage()
 	case "export":
@@ -697,7 +687,7 @@ func enrollKey(m *Manager, publicKeyFile string, settings M) error {
 	return nil
 }
 
-const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
+const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
 
 func adminMain(argv []string) int {
 	syscall.Umask(0o027)
@@ -836,32 +826,6 @@ func adminMain(argv []string) int {
 		return 0
 	case action == "renew":
 		return generic(renew())
-	case action == "approve-enrollment" && root:
-		if len(rest) != 0 || !isTerminal() {
-			return fail("Run sudo nixus-admin approve-enrollment from a private host terminal")
-		}
-		code, err := readSecret("Code displayed in your browser: ")
-		if err == nil {
-			err = enrollmentApprove(code)
-		}
-		if err != nil {
-			return fail("Browser approval did not complete; check enrollment state from a private host terminal")
-		}
-		fmt.Println("Browser approved for up to ten minutes. Return to that browser to create its independent portal account.")
-		return 0
-	case action == "reset-password" && root:
-		if !isTerminal() {
-			return fail("Run sudo nixus-admin reset-password from a private host terminal")
-		}
-		value, err := readSecret("New Nixus administrator password (16–256 characters): ")
-		if err == nil {
-			err = recoverPassword(value)
-		}
-		if err != nil {
-			return fail("Password change did not complete; check host account state from a private terminal before retrying")
-		}
-		fmt.Println("Password changed for the recovery administrator. Its old sessions will be rejected; sign in as admin.")
-		return 0
 	}
 	if tool := commands[action]; tool != nil && action != "admin" && action != "nixus-admin" {
 		return tool(rest)

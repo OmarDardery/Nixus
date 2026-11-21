@@ -115,7 +115,7 @@ func secretSource(p string) string {
 
 func secretFiles() map[string]string {
 	files := map[string]string{}
-	for _, name := range []string{"auth.json", "users.json", "bootstrap-state.json", "browser-certificates.json", "ca.key", "ca.crt", "tls.key", "tls.crt"} {
+	for _, name := range []string{"browser-certificates.json", "ca.key", "ca.crt", "tls.key", "tls.crt"} {
 		files["admin/"+name] = filepath.Join(STATE, name)
 	}
 	for name, p := range SECRET_PATHS {
@@ -178,11 +178,6 @@ func recoveryCoverage() M {
 		for _, name := range []string{"ca.key", "ca.crt", "tls.key", "tls.crt"} {
 			required["management-"+name] = filepath.Join(STATE, name)
 		}
-		account := "auth.json"
-		if exists(filepath.Join(STATE, "users.json")) {
-			account = "users.json"
-		}
-		required["management-account"] = filepath.Join(STATE, account)
 		if registry := filepath.Join(STATE, "browser-certificates.json"); lexists(registry) {
 			required["browser-identity-ownership"] = registry
 		}

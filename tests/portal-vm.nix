@@ -52,7 +52,7 @@ in pkgs.testers.runNixOSTest {
     environment.systemPackages = [ pkgs.curl ];
   };
   testScript = ''
-    import hashlib, json, os
+    import json
 
     start_all()
     machine.wait_for_unit("nixus-admin-backend.service")
@@ -67,34 +67,27 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("curl -sf --unix-socket /run/nixus-admin/backend.sock http://localhost/status | jq -e 'type == \"object\"'")
 
     with subtest("untrusted networks are rejected by the application"):
-        code = outside.succeed("curl -sk -o /dev/null -w '%{http_code}' https://machine:9440/api/bootstrap").strip()
+        code = outside.succeed("curl -sk -o /dev/null -w '%{http_code}' https://machine:9440/api/status").strip()
         assert code == "401", code
 
-    with subtest("PBKDF2 login, CSRF and admin views"):
-        salt = os.urandom(24)
-        password = "vm-integration-password"
-        record = {"salt": salt.hex(), "iterations": 600000,
-                  "hash": hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 600000, 32).hex()}
-        machine.succeed("install -m 0640 -g nixus-ui /dev/stdin /var/lib/nixus-admin/auth.json <<'EOF'\n" + json.dumps(record) + "\nEOF")
+    with subtest("Linux sign-in, CSRF and admin views"):
+        # The console is single-user: a Linux account with sudo signs in with its own password (PAM).
+        machine.succeed("useradd -m -G wheel -s /run/current-system/sw/bin/bash homelab && echo 'homelab:linux-account-password' | chpasswd")
         base = "curl -sk -c /tmp/jar -b /tmp/jar -H 'Origin: https://127.0.0.1:9440' https://127.0.0.1:9440"
-        bad = machine.succeed(base + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"admin\",\"password\":\"wrong-password-value\"}'").strip()
+        bad = machine.succeed(base + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"not-the-password\"}'").strip()
         assert bad == "400", bad
-        login = json.loads(machine.succeed(base + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"admin\",\"password\":\"" + password + "\"}'"))
-        assert login["role"] == "admin" and login["csrf"], login
+        login = json.loads(machine.succeed(base + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"linux-account-password\"}'"))
+        assert login["role"] == "admin" and login["username"] == "homelab" and login["csrf"], login
         for view in ["status", "session", "project-overview", "project-backups", "image-updates", "project-sources", "apps"]:
             machine.succeed(base + "/api/" + view + " -f -o /dev/null")
-        # A Linux sudo account signs in with its own password (checked through PAM).
-        machine.succeed("useradd -m -G wheel -s /run/current-system/sw/bin/bash homelab && echo 'homelab:linux-account-password' | chpasswd")
-        lbase = "curl -sk -c /tmp/ljar -b /tmp/ljar -H 'Origin: https://127.0.0.1:9440' https://127.0.0.1:9440"
-        wrong = machine.succeed(lbase + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"not-the-password\"}'").strip()
-        assert wrong == "400", wrong
-        linux = json.loads(machine.succeed(lbase + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"linux-account-password\"}'"))
-        assert linux["role"] == "admin" and linux["username"] == "homelab", linux
-        machine.succeed(lbase + "/api/status -f -o /dev/null")
-        # A Linux account without sudo is refused.
+        # A Linux account without sudo, and the removed console-only account endpoints, are refused.
         machine.succeed("useradd -m -s /run/current-system/sw/bin/bash guest && echo 'guest:linux-account-password' | chpasswd")
-        nosudo = machine.succeed(lbase + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"guest\",\"password\":\"linux-account-password\"}'").strip()
+        gbase = "curl -sk -H 'Origin: https://127.0.0.1:9440' https://127.0.0.1:9440"
+        nosudo = machine.succeed(gbase + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"guest\",\"password\":\"linux-account-password\"}'").strip()
         assert nosudo == "400", nosudo
+        for gone in ["/api/enrollment", "/api/bootstrap"]:
+            code = machine.succeed(gbase + gone + " -o /dev/null -w '%{http_code}'").strip()
+            assert code in ("401", "404"), (gone, code)
         # A mutation without the CSRF token, or from another origin, is refused.
         nocsrf = machine.succeed(base + "/api/cancel-backup -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{}'").strip()
         assert nocsrf == "401", nocsrf

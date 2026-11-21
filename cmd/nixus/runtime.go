@@ -4,7 +4,6 @@ package main
 // destinations.
 
 import (
-	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -675,33 +674,9 @@ func groupID(name string) (int, error) {
 	return strconv.Atoi(g.Gid)
 }
 
-// prepareStateAccess lets the portal read its auth file once users exist.
-func prepareStateAccess(locked bool) error {
-	if err := enrollmentObserve(locked); err != nil {
-		return err
-	}
-	auth := filepath.Join(STATE, "auth.json")
-	if !exists(auth) && !exists(filepath.Join(STATE, "web-enrollment")) {
-		return nil
-	}
-	gid, err := groupID("nixus-ui")
-	if err != nil {
-		return err
-	}
-	if err := os.Chown(STATE, -1, gid); err != nil {
-		return err
-	}
-	if err := os.Chmod(STATE, 0o710); err != nil {
-		return err
-	}
-	if exists(auth) {
-		if err := os.Chown(auth, -1, gid); err != nil {
-			return err
-		}
-		return os.Chmod(auth, 0o640)
-	}
-	return nil
-}
+// prepareStateAccess is kept for callers; the console stores no accounts the
+// UI process must read.
+func prepareStateAccess(locked bool) error { return nil }
 
 // BusyError reports that another mutation holds the lock.
 type BusyError struct{}
@@ -768,37 +743,6 @@ func lockedValue[T any](blocking bool, fn func() (T, error)) (T, error) {
 	return out, err
 }
 
-func passwordRecord(password string) (M, error) {
-	n := len([]rune(password))
-	if n < 16 || n > 256 {
-		return nil, Public("Administrator passwords must contain 16–256 characters")
-	}
-	salt := make([]byte, 24)
-	rand.Read(salt)
-	key, err := pbkdf2.Key(sha256.New, password, salt, 600000, 32)
-	if err != nil {
-		return nil, err
-	}
-	return M{"salt": hex.EncodeToString(salt), "hash": hex.EncodeToString(key), "iterations": 600000}, nil
-}
-
-func passwordMatches(password string, record M) bool {
-	if len([]rune(password)) > 256 || record == nil {
-		return false
-	}
-	salt, err := hex.DecodeString(str(record["salt"]))
-	iterations, ok := num(record["iterations"])
-	if err != nil || !ok || iterations < 1 {
-		return false
-	}
-	key, err := pbkdf2.Key(sha256.New, password, salt, int(iterations), 32)
-	if err != nil {
-		return false
-	}
-	return compareDigest(hex.EncodeToString(key), str(record["hash"]))
-}
-
-// audit appends a structured event; never log bodies or credentials.
 func audit(action string, fields M) {
 	record := M{"time": now(), "action": action}
 	for k, v := range fields {

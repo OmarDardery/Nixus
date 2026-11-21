@@ -22,14 +22,14 @@ state.principal = {username:'admin',role:'admin'};
 state.page = 'overview';
 `, context);
 const ids = JSON.parse(vm.runInContext('JSON.stringify(pages.map(([id])=>id))', context));
-for (const id of ['overview','projects','guests','network','storage','hardware','integrations','security','accounts','ingress','operations','review','system','files','commands'])
+for (const id of ['overview','projects','guests','network','storage','hardware','integrations','security','ingress','operations','review','system','files','commands'])
   assert.ok(ids.includes(id), 'Missing redesigned route: ' + id);
 const nav = vm.runInContext('navigationHtml()', context);
 for (const id of ['overview', 'projects', 'operations', 'network', 'review', 'commands']) assert.ok(nav.includes('data-go="' + id + '"'));
 assert.equal((nav.match(/data-go=/g) || []).length, 6, 'six top-level destinations');
 assert.ok(nav.includes('aria-current="page"'), 'Current page should be announced.');
 const tabs = vm.runInContext("state.page='storage';settingsTabs()", context);
-for (const id of ['network','guests','storage','hardware','integrations','security','accounts','ingress','system','files'])
+for (const id of ['network','guests','storage','hardware','integrations','security','ingress','system','files'])
   assert.ok(tabs.includes('data-go="' + id + '"'), 'settings tab missing: ' + id);
 assert.ok(vm.runInContext("state.page='storage';navigationHtml()", context).includes('class="active"'), 'Settings stays highlighted');
 assert.equal(vm.runInContext("state.page='overview';settingsTabs()", context), '');
@@ -57,7 +57,7 @@ assert.ok(confirmed.includes('Deploy guests') && confirmed.includes('complete'))
 const ops = vm.runInContext("state.page='operations';operationView.users=[];operationsPage()",context);
 assert.ok(!ops.includes('Portal accounts'), 'Accounts are not part of backup recovery.');
 assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/install.md"'));
-assert.ok(source.includes('sudo nixus-admin reset-password') && !source.includes('setup password printed by the installer'));
+assert.ok(source.includes('passwd') && !source.includes('reset-password') && !source.includes('setup password printed by the installer'), 'Single-user console: forgotten passwords are reset with passwd');
 console.log('Redesigned console checks passed: routing, drafts, safe delegation, permissions and deployment stages.');
 
 vm.runInContext("state.status.release={revision:'a'.repeat(40)};state.draft=copy(fixture);state.platformRevision='a'.repeat(40)", context);
