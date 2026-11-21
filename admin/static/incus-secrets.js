@@ -138,9 +138,9 @@ function nativeSecretsPanel() {
     : '';
   const errors = (v.error ? '<p role="alert" class="error">' + esc(v.error) + '</p>' : '') +
                  (v.message ? '<p role="status">' + esc(v.message) + '</p>' : '');
-  return card("Environment & secrets · SOPS/age",
-    '' +
-    status + setup + choose + summary + form + importPanel + recipientsPanel + review + reindexPanel + recoveryPanel + errors);
+  // Per-app values are edited on each app's Environment Variables tab; this
+  // panel keeps the encryption key, its recipients and the recovery kit.
+  return card("Encryption key & recovery kit", status + setup + recipientsPanel + review + reindexPanel + recoveryPanel + errors);
 }
 
 async function nativeSecretsRefresh() {
@@ -158,7 +158,7 @@ async function nativeSecretsRefresh() {
   } finally {
     v.loaded = true;
     v.loading = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -186,7 +186,7 @@ async function nativeEnrollIdentity() {
     v.error = error.message || "Age identity enrollment failed.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -218,7 +218,7 @@ async function nativeSecretReview() {
     v.error = error.message || "Encrypted review failed.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -248,7 +248,7 @@ async function nativeRecipientReview() {
     v.error = error.message || "Recipient rekey rejected.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -274,7 +274,7 @@ async function nativeSecretPublish() {
     await nativeSecretsRefresh();
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -332,7 +332,7 @@ async function nativeEnvImportReview() {
     v.error = error.message || "Environment import failed.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -361,7 +361,7 @@ async function nativeRecoveryExport() {
     v.error = error.message || "Recovery kit export failed.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -397,7 +397,7 @@ async function nativeRecoveryImport(action) {
     v.error = error.message || "Recovery kit rejected.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 
@@ -420,7 +420,7 @@ async function nativeSecretsReindex() {
     v.error = error.message || "Secret metadata cannot be recovered.";
   } finally {
     v.busy = false;
-    if (state.page === "projects") shell();
+    if (state.page === "operations") shell();
   }
 }
 

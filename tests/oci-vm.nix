@@ -220,6 +220,23 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("nixus-admin apps deliver-secrets >&2")
         assert machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
 
+    with subtest("environment variables: Portainer-style list becomes real container environment"):
+        current = broker("/apps/env-read", {"project": "testapp"})
+        assert current["vars"] == {"API_TOKEN": "s3cret-value"}, current
+        saved = broker("/apps/env", {"project": "testapp", "vars": {"API_TOKEN": "s3cret-value", "MODE": "prod"},
+                                     "revision": current["revision"]})
+        assert "error" not in saved["delivery"], saved
+        assert broker("/apps/env?project=testapp")["keys"] == ["API_TOKEN", "MODE"]
+        app = json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"]
+        environ = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /proc/1/environ").split("\0")
+        assert "MODE=prod" in environ and "API_TOKEN=s3cret-value" in environ, environ
+        machine.fail("ps -eo args | grep -F s3cret-value | grep -v grep")
+        # Removing a variable removes it from the container too.
+        current = broker("/apps/env-read", {"project": "testapp"})
+        broker("/apps/env", {"project": "testapp", "vars": {"API_TOKEN": "s3cret-value"}, "revision": current["revision"]})
+        environ = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /proc/1/environ").split("\0")
+        assert not any(e.startswith("MODE=") for e in environ), environ
+
     with subtest("project backup: config, Incus data, encrypted off-host copy and full verification"):
         machine.succeed("install -d -m 0700 /var/lib/nixus-secrets && head -c 32 /dev/urandom | base64 > /var/lib/nixus-secrets/project-restic-password && chmod 0600 /var/lib/nixus-secrets/project-restic-password")
         policy = ('{ ... }: { nixus.backups = { enable = true; schedule = "daily"; verification = "full";\n'

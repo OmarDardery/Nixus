@@ -140,9 +140,19 @@ Useful upstream references: [sops-nix README](https://github.com/Mic92/sops-nix/
 
 The source-only importer now rejects Dockerfile `ENV`/`ARG` declarations with credential-bearing names and Compose `environment`/build `args` entries with credential-bearing names during both review and publish. These are **fail-closed guardrails**, not a complete secret scanner. Credentials in arbitrary `RUN` scripts, unusual filenames or dynamically generated content remain unsafe until the isolated OCI builder and full deployment preflight are qualified. No source is rewritten: owners must remove credential-bearing declarations and use the native SOPS UI with explicit scoped runtime-file bindings. Plain `.env` uploads remain blocked. Source-only publication still never deploys or injects a secret.
 
+## Environment variables
+
+Open an app, then **Environment Variables**. Enter your password to reveal and edit the
+list, add rows or **Paste .env**, then **Save & redeploy**. Values are stored SOPS-encrypted
+in the app's workspace and in backups. On save, deploy, boot and every 10 minutes they
+are injected as real environment variables into the app's containers through the local
+Incus socket (never in process arguments), and a container restarts when its values
+change. Like Docker and Portainer, injected values are visible in the instance's
+configuration inside Incus's root-only database.
+
 ## How apps receive secrets
 
-Add values on the **Apps** page (Secrets). On every deploy, right after a value is
+Each value is also available as a file. On every deploy, right after a value is
 published, at boot and every 10 minutes, Nixus decrypts the app's secrets on the host and
 writes each one into the app's running containers and VMs as a file:
 

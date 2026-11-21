@@ -510,7 +510,7 @@ func (s *Secrets) review(actor string, projectArg, keyArg any, action string, va
 	if err != nil {
 		return nil, err
 	}
-	if action != "set" && action != "delete" && action != "import" && action != "recipients" {
+	if action != "set" && action != "delete" && action != "import" && action != "replace" && action != "recipients" {
 		return nil, Public("Unsupported secret mutation")
 	}
 	key, _ := keyArg.(string)
@@ -525,6 +525,21 @@ func (s *Secrets) review(actor string, projectArg, keyArg any, action string, va
 		}
 		if reflect.DeepEqual(newRecipients, current) {
 			return nil, Public("Recipient policy is already current")
+		}
+	case "replace":
+		m, ok := value.(M)
+		if keyArg != nil || !ok || len(m) < 1 || len(m) > 128 {
+			return nil, Public("Keep 1–128 variables")
+		}
+		total := 0
+		for name, text := range m {
+			if !fullmatch(secretKey, name) || !validSecretText(text) {
+				return nil, Public("Variable names use letters, digits and _; values are text up to 8 KiB")
+			}
+			total += len(text.(string))
+		}
+		if total > maxPlaintext {
+			return nil, Public("Variables exceed 64 KiB in total")
 		}
 	case "import":
 		m, ok := value.(M)
@@ -588,6 +603,23 @@ func (s *Secrets) review(actor string, projectArg, keyArg any, action string, va
 			values[k] = v
 		}
 		changed = keys(value.(M))
+	case "replace":
+		before := values
+		values = M{}
+		for k, v := range value.(M) {
+			values[k] = v
+		}
+		changed = []string{}
+		for _, k := range keys(values) {
+			if !equalJSON(before[k], values[k]) {
+				changed = append(changed, k)
+			}
+		}
+		for _, k := range keys(before) {
+			if _, ok := values[k]; !ok {
+				changed = append(changed, k)
+			}
+		}
 	case "set":
 		values[key] = value
 		changed = []string{key}

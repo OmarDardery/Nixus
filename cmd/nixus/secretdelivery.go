@@ -121,9 +121,15 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	if len(values) == 0 {
 		return 0, nil
 	}
-	targets, err := secretTargets(project, values, appInstances(updateIncus, str(project["incusProject"])))
+	instances := appInstances(updateIncus, str(project["incusProject"]))
+	targets, err := secretTargets(project, values, instances)
 	if err != nil {
 		return 0, err
+	}
+	for _, inst := range instances {
+		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), values); err != nil {
+			return 0, err
+		}
 	}
 	for _, t := range targets {
 		if err := pushSecret(str(project["incusProject"]), t.Instance, t.Destination, []byte(str(values[t.Key]))); err != nil {

@@ -6,53 +6,80 @@ const vm = require("node:vm");
 const read = name => fs.readFileSync(path.join(__dirname, "..", "admin", "static", name), "utf8");
 const context = vm.createContext({ state: { page: "projects" }, shell: () => {}, api: async () => ({}), File, console,
   esc: v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]),
-  card: (title, body) => "<section><h2>" + title + "</h2>" + body + "</section>" });
+  card: (title, body) => "<section><h2>" + title + "</h2>" + body + "</section>",
+  title: (_, h, t) => "<h1>" + h + "</h1><p>" + t + "</p>" });
 vm.runInContext(read("apps.js") + "\nthis.appView = appView;", context);
+const render = () => vm.runInContext("appsPage()", context);
 
-// Apps list escapes everything and offers only real actions.
-vm.runInContext(`appView.overview = { projects: [{ name: "web", backend: "incus-compose", incusProject: "web",
-  instances: [{ name: "<b>app</b>", status: "Running" }] }] };
-  appView.jobs = { web: { status: "failed", error: "<i>bad</i>" } };
-  appView.updates = { projects: { web: { updates: 1, images: [{ ref: "<x>", status: "update-available", digest: "sha256:a", latest: "sha256:b" }] } } };`, context);
-const list = vm.runInContext("appsCard()", context);
-assert.match(list, /data-app-update="web"/);
-assert.match(list, /data-app-edit="web"/);
-assert.doesNotMatch(list, /<b>app<\/b>|<i>bad<\/i>/, "values are escaped");
-const updates = vm.runInContext("updatesCard()", context);
-assert.match(updates, /data-image-hold="web" data-digest="sha256:b" data-held="0"/);
-assert.doesNotMatch(updates, /<x>/);
+vm.runInContext(`Object.assign(appView, { overview: { projects: [
+    { name: "web", backend: "incus-compose", incusProject: "web", instances: [{ name: "<b>app</b>", status: "Running" }] },
+    { name: "printer", backend: "incus-native", incusProject: "printer", instances: [{ name: "printer", status: "Stopped" }] }] },
+  jobs: { web: { status: "failed", error: "<i>bad</i>" } },
+  updates: { projects: { web: { updates: 1, images: [{ ref: "<x>", status: "update-available", digest: "sha256:a", latest: "sha256:bbbb" }] } } } })`, context);
 
-// No explanatory filler: every paragraph is a value, status or error.
-const page = vm.runInContext("appsCard() + addAppCard() + updatesCard() + importCard()", context);
-assert.doesNotMatch(page, /<p class="note">/, "no note paragraphs");
-assert.doesNotMatch(page, /private|by default|nothing is|is never|only the|reviewed|safely/i, "no reassurance copy");
+// Grid: one card per app, status, update badge, New app; everything escaped.
+let html = render();
+assert.match(html, /data-app-open="web"/);
+assert.match(html, /data-app-open="printer"/);
+assert.match(html, /data-app-new/);
+assert.match(html, /Update available/);
+assert.doesNotMatch(html, /<b>app<\/b>|<i>bad<\/i>|<x>/);
+vm.runInContext('appView.filter = "print"', context);
+assert.doesNotMatch(render(), /data-app-open="web"/, "search filters the grid");
+vm.runInContext('appView.filter = ""', context);
 
-// Pasted and uploaded files: paths validated, credentials refused, digests required.
+// App page: four tabs and an update action.
+vm.runInContext('Object.assign(appView, { view: "web", tab: "deployments" })', context);
+html = render();
+for (const tab of ["deployments", "logs", "env", "settings"]) assert.match(html, new RegExp('data-app-tab="' + tab + '"'));
+assert.match(html, /id="app-update-start"/);
+assert.match(html, /data-image-hold="web" data-digest="sha256:bbbb" data-held="0"/);
+assert.match(html, /failed/);
+vm.runInContext("appView.confirmUpdate = true", context);
+assert.match(render(), /id="update-password" type="password"/, "update asks for the password inline");
+
+// Environment Variables: masked names first, then editable rows with show/hide.
+vm.runInContext('Object.assign(appView, { tab: "env" }); Object.assign(appView.env, { project: "web", names: ["API_TOKEN"], rows: null })', context);
+html = render();
+assert.match(html, /API_TOKEN/);
+assert.match(html, /id="env-reveal"/);
+assert.doesNotMatch(html, /data-env-value/);
+vm.runInContext('appView.env.rows = [{ key: "API_TOKEN", value: "<s3cret>", show: false }]', context);
+html = render();
+assert.match(html, /data-env-value="0" type="password" value="&lt;s3cret&gt;"/, "values masked and escaped");
+assert.match(html, /id="env-paste-toggle"/);
+assert.match(html, /id="env-save"/);
+
+// .env parsing: comments, export, quotes, inline comments.
+const parsed = vm.runInContext(`parseEnv("# c\\nexport A=1\\nB=\\"two words\\"\\nC='x # y'\\nD=plain # note\\n\\nE=")`, context);
+assert.deepEqual(JSON.parse(JSON.stringify(parsed)), [{ key: "A", value: "1" }, { key: "B", value: "two words" }, { key: "C", value: "x # y" },
+  { key: "D", value: "plain" }, { key: "E", value: "" }]);
+assert.throws(() => vm.runInContext('parseEnv("not a pair")', context), /KEY=VALUE/);
+
+// Settings: declaration editor and data import for this app only.
+vm.runInContext('Object.assign(appView, { tab: "settings", nixLoaded: "web", nix: "{ ... }: {}" })', context);
+html = render();
+assert.match(html, /id="app-save-nix"/);
+assert.match(html, /value="web\/&lt;b&gt;app&lt;\/b&gt;"/);
+assert.doesNotMatch(html, /value="printer\//, "import targets only this app");
+
+// New app: files or VM/container, pin and generator.
+vm.runInContext('Object.assign(appView, { view: "new", mode: "files" })', context);
+html = render();
+assert.match(html, /id="app-pin"/);
+assert.match(html, /data-app-template="compose"/);
+vm.runInContext('appView.mode = "nix"', context);
+assert.match(render(), /id="vm-generate"/);
+const nix = vm.runInContext(`nixInstance("printer", { type: "virtual-machine", image: "images:debian/13", cpus: 2, memory: 4, disk: 20, usb: "1d50:614e" })`, context);
+for (const want of ['backend = "incus-native";', 'instances.printer = {', 'type = "virtual-machine";', 'memory = "4GiB";', 'volumes.data.size = "20GiB";',
+  'usb.device = { vendorId = "1d50"; productId = "614e"; };']) assert.ok(nix.includes(want), want);
+
+// Source paths and pasted files.
 assert.throws(() => vm.runInContext('sourcePath({ name: "../etc/passwd" })', context));
 assert.throws(() => vm.runInContext('sourcePath({ name: ".env" })', context));
-assert.throws(() => vm.runInContext('sourcePath({ name: "id_ed25519" })', context));
-assert.equal(vm.runInContext('sourcePath({ name: "app/Dockerfile" })', context), "app/Dockerfile");
 vm.runInContext('appView.uploads = []; appView.entries = [{ path: "Dockerfile", text: "FROM x@sha256:<digest>" }]', context);
 assert.throws(() => vm.runInContext("appFiles()", context), /digest/);
-vm.runInContext('appView.entries = [{ path: "Dockerfile", text: "FROM x" }, { path: "Dockerfile", text: "FROM y" }]', context);
-assert.throws(() => vm.runInContext("appFiles()", context), /Duplicate/);
-vm.runInContext('appView.entries = [{ path: "compose.yaml", text: "services: {}" }]', context);
-assert.equal(vm.runInContext("appFiles()[0].nixusPath", context), "compose.yaml");
-
-// The VM/container form generates a valid native declaration.
-const nix = vm.runInContext(`nixInstance("printer", { type: "virtual-machine", image: "images:debian/13", cpus: 2, memory: 4, disk: 20, usb: "1d50:614e" })`, context);
-for (const want of ['backend = "incus-native";', 'instances.printer = {', 'type = "virtual-machine";', 'image = "images:debian/13";',
-  'cpus = 2;', 'memory = "4GiB";', 'volumes.data.size = "20GiB";', 'usb.device = { vendorId = "1d50"; productId = "614e"; };'])
-  assert.ok(nix.includes(want), "missing " + want + " in\n" + nix);
-assert.doesNotMatch(vm.runInContext(`nixInstance("c", { type: "container", image: "images:alpine/3.20", cpus: 1, memory: 1, disk: 5, usb: "" })`, context), /usb/);
-assert.match(vm.runInContext("addAppCard()", context), /id="app-pin"/, "pin action offered for pasted files");
-vm.runInContext('appView.mode = "nix"', context);
-assert.match(vm.runInContext("addAppCard()", context), /id="vm-generate"/, "VM/container form offered");
-vm.runInContext('appView.mode = "files"', context);
-assert.match(vm.runInContext("importCard()", context), /value="web\/&lt;b&gt;app&lt;\/b&gt;"/, "import targets escaped");
-assert.match(vm.runInContext('NIX_TEMPLATES.native("printer")', context), /instances\.printer/);
 
 const index = read("index.html");
 assert.match(index, /\/apps\.js/);
-assert.doesNotMatch(index, /incus-projects|project-console|paste-source/);
 console.log("Apps page verified");

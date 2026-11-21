@@ -103,7 +103,8 @@ function restoreCard() {
 
 function backupsCards() {
   if (!backupView.status && !backupView.loading) void refreshBackups();
-  return backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard();
+  return backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard() +
+    (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
 
 function takeValue(id) {
@@ -147,6 +148,7 @@ async function startRestore() {
 
 function bindBackups() {
   if (state.page !== "operations") return;
+  if (typeof bindNativeSecrets === "function") bindNativeSecrets();
   for (const prefix of ["dest", "restore"]) {
     document.querySelector("#" + prefix + "-kind")?.addEventListener("change", event => { backupView.kind = event.target.value; shell(); });
   }

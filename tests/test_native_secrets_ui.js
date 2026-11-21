@@ -43,7 +43,7 @@ ctx.api = async (route, body) => {
 async function main() {
   run("nativeSecretsView.data = inventory; nativeSecretsView.loaded = true; nativeSecretsView.selected = 'alpha'");
   let panel = run("nativeSecretsPanel()");
-  assert.match(panel, /Environment & secrets/);
+  assert.match(panel, /Encryption key &amp; recovery kit|Encryption key & recovery kit/);
   assert.doesNotMatch(panel, /private-value-not-in-UI/);
   assert.ok(!sent.length, "Rendering must not call a broker");
 
@@ -77,8 +77,7 @@ async function main() {
   assert.equal(run("nativeSecretsView.data.projects[0].secretCount"), 1);
   assert.ok(sent.every(item => !["project-secrets/decrypt", "project-secrets/reveal"].includes(item.route)));
   panel = run("nativeSecretsPanel()");
-  assert.match(panel, /API_TOKEN/);
-  assert.match(panel, /Encrypted; value never returned/);
+  // Per-app values now live on each app's Environment Variables tab.
   assert.doesNotMatch(panel, /private-value-not-in-UI/);
 
   const hostRecipient = ctx.inventory.identity.recipient;

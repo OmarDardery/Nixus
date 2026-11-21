@@ -176,6 +176,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
 	case p == "/apps":
 		return appJobs(), nil
+	case p == "/apps/env":
+		return envNames(query.Get("project"))
 	case p == "/backups/snapshots":
 		return backupSnapshots()
 	case p == "/backups/restore-status":
@@ -400,6 +402,10 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return chunkDataImport(body)
 	case "/apps/import-data/finish":
 		return finishDataImport(actor, body)
+	case "/apps/env-read":
+		return readEnv(body["project"])
+	case "/apps/env":
+		return saveEnv(actor, body["project"], body["vars"], body["revision"])
 	case "/image-updates/pin":
 		return pinSources(body["files"])
 	case "/apps/backup-run":
@@ -657,11 +663,13 @@ var staticAssets = map[string][2]string{
 	"/foundation.js": {"foundation.js", "text/javascript; charset=utf-8"}, "/style.css": {"style.css", "text/css; charset=utf-8"},
 	"/brand.css": {"brand.css", "text/css; charset=utf-8"}, "/favicon.svg": {"favicon.svg", "image/svg+xml"},
 	"/fonts/dm-sans-latin.woff2":       {"fonts/dm-sans-latin.woff2", "font/woff2"},
+	"/fonts/geist-variable.woff2":      {"fonts/geist-variable.woff2", "font/woff2"},
+	"/fonts/geist-mono-variable.woff2": {"fonts/geist-mono-variable.woff2", "font/woff2"},
 	"/fonts/space-grotesk-latin.woff2": {"fonts/space-grotesk-latin.woff2", "font/woff2"},
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}
@@ -674,7 +682,7 @@ func init() {
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
 		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-policy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
-		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin`) {
+		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/env`) {
 		portalActions[a] = true
 	}
 }
@@ -1021,7 +1029,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-policy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start":
+	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-policy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env":
 		if strings.HasPrefix(path, "/api/oci/") && !ack(body["acknowledge"]) {
 			return Public("Explicitly acknowledge the offline OCI build and resource costs")
 		}
@@ -1275,7 +1283,7 @@ func webMain() int {
 
 // forwardedQuery passes only the reviewed query parameters of read-only views.
 func forwardedQuery(path string, r *http.Request) string {
-	allowed := map[string][]string{"/api/project-file": {"path"}, "/api/project-logs": {"project", "instance"}}
+	allowed := map[string][]string{"/api/apps/env": {"project"}, "/api/project-file": {"path"}, "/api/project-logs": {"project", "instance"}}
 	names, ok := allowed[path]
 	if !ok {
 		return ""

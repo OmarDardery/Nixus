@@ -9,6 +9,8 @@ const appView = {
   entries: [{ path: "Dockerfile", text: "" }], uploads: [], nix: "",
   instance: { type: "container", image: "images:debian/13", cpus: 2, memory: 2, disk: 10, usb: "" },
   importTarget: "", importError: "", importMessage: "",
+  view: "list", tab: "deployments", filter: "", nixLoaded: "",
+  env: { project: "", names: null, rows: null, revision: null, paste: false, error: "", message: "" },
 };
 
 const APP_TEMPLATES = {
@@ -119,38 +121,152 @@ async function stageAppFiles(project, files, current) {
   return api("project-import/finish", { id: candidate.id, manifestHash: candidate.manifestHash });
 }
 
-// --- cards ------------------------------------------------------------------
+// --- views ------------------------------------------------------------------
 
 function consoleLink(project, instance) {
   const incus = typeof managementServices === "function" ? managementServices().find(s => s.name === "Incus" && s.url) : null;
   if (!incus) return "";
   return ' <a class="small" target="_blank" rel="noopener noreferrer" href="' + esc(incus.url.replace(/\/$/, "") + "/ui/project/" +
-    encodeURIComponent(project) + "/instance/" + encodeURIComponent(instance) + "/console") + '">Console</a>';
+    encodeURIComponent(project) + "/instance/" + encodeURIComponent(instance) + "/console") + '">Console ↗</a>';
 }
 
-function appsCard() {
-  const view = appView.overview;
-  const updates = appView.updates?.projects || {};
-  const rows = (view?.projects || []).map(p => {
-    const instances = p.instances || [];
-    const running = instances.filter(i => i.status === "Running").length;
-    const job = appView.jobs[p.name];
-    const update = updates[p.name] || {};
-    return "<tr><td>" + esc(p.name) + "</td><td>" + (p.backend === "incus-compose" ? "Compose" : "Nix") + "</td><td>" +
-      running + "/" + instances.length + "</td><td>" +
-      (job ? badge(job.status) + (job.error ? " " + esc(job.error) : "") : "") + "</td><td>" +
-      (update.updates > 0 ? '<button type="button" class="small" data-app-update="' + esc(p.name) + '">Update</button> ' : "") +
-      '<button type="button" class="small" data-app-edit="' + esc(p.name) + '">Edit</button> ' +
-      instances.map(i => '<button type="button" class="small" data-app-log="' + esc(p.incusProject + "/" + i.name) + '">' +
-        esc(i.name) + " log</button>" + consoleLink(p.incusProject, i.name)).join(" ") + "</td></tr>";
-  }).join("");
-  const log = appView.log
-    ? "<h3>" + esc(appView.log.project + "/" + appView.log.instance) + '</h3><pre class="log">' + esc(appView.log.log || "") +
-      '</pre><button type="button" class="small" id="app-log-close">Close</button>' : "";
-  return card("Apps",
-    (rows ? '<div class="table-wrap"><table><thead><tr><th>App</th><th>Type</th><th>Running</th><th>Last deploy</th><th></th></tr></thead><tbody>' +
-      rows + "</tbody></table></div>" : "<p>No appView.</p>") +
-    log + '<button type="button" class="small" id="apps-refresh">Refresh</button>');
+function appProjects() { return appView.overview?.projects || []; }
+function appByName(name) { return appProjects().find(p => p.name === name); }
+
+function appStatus(p) {
+  const instances = p.instances || [];
+  const running = instances.filter(i => i.status === "Running").length;
+  const job = appView.jobs[p.name];
+  if (job && !["deployed", "failed"].includes(job.status)) return job.status;
+  if (job?.status === "failed") return "failed";
+  return !instances.length ? "Stopped" : running === instances.length ? "Running" : running ? "Degraded" : "Stopped";
+}
+
+function appCard(p) {
+  const instances = p.instances || [];
+  const running = instances.filter(i => i.status === "Running").length;
+  const updates = (appView.updates?.projects || {})[p.name]?.updates > 0;
+  return '<button type="button" class="app-card" data-app-open="' + esc(p.name) + '">' +
+    '<span class="app-name"><span class="app-icon" aria-hidden="true">' + esc(p.name.slice(0, 1).toUpperCase()) + "</span>" + esc(p.name) + "</span>" +
+    '<span class="app-meta"><span>' + badge(appStatus(p)) + "</span><span>" + (p.backend === "incus-compose" ? "Compose" : "VM / container") +
+    "</span><span>" + running + "/" + instances.length + " running</span>" + (updates ? '<span class="badge">Update available</span>' : "") + "</span></button>";
+}
+
+function appsList() {
+  const filter = appView.filter.toLowerCase();
+  const projects = appProjects().filter(p => !filter || p.name.includes(filter));
+  return title("", "Apps", "Deploy and update your apps, VMs and containers.") +
+    '<div class="toolbar"><input type="search" id="apps-filter" placeholder="Search apps…" value="' + esc(appView.filter) + '" aria-label="Search apps">' +
+    '<span><button type="button" class="small" id="apps-refresh">Refresh</button> <button type="button" class="primary" data-app-new>New app</button></span></div>' +
+    (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
+    (projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
+      : card("No apps yet", '<p><button type="button" class="primary" data-app-new>New app</button> <button type="button" data-go="operations">Restore from a backup</button></p>'));
+}
+
+function appTabs() {
+  return '<nav class="tabs" aria-label="App">' + [["deployments", "Deployments"], ["logs", "Logs"], ["env", "Environment Variables"], ["settings", "Settings"]]
+    .map(([id, label]) => '<button type="button" class="' + (appView.tab === id ? "active" : "") + '" data-app-tab="' + id + '">' + label + "</button>").join("") + "</nav>";
+}
+
+function deploymentsTab(p) {
+  const job = appView.jobs[p.name];
+  const images = ((appView.updates?.projects || {})[p.name]?.images || []).map(img =>
+    "<tr><td><code>" + esc(img.ref) + "</code></td><td>" + badge(img.status) + "</td><td>" +
+    (img.latest && img.latest !== img.digest
+      ? '<button type="button" class="small" data-image-hold="' + esc(p.name) + '" data-digest="' + esc(img.latest) + '" data-held="' +
+        (img.status === "held" ? "1" : "0") + '">' + (img.status === "held" ? "Unskip" : "Skip") + "</button>" : "") + "</td></tr>").join("");
+  const when = t => t ? new Date(t * 1000).toLocaleString() : "—";
+  return card("Latest deployment", job
+      ? "<p>" + badge(job.status) + " · started " + esc(when(job.startedAt)) + (job.completedAt ? " · finished " + esc(when(job.completedAt)) : "") + "</p>" +
+        (job.error ? '<p class="error">' + esc(job.error) + "</p>" : "") + (job.revision ? "<p>Source <code>" + esc(String(job.revision).slice(0, 12)) + "</code></p>" : "")
+      : "<p>No deployments from this console yet.</p>") +
+    card("Images", (images ? '<div class="table-wrap"><table><thead><tr><th>Image</th><th>Status</th><th></th></tr></thead><tbody>' + images +
+      "</tbody></table></div>" : "<p>No tracked images.</p>") + '<p><button type="button" class="small" id="image-updates-check">Check for updates</button></p>');
+}
+
+function logsTab(p) {
+  const instances = p.instances || [];
+  return card("Logs", (instances.length ? '<div class="actions">' + instances.map(i =>
+      '<button type="button" class="small' + (appView.log?.instance === i.name ? " active" : "") + '" data-app-log="' + esc(p.incusProject + "/" + i.name) + '">' +
+      esc(i.name) + "</button>" + consoleLink(p.incusProject, i.name)).join(" ") + "</div>" : "<p>No instances.</p>") +
+    (appView.log ? '<pre class="log">' + esc(appView.log.log || "(empty)") + "</pre>" : ""));
+}
+
+// parseEnv reads KEY=VALUE lines (comments, blank lines, `export ` and quotes allowed).
+function parseEnv(text) {
+  const out = [];
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = line.replace(/^export\s+/, "").match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) throw Error("Not KEY=VALUE: " + line.slice(0, 40));
+    let value = m[2];
+    if (/^".*"$/.test(value)) value = value.slice(1, -1).replace(/\\n/g, "\n").replace(/\\"/g, '"');
+    else if (/^'.*'$/.test(value)) value = value.slice(1, -1);
+    else value = value.replace(/\s+#.*$/, "");
+    out.push({ key: m[1], value });
+  }
+  return out;
+}
+
+function envTab(p) {
+  const e = appView.env;
+  if (e.project !== p.name) Object.assign(e, { project: p.name, names: null, rows: null, revision: null, paste: false, error: "", message: "" });
+  if (e.names === null) void loadEnvNames(p.name);
+  const status = (e.error ? '<p class="error" role="alert">' + esc(e.error) + "</p>" : "") + (e.message ? '<p role="status">' + esc(e.message) + "</p>" : "");
+  if (!e.rows) {
+    const names = e.names || [];
+    return card("Environment Variables",
+      (names.length ? '<div class="table-wrap"><table><tbody>' + names.map(n => "<tr><td><code>" + esc(n) + "</code></td><td>••••••••</td></tr>").join("") +
+        "</tbody></table></div>" : "<p>No variables.</p>") +
+      '<div class="toolbar"><input id="env-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+      '<button type="button" class="primary" id="env-reveal">' + (names.length ? "Reveal & edit" : "Add variables") + "</button></div>" + status);
+  }
+  const rows = e.rows.map((r, i) => '<div class="env-row"><input data-env-key="' + i + '" value="' + esc(r.key) + '" placeholder="KEY" spellcheck="false" aria-label="Name">' +
+    '<input data-env-value="' + i + '" type="' + (r.show ? "text" : "password") + '" value="' + esc(r.value) + '" placeholder="value" spellcheck="false" autocomplete="off" aria-label="Value">' +
+    '<button type="button" class="small" data-env-show="' + i + '" aria-label="Show or hide">' + (r.show ? "Hide" : "Show") + "</button>" +
+    '<button type="button" class="small" data-env-remove="' + i + '" aria-label="Remove">✕</button></div>').join("");
+  return card("Environment Variables",
+    rows + '<p><button type="button" class="small" id="env-add">Add variable</button> <button type="button" class="small" id="env-paste-toggle">Paste .env</button></p>' +
+    (e.paste ? '<textarea id="env-paste" rows="8" spellcheck="false" placeholder="KEY=value&#10;OTHER=value"></textarea><p><button type="button" class="small" id="env-paste-apply">Add to list</button></p>' : "") +
+    '<div class="toolbar"><input id="env-save-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+    '<button type="button" class="primary" id="env-save">Save & redeploy</button></div>' + status);
+}
+
+function settingsTab(p) {
+  if (appView.nixLoaded !== p.name) void loadNix(p.name);
+  const instances = p.instances || [];
+  const options = instances.map(i => '<option value="' + esc(p.incusProject + "/" + i.name) + '">' + esc(i.name) + "</option>").join("");
+  return card("Declaration", '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>" +
+      '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+      '<button type="button" class="primary" id="app-save-nix">Save & deploy</button></div>' +
+      (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") + (appView.message ? '<p role="status">' + esc(appView.message) + "</p>" : "")) +
+    (options ? card("Import data",
+      '<label class="field"><span>Instance</span><select id="import-target">' + options + "</select></label>" +
+      '<label class="field"><span>Folder</span><input id="import-path" type="text" spellcheck="false" placeholder="/srv/data"></label>' +
+      '<label class="field"><span>.tar or .tar.gz</span><input id="import-file" type="file" accept=".tar,.tgz,.tar.gz,application/x-tar,application/gzip"></label>' +
+      '<div class="toolbar"><input id="import-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+      '<button type="button" id="import-start">Import</button></div>' +
+      (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
+      (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : "")) : "");
+}
+
+function appDetail(name) {
+  const p = appByName(name);
+  if (!p) return '<p><button type="button" class="link" data-app-back>← Apps</button></p>' + card(name, "<p>Loading…</p>");
+  const updates = (appView.updates?.projects || {})[p.name]?.updates > 0;
+  const tab = { deployments: deploymentsTab, logs: logsTab, env: envTab, settings: settingsTab }[appView.tab] || deploymentsTab;
+  return '<p><button type="button" class="link" data-app-back>← Apps</button></p>' +
+    '<div class="page-title"><div><h1>' + esc(p.name) + "</h1><p>" + badge(appStatus(p)) + " " + (p.backend === "incus-compose" ? "Compose" : "VM / container") + "</p></div>" +
+    '<div class="toolbar">' + (!updates ? "" : appView.confirmUpdate
+      ? '<input id="update-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+        '<button type="button" class="primary" data-app-update="' + esc(p.name) + '">Confirm update</button>'
+      : '<button type="button" class="primary" id="app-update-start">Update image</button>') + "</div></div>" +
+    appTabs() + tab(p);
+}
+
+function newAppView() {
+  return '<p><button type="button" class="link" data-app-back>← Apps</button></p>' + title("", "New app", "Paste or upload a Dockerfile and Compose file, or describe a VM or container.") + addAppCard();
 }
 
 function addAppCard() {
@@ -160,24 +276,23 @@ function addAppCard() {
     '" placeholder="path" aria-label="File path"><textarea rows="8" spellcheck="false" data-app-text="' + i +
     '" aria-label="File contents">' + esc(e.text) + "</textarea>" +
     (appView.entries.length > 1 ? '<button type="button" class="small" data-app-remove="' + i + '">Remove</button>' : "") + "</div>").join("");
-  return card("Add or update app",
+  return card("App",
     '<label class="field"><span>Name</span><input id="app-name" type="text" spellcheck="false" placeholder="my-app" value="' +
     esc(appView.name || "") + '"></label>' +
-    '<div class="actions"><button type="button" class="small' + (files ? " active" : "") + '" data-app-mode="files">Dockerfile / Compose</button>' +
-    '<button type="button" class="small' + (files ? "" : " active") + '" data-app-mode="nix">Nix</button></div>' +
+    '<nav class="tabs"><button type="button" class="' + (files ? "active" : "") + '" data-app-mode="files">Dockerfile / Compose</button>' +
+    '<button type="button" class="' + (files ? "" : "active") + '" data-app-mode="nix">VM / container</button></nav>' +
     (files
-      ? '<div class="actions"><button type="button" class="small" data-app-template="dockerfile">Dockerfile template</button>' +
+      ? '<div class="actions"><button type="button" class="small" data-app-template="dockerfile">Dockerfile template</button> ' +
         '<button type="button" class="small" data-app-template="compose">Compose template</button></div>' + entries +
-        '<button type="button" class="small" id="app-add-file">Add file</button> ' +
-        '<button type="button" class="small" id="app-pin">Pin image digests</button>' +
+        '<p><button type="button" class="small" id="app-add-file">Add file</button> ' +
+        '<button type="button" class="small" id="app-pin">Pin image digests</button></p>' +
         '<label class="field"><span>Upload files</span><input id="app-upload" type="file" multiple></label>' +
         '<label class="field"><span>Upload folder</span><input id="app-upload-dir" type="file" webkitdirectory></label>' +
         (appView.uploads.length ? "<p>" + appView.uploads.length + " uploaded file(s)</p>" : "")
       : instanceForm() +
-        '<div class="actions"><button type="button" class="small" data-nix-template="compose">Compose settings template</button></div>' +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
-    '<label class="field"><span>Password</span><input id="app-password" type="password" autocomplete="current-password"></label>' +
-    '<button type="button" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button>" +
+    '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+    '<button type="button" class="primary" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button></div>" +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
     (appView.message ? '<p role="status">' + esc(appView.message) + "</p>" : ""));
 }
@@ -186,52 +301,21 @@ function instanceForm() {
   const o = appView.instance;
   const num = (id, label, value, min, max) => '<label class="field"><span>' + label + '</span><input id="vm-' + id +
     '" type="number" min="' + min + '" max="' + max + '" value="' + esc(value) + '"></label>';
-  return "<fieldset><legend>VM or container</legend>" +
+  return '<div class="fields">' +
     '<label class="field"><span>Type</span><select id="vm-type"><option value="container"' + (o.type === "container" ? " selected" : "") +
     '>Container</option><option value="virtual-machine"' + (o.type === "virtual-machine" ? " selected" : "") + ">VM</option></select></label>" +
     '<label class="field"><span>Image</span><input id="vm-image" type="text" spellcheck="false" value="' + esc(o.image) + '"></label>' +
     num("cpus", "CPUs", o.cpus, 1, 64) + num("memory", "Memory (GiB)", o.memory, 1, 512) + num("disk", "Data disk (GiB)", o.disk, 1, 16384) +
-    '<label class="field"><span>USB device (vendor:product, optional)</span><input id="vm-usb" type="text" spellcheck="false" placeholder="1d50:614e" value="' +
-    esc(o.usb) + '"></label>' +
-    '<button type="button" class="small" id="vm-generate">Generate Nix</button></fieldset>';
+    '<label class="field"><span>USB device (vendor:product)</span><input id="vm-usb" type="text" spellcheck="false" placeholder="optional" value="' +
+    esc(o.usb) + '"></label></div>' +
+    '<p><button type="button" class="small" id="vm-generate">Generate</button></p>';
 }
-
-function importCard() {
-  const view = appView.overview;
-  const options = (view?.projects || []).flatMap(p => (p.instances || []).map(i =>
-    '<option value="' + esc(p.incusProject + "/" + i.name) + '"' + (appView.importTarget === p.incusProject + "/" + i.name ? " selected" : "") + ">" +
-    esc(p.name + " · " + i.name) + "</option>")).join("");
-  if (!options) return "";
-  return card("Import data",
-    '<label class="field"><span>Into</span><select id="import-target">' + options + "</select></label>" +
-    '<label class="field"><span>Folder inside the instance</span><input id="import-path" type="text" spellcheck="false" placeholder="/srv/data"></label>' +
-    '<label class="field"><span>.tar or .tar.gz file</span><input id="import-file" type="file" accept=".tar,.tgz,.tar.gz,application/x-tar,application/gzip"></label>' +
-    '<label class="field"><span>Password</span><input id="import-password" type="password" autocomplete="current-password"></label>' +
-    '<button type="button" id="import-start">Import</button>' +
-    (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
-    (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : ""));
-}
-
-function updatesCard() {
-  const projects = Object.entries(appView.updates?.projects || {});
-  const rows = projects.flatMap(([name, p]) => (p.images || []).map(img =>
-    "<tr><td>" + esc(name) + "</td><td><code>" + esc(img.ref) + "</code></td><td>" + badge(img.status) + "</td><td>" +
-    (img.latest && img.latest !== img.digest
-      ? '<button type="button" class="small" data-image-hold="' + esc(name) + '" data-digest="' + esc(img.latest) + '" data-held="' +
-        (img.status === "held" ? "1" : "0") + '">' + (img.status === "held" ? "Unskip" : "Skip") + "</button>" : "") +
-    "</td></tr>")).join("");
-  return card("Image updates",
-    (rows ? '<div class="table-wrap"><table><thead><tr><th>App</th><th>Image</th><th>Status</th><th></th></tr></thead><tbody>' +
-      rows + "</tbody></table></div>" : "<p>No tracked images.</p>") +
-    '<button type="button" class="small" id="image-updates-check">Check now</button>');
-}
-
-
 
 function appsPage() {
   if (!appView.overview && !appView.loading) void refreshApps();
-  return title("", "Apps", "Deploy and update your apps, VMs and containers.") + appsCard() + addAppCard() + importCard() + updatesCard() +
-    (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
+  if (appView.view === "new") return newAppView();
+  if (appView.view !== "list") return appDetail(appView.view);
+  return appsList();
 }
 
 // --- actions ----------------------------------------------------------------
@@ -283,8 +367,9 @@ async function deployApp() {
       body = { project, kind: "nix", declaration: appView.nix, current };
     }
     await api("apps/deploy", body);
-    appView.message = "Deploying " + project + "…";
+    appView.message = "";
     appView.uploads = [];
+    Object.assign(appView, { view: project, tab: "deployments" });
   } catch (error) {
     appView.error = error.message || "Deploy failed.";
   } finally {
@@ -293,18 +378,89 @@ async function deployApp() {
   }
 }
 
-async function editApp(name) {
-  appView.error = appView.message = "";
+async function loadNix(name) {
+  appView.nixLoaded = name;
   try {
     const file = await api("project-file?path=" + encodeURIComponent(name + "/default.nix"));
-    appView.name = name;
-    appView.mode = "nix";
     appView.nix = file.exists ? file.content : "";
   } catch (error) {
     appView.error = error.message || "Could not open " + name + ".";
   }
   rerender();
-  document.querySelector("#app-name")?.scrollIntoView({ block: "center" });
+}
+
+async function saveNix(name) {
+  syncForm();
+  const input = document.querySelector("#app-password");
+  const current = input?.value || "";
+  if (input) input.value = "";
+  appView.error = appView.message = "";
+  try {
+    if (!current) throw Error("Enter your password.");
+    await api("apps/deploy", { project: name, kind: "nix", declaration: appView.nix, current });
+    appView.tab = "deployments";
+  } catch (error) {
+    appView.error = error.message || "Deploy failed.";
+  }
+  void refreshApps();
+}
+
+async function loadEnvNames(name) {
+  appView.env.names = [];
+  try { appView.env.names = (await api("apps/env?project=" + encodeURIComponent(name))).keys || []; }
+  catch (error) { appView.env.error = error.message || "Could not load variables."; }
+  rerender();
+}
+
+function syncEnv() {
+  const rows = appView.env.rows || [];
+  for (const input of document.querySelectorAll("[data-env-key]")) rows[Number(input.dataset.envKey)].key = input.value.trim();
+  for (const input of document.querySelectorAll("[data-env-value]")) rows[Number(input.dataset.envValue)].value = input.value;
+}
+
+async function revealEnv(name) {
+  const e = appView.env;
+  const input = document.querySelector("#env-password");
+  const current = input?.value || "";
+  if (input) input.value = "";
+  e.error = e.message = "";
+  try {
+    if (!current) throw Error("Enter your password.");
+    const result = await api("apps/env-read", { project: name, current });
+    e.revision = result.revision ?? null;
+    e.rows = Object.entries(result.vars || {}).map(([key, value]) => ({ key, value, show: false }));
+    if (!e.rows.length) e.rows.push({ key: "", value: "", show: true });
+  } catch (error) {
+    e.error = error.message || "Could not read variables.";
+  }
+  rerender();
+}
+
+async function saveEnvVars(name) {
+  syncEnv();
+  const e = appView.env;
+  const input = document.querySelector("#env-save-password");
+  const current = input?.value || "";
+  if (input) input.value = "";
+  e.error = e.message = "";
+  try {
+    const vars = {};
+    for (const r of e.rows) {
+      if (!r.key && !r.value) continue;
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(r.key)) throw Error("Invalid name: " + (r.key || "(empty)"));
+      if (r.key in vars) throw Error("Duplicate name: " + r.key);
+      vars[r.key] = r.value;
+    }
+    if (!Object.keys(vars).length) throw Error("Add at least one variable.");
+    if (!current) throw Error("Enter your password.");
+    const result = await api("apps/env", { project: name, vars, revision: e.revision, current });
+    e.revision = result.revision ?? e.revision;
+    e.names = Object.keys(vars);
+    e.message = result.delivery?.error ? "Saved. " + result.delivery.error : "Saved and applied.";
+  } catch (error) {
+    e.error = error.message || "Could not save.";
+  }
+  rerender();
 }
 
 async function showLog(target) {
@@ -392,31 +548,63 @@ async function importData() {
 }
 
 function bindApps() {
-  if (typeof bindNativeSecrets === "function") bindNativeSecrets();
+  if (state.page !== "projects") return;
   const on = (selector, handler) => document.querySelector(selector)?.addEventListener("click", handler);
+  const each = (selector, handler) => { for (const el of document.querySelectorAll(selector)) el.addEventListener("click", () => handler(el)); };
   on("#apps-refresh", () => void refreshApps());
-  on("#app-log-close", () => { appView.log = null; rerender(); });
+  document.querySelector("#apps-filter")?.addEventListener("input", event => {
+    appView.filter = event.target.value;
+    const caret = event.target.selectionStart;
+    rerender();
+    const box = document.querySelector("#apps-filter");
+    if (box) { box.focus(); box.setSelectionRange(caret, caret); }
+  });
+  each("[data-app-new]", () => { Object.assign(appView, { view: "new", error: "", message: "" }); rerender(); });
+  each("[data-app-back]", () => { Object.assign(appView, { view: "list", log: null, error: "", message: "" }); rerender(); });
+  each("[data-app-open]", el => { Object.assign(appView, { view: el.dataset.appOpen, tab: "deployments", log: null, error: "", message: "" }); rerender(); });
+  each("[data-app-tab]", el => { appView.tab = el.dataset.appTab; appView.error = appView.message = ""; rerender(); });
   on("#app-deploy", () => void deployApp());
+  on("#app-save-nix", () => void saveNix(appView.view));
   on("#app-add-file", () => { syncForm(); appView.entries.push({ path: "", text: "" }); rerender(); });
   on("#app-pin", () => void pinApp());
   on("#vm-generate", generateInstance);
   on("#import-start", () => void importData());
   on("#image-updates-check", () => void appRequest("image-updates/check", {}, "Checked."));
+  on("#env-reveal", () => void revealEnv(appView.view));
+  on("#env-save", () => void saveEnvVars(appView.view));
+  on("#env-add", () => { syncEnv(); appView.env.rows.push({ key: "", value: "", show: true }); rerender(); });
+  on("#env-paste-toggle", () => { syncEnv(); appView.env.paste = !appView.env.paste; rerender(); });
+  on("#env-paste-apply", () => {
+    syncEnv();
+    try {
+      const parsed = parseEnv(document.querySelector("#env-paste")?.value || "");
+      const rows = appView.env.rows.filter(r => r.key || r.value);
+      for (const { key, value } of parsed) {
+        const existing = rows.find(r => r.key === key);
+        if (existing) existing.value = value; else rows.push({ key, value, show: false });
+      }
+      Object.assign(appView.env, { rows, paste: false, error: "", message: parsed.length + " variable(s) added; Save to apply." });
+    } catch (error) {
+      appView.env.error = error.message;
+    }
+    rerender();
+  });
+  each("[data-env-show]", el => { syncEnv(); const r = appView.env.rows[Number(el.dataset.envShow)]; r.show = !r.show; rerender(); });
+  each("[data-env-remove]", el => { syncEnv(); appView.env.rows.splice(Number(el.dataset.envRemove), 1); rerender(); });
   for (const input of ["#app-upload", "#app-upload-dir"]) {
     document.querySelector(input)?.addEventListener("change", event => { syncForm(); appView.uploads = [...event.target.files]; rerender(); });
   }
-  const each = (selector, handler) => { for (const el of document.querySelectorAll(selector)) el.addEventListener("click", () => handler(el)); };
   each("[data-app-mode]", el => { syncForm(); appView.mode = el.dataset.appMode; rerender(); });
   each("[data-app-template]", el => { syncForm(); appView.entries = APP_TEMPLATES[el.dataset.appTemplate].map(e => ({ ...e })); rerender(); });
-  each("[data-nix-template]", el => { syncForm(); appView.nix = NIX_TEMPLATES[el.dataset.nixTemplate](appView.name || "my-app"); rerender(); });
   each("[data-app-remove]", el => { syncForm(); appView.entries.splice(Number(el.dataset.appRemove), 1); rerender(); });
-  each("[data-app-edit]", el => void editApp(el.dataset.appEdit));
   each("[data-app-log]", el => void showLog(el.dataset.appLog));
+  on("#app-update-start", () => { appView.confirmUpdate = true; rerender(); document.querySelector("#update-password")?.focus(); });
   each("[data-app-update]", el => {
-    const input = document.querySelector("#app-password");
+    const input = document.querySelector("#update-password");
     const current = input?.value || "";
     if (input) input.value = "";
-    if (!current) { appView.error = "Enter your password below, then press Update."; rerender(); return; }
+    if (!current) { appView.error = "Enter your password."; rerender(); return; }
+    appView.confirmUpdate = false;
     void appRequest("image-updates/apply", { project: el.dataset.appUpdate, current }, "Updating " + el.dataset.appUpdate + "…");
   });
   each("[data-image-hold]", el => void appRequest("image-updates/hold",

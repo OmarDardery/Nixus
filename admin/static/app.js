@@ -49,7 +49,7 @@ const esc = (v) =>
       ],
   );
 function brandLogo() {
-  return '<div class="brand" aria-label="Nixus host console"><span class="brand-mark" aria-hidden="true">[n]</span><div class="brand-wordmark">nixus<span class="brand-cursor" aria-hidden="true">_</span><small>HOST CONSOLE</small></div></div>';
+  return '<div class="brand" aria-label="Nixus host console"><span class="brand-mark" aria-hidden="true">[n]</span><div class="brand-wordmark">nixus</div></div>';
 }
 const at = (obj, path) => path.split(".").reduce((a, k) => a?.[k], obj);
 function put(obj, path, value) {
@@ -103,7 +103,7 @@ function secret(label, key, hint = "", textarea = false) {
 }
 const pageGuides = {overview:"start.md",guests:"networking.md",network:"networking.md",storage:"hardware.md",hardware:"hardware.md",integrations:"homelab.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"setup.md",files:"file-modules.md",review:"setup.md",operations:"recovery.md",commands:"helpers.md"};
 const title = (eyebrow, heading, text) =>
-  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "setup.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${["overview", "guests", "accounts", "operations", "review", "commands"].includes(state.page) ? "" : '<button class="primary" data-go="review">Review changes ↗</button>'}</div>`;
+  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "setup.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
 const card = (heading, body, caption = "") =>
   `<section class="card"><div class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</div>${body}</section>`;
 function ownershipBanner() {
@@ -120,7 +120,7 @@ function pendingBanner() {
 }
 function quickManagementLinks() {
   const links = managementServices().filter(service => service.url);
-  return links.length ? `<div class="sidebar-shortcuts"><div class="nav-label">MANAGE</div>${links.map(service => `<a href="${esc(service.url)}" target="_blank" rel="noopener noreferrer">${esc(service.name)}</a>`).join("")}</div>` : "";
+  return links.length ? `<span class="top-links">${links.map(service => `<a href="${esc(service.url)}" target="_blank" rel="noopener noreferrer">${esc(service.name)} ↗</a>`).join("")}</span>` : "";
 }
 
 function draftChanges() {
@@ -211,21 +211,14 @@ function shell() {
   const knownHealth = observedHealth && units.length > 0;
   const live = knownHealth && requiredUnits.every(id => units.some(u => u.Id === id && u.ActiveState === "active"));
   const hostStatus = !knownHealth ? "Unknown" : live ? "Active" : "Needs attention";
-  app.innerHTML = `<div class="layout"><div id="ui-shade" class="drawer-shade" aria-hidden="true"></div>
-  <aside class="sidebar" id="ui-sidebar" aria-label="Host console navigation">
-    ${brandLogo()}<div class="sidebar-navigation">${navigationHtml()}</div>${quickManagementLinks(settings)}
-    <div class="sidebar-bottom"><div class="sidebar-server"><span class="status-dot ${live ? "active" : knownHealth ? "warning" : "unknown"}" aria-hidden="true"></span><div><b>${esc(settings.hostName)}</b><span class="host-state">${esc(hostStatus)}</span><span>NixOS host · ${esc(address)}</span></div></div>
-      <div class="sidebar-links"><a href="/docs/troubleshooting.md">Offline help</a><a href="https://nixus.dardery.work/" target="_blank" rel="noopener noreferrer">Website ↗</a></div><button class="small" data-action="logout">Sign out</button>
-    </div>
-  </aside>
-  <div class="content"><header class="topbar"><div class="topbar-left"><button class="mobile-nav-toggle" type="button" id="ui-nav-toggle" aria-label="Open navigation" aria-controls="ui-sidebar" aria-expanded="false">☰</button><div class="breadcrumb">Nixus <span class="muted">/</span> <b>${esc(current)}</b></div></div>
-    <div class="top-actions"><button type="button" class="search-trigger" id="ui-search-open" aria-label="Search console pages">⌕ <span>Search pages</span> <kbd>Ctrl K</kbd></button>
+  app.innerHTML = `<div class="layout top-layout">
+  <header class="topbar"><div class="topbar-left">${brandLogo()}<span class="crumb-sep" aria-hidden="true">/</span><span class="host-crumb"><span class="status-dot ${live ? "active" : knownHealth ? "warning" : "unknown"}" title="${esc(hostStatus)}" aria-hidden="true"></span><b>${esc(settings.hostName)}</b><span class="muted host-address">${esc(address)}</span></span></div>
+    <div class="top-actions">${quickManagementLinks(settings)}<button type="button" class="search-trigger" id="ui-search-open" aria-label="Search pages">⌕ <kbd>Ctrl K</kbd></button>
       <button class="theme-toggle" id="ui-theme-toggle" aria-label="Toggle light and dark theme" type="button">◐</button>
-      <a class="pill" href="/docs/beta.md">${esc(state.status.release?.version || "Development")}</a>
-      <span class="principal" title="Signed-in portal identity">${esc(state.principal.username)} · ${esc(state.principal.role)}</span></div>
-  </header><main id="main" class="page" tabindex="-1">${pendingBanner()}${setupBanner()}${ownershipBanner()}${settingsTabs()}${renderPage()}${stagedBanner()}
-     <footer class="footer-note">NixOS owns the host · Incus owns guests · <a href="/docs/projects.md">Upstream credits</a></footer>
-  </main></div></div>
+      <span class="principal" title="${esc(state.principal.role)}">${esc(state.principal.username)}</span><button class="small" data-action="logout">Sign out</button></div>
+  </header>
+  <nav class="tabnav" id="ui-sidebar" aria-label="Main">${navigationHtml()}</nav>
+  <main id="main" class="page" tabindex="-1">${pendingBanner()}${setupBanner()}${ownershipBanner()}${settingsTabs()}${renderPage()}${stagedBanner()}</main></div>
   <dialog id="ui-jump" class="ui-dialog" aria-label="Navigate to a console page"><div class="ui-dialog-heading"><strong>Go to a page</strong><form method="dialog"><button aria-label="Close page search" type="submit">✕</button></form></div><label for="ui-search-input">Search navigation</label><input id="ui-search-input" type="search" placeholder="Guests, backups, access…" autocomplete="off"><nav aria-label="Search results">${pages.map(([id,label]) => `<button type="button" data-go="${id}">${esc(label)}</button>`).join("")}</nav></dialog>`;
   renderedReviewScope = scope;
   if (authorization) {
@@ -322,7 +315,7 @@ function storage() {
       `<div class="table-wrap"><table><thead><tr><th>Device</th><th>Size</th><th>Filesystem</th><th>Mounts</th></tr></thead><tbody>${disks.map((d) => `<tr><td><b>${esc(d.path)}</b><br><code>${esc(d.uuid || d.type)}</code></td><td>${formatBytes(d.size)}</td><td>${esc(d.fstype || "—")}</td><td>${esc((d.mountpoints || []).filter(Boolean).join(", ") || "Not mounted")}</td></tr>`).join("")}</tbody></table></div>`,
       "Read-only discovery",
     ) +
-    `<section class="card section"><div class="card-header"><h2>Declared mounts</h2><button data-action="add-mount">＋ Add filesystem</button></div><p class="section-intro">Mounts use <code>/srv/nixus/&lt;name&gt;</code>. Guest and backup storage need writable Linux filesystems. Initialized Incus pools require a separate migration before moving them.</p>${rows || '<div class="empty">No additional disks selected. Guest data will use the system filesystem.</div>'}<div class="separator"></div></section>`
+    `<section class="card section"><div class="card-header"><h2>Declared mounts</h2><button data-action="add-mount">＋ Add filesystem</button></div>${rows || '<div class="empty">No extra disks. Data uses the system filesystem.</div>'}<div class="separator"></div></section>`
   );
 }
 function apps() {
