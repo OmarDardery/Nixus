@@ -287,9 +287,15 @@ func appPower(actor string, body M) (M, error) {
 		}
 		args := []string{verb, str(inst["name"]), "--project", incusProject}
 		if verb != "start" {
-			args = append(args, "--timeout", "60")
+			args = append(args, "--timeout", "30")
 		}
-		if _, err := updateIncus(3*time.Minute, args...); err != nil {
+		if _, err := updateIncus(3*time.Minute, args...); err != nil && verb != "start" {
+			// The app ignored the shutdown signal: force it, like docker stop.
+			_, err = updateIncus(3*time.Minute, verb, str(inst["name"]), "--project", incusProject, "--force")
+			if err != nil {
+				return nil, Public("Could not " + action + " " + str(inst["name"]))
+			}
+		} else if err != nil {
 			return nil, Public("Could not " + action + " " + str(inst["name"]))
 		}
 	}
