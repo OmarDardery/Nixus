@@ -15,14 +15,13 @@ module does not flush unrelated tables. Docker's normal firewall runs inside the
 | LAN gateway | `192.168.50.1` | Existing router |
 | Incus bridge | `10.77.0.1/24` | Host-side address for private guests/DNS/DHCP |
 | Incus DHCP | `10.77.0.100`–`10.77.0.199` | Dynamic guest reservations |
-| Apps VM | `10.77.0.10` | Static DHCP reservation outside the range |
-| Other guest | `10.77.0.20` | A distinct VM/container IP |
-| Compose networks | Docker-allocated non-overlapping subnet | Internal app services, not LAN addresses |
+| Example guest | `10.77.0.20` | Static DHCP reservation outside the range |
+| Compose project networks | Incus networks created by incus-compose | Internal app services, not LAN addresses |
 | Public hostname | `app.example.com` | Cloudflare endpoint routed to an application port |
 
-The apps VM and containers use DHCP normally; Incus assigns the same reserved address
+Guests use DHCP normally; Incus assigns the same reserved address
 from `eth0.ipv4.address`. The guest IP is a guest endpoint, distinct from the host IP and
-from Docker-internal addresses. Fixed guest IPs must remain outside the DHCP dynamic range.
+from Compose-internal addresses. Fixed guest IPs must remain outside the DHCP dynamic range.
 Container CPU/RAM are profile/config limits. VM disk sizes use block images; a directory
 pool cannot promise enforced system-container disk quotas.
 
@@ -40,10 +39,6 @@ pool cannot promise enforced system-container disk quotas.
 - LAN-to-private-guest forwarding is disabled by default. Enable `connectivity.trustedLANAccess` to permit trusted management CIDRs through the registered guest interfaces; Incus retains guest ACL/forward ownership. Routed LAN access requires
   a static route `10.77.0.0/24 via 192.168.50.10` on the real router/client, using adapted values.
   This route is an external network initialization step; the host does not change the router.
-- The demo's Docker port is published in the VM. Docker DNAT can bypass the VM input firewall;
-  the outer host forward policy is the security boundary for LAN traffic. Do not attach the
-  VM directly to the LAN without adding a guest Docker-aware forwarding policy.
-- In manual mode Arcane binds VM loopback. With setup enabled, its private VM TLS listener is reached through the verified host proxy at 9441. It is not a public application origin.
 
 If guests need a LAN DNS/NTP/server, add a narrowly scoped allow rule before the private-range
 drop. Do not broadly trust `incusbr0` as a connectivity workaround. Verify new rules with nft
@@ -195,5 +190,3 @@ The JSON describes the Nixus policy. Check custom firewall rules and actual
 socket state with `sudo nft list ruleset` and `sudo ss -ltn`.
 
 Bootstrap retains the installed firewall and interface-scoped portal ports.
-The applications VM continues to restrict its native Arcane listener to
-the hypervisor proxy at the Docker forwarding boundary.

@@ -1,7 +1,7 @@
 # Generic homelab acceptance scenario
 
-Nixus provides a managed NixOS host, Incus guests, an optional isolated
-Docker/Arcane applications VM, private management interfaces, change
+Nixus provides a managed NixOS host, Incus guests, Compose applications
+running as Incus OCI containers, private management interfaces, change
 reviews and recovery workflows. **There are no built-in application-specific
 workloads.** Choose your own guest images, container services and Compose
 stacks independently.
@@ -10,7 +10,7 @@ stacks independently.
 
 Use an existing NixOS installation with a working local console or SSH
 recovery path, available storage, a backup of existing data, and supported
-virtualization. A Docker apps VM requires adequate host memory.
+virtualization.
 
 ```console
 sudo nix --extra-experimental-features 'nix-command flakes' run \
@@ -91,21 +91,21 @@ Restrict control interfaces to trusted LAN or VPN clients.
 
 ## 4. Deploy any Compose stack
 
-If you enabled the apps VM, access Arcane through the Nixus console
-(or use Docker Compose inside the isolated guest). Choose an image
-version or digest intentionally, provide secrets outside public source,
-and review published ports and origins. Deploy generic Compose YAML
-using Arcane or a protected directory inside the apps VM.
+On the **Projects** page, upload the stack's original Dockerfile and Compose
+file, review and publish the exact bytes, build its images offline, then
+deploy a reviewed project revision that links that source. Choose image
+versions or digests intentionally, keep secrets in the SOPS project secrets
+UI, and review published ports and origins.
 
 ```console
-sudo incus exec apps --project lab -- docker info
-sudo incus exec apps --project lab -- docker ps
+sudo incus list --all-projects
+sudo nixus-admin projects status
 ```
 
-Back up each stack's persistent Docker volumes separately. Host
-configuration rollback is not application-data rollback. Only selected
-applications should be published through a reviewed external ingress;
-Nixus, Incus, Cockpit, Arcane and SSH remain private.
+Named volumes are Incus custom volumes; project backups export them with the
+rest of the project. Host configuration rollback is not application-data
+rollback. Only selected applications should be published through a reviewed
+external ingress; Nixus, Incus, Cockpit and SSH remain private.
 
 ## 5. Commission and recover
 

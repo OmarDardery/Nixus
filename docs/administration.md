@@ -2,43 +2,26 @@
 
 ## Native service sessions
 
-Nixus, Incus, Cockpit and Arcane authenticate separately. The optional Arcane
-TLS proxy uses the upstream [Nginx njs module](https://nginx.org/en/docs/njs/) to
-remove `nixus_session` from requests to the guest and from guest responses.
-Browsers share cookies across ports, so the proxy must enforce this boundary.
-Arcane's own cookies, cookie security attributes and JWT headers are preserved.
-This module runs inside Nginx; it adds no background service. A custom replacement
-proxy must preserve the same isolation.
+Nixus, Incus and Cockpit authenticate separately. Browsers share cookies across
+ports, so the Nixus session cookie is host-only, `Secure`, `HttpOnly` and
+`SameSite=Strict`, and no other service receives it through a Nixus proxy.
 
 ## Commands, docs and community resources
 
 Open **Help** in the Nixus host console for copyable platform updates,
-package-refresh reviews, health checks, guest/Docker examples and community helper
+package-refresh reviews, health checks, guest examples and community helper
 commands. Each example says where to run it. Copying never executes a command or
 creates a guest from the browser. Application wizards run interactively in the host
-terminal; Docker examples target the apps VM.
+terminal.
 
 The same section groups Nixus guides, upstream documentation and community resources
-by project. Incus helpers, Cockpit plugins, Docker Compose examples and Arcane
-templates are labeled separately. Optional backup, secret, ingress and monitoring
+by project. Incus helpers, Cockpit plugins and Compose examples are labeled separately. Optional backup, secret, ingress and monitoring
 references are under the expanded resources list. Community compatibility and
 Nixus qualification remain separate.
 
 ## Credential delivery during installation and recovery
 
 Installer summaries show URLs, public fingerprints, status and recovery steps.
-Arcane first-boot input is delivered through protected stdin into guest tmpfs,
-verified through its real TLS login API, and deleted. It expires after 15 minutes.
-Existing databases remain authoritative and restart without a bootstrap password.
-Choose a separate initial password in **Services**, or explicitly opt in to reuse
-by entering your current Nixus password again. Reuse shares compromise risk;
-accounts remain independent and subsequent changes are not synchronized.
-
-The Arcane reset form requires your current Nixus password on every request.
-The root broker checkpoints the database and drives the supported upstream
-interactive CLI through a private PTY, verifies login, and rolls back a failed
-reset. A reboot restores an interrupted checkpoint before starting Arcane.
-For local-console recovery use `sudo nixus-admin arcane reset-password`.
 Passwords never appear in argv, public output, operation records or the Nix store.
 
 Every fresh installation opens console-approved browser enrollment; no portal
@@ -220,7 +203,7 @@ full fingerprint with `sudo incus config trust remove FINGERPRINT`. Do not remov
 other operators' trust. Browser bundle renewal/revocation does not change Linux,
 Nixus portal, or application passwords.
 
-The Python/HTTPS tests cover cryptography, failure cleanup, ownership, reauthentication,
+The Go and HTTPS tests cover cryptography, failure cleanup, ownership, reauthentication,
 CSRF/session binding and single-claim races. The real Incus fixture checks TLS 1.3,
 lab mutations, rejection of other-project/global mutations, explicit unrestricted
 scope, revocation and owned expiration while preserving pre-existing trust. Passing
@@ -263,52 +246,24 @@ Full VMs need a bootable VM image and KVM. Resizing disks upward and changing li
 shrinking disks requires a separate migration/recovery procedure. Deleting a declaration never
 means deleting data. Explicit deletion uses authenticated `incus delete` after a reviewed backup.
 
-## Arcane and Compose
+## Compose applications
 
-The UI is HTTPS on **apps VM loopback**, not host loopback. Forward it from a client:
+Compose applications are managed on the **Projects** page and run as Incus OCI
+containers in their own Nixus-owned Incus project; there is no Docker daemon or
+applications VM. The workflow is:
 
-```console
-ssh -N -J operator@HOST_IP -L 9443:127.0.0.1:9443 root@APPS_IP
-```
+1. Upload the original Dockerfile, build context and Compose file; review the
+   SHA-256 manifest and publish the exact bytes.
+2. Review and run the offline image build. Images are imported into the project
+   with verified fingerprints.
+3. In a reviewed project revision, set `backend = "incus-compose"` and link the
+   exact published source revision, then deploy it.
 
-Open `http://localhost:9443` through the encrypted SSH tunnel when setup TLS is disabled,
-and log in as the bootstrapped admin. HTTPS is protected inside SSH; no public admin hostname
-is configured. Arcane's Docker socket gives it root-equivalent control of the VM, not of the
-hypervisor. Compromise of a VM can still expose its applications/secrets; it is not a safe place
-for mutually hostile tenants.
-
-For the included demo, enable `site.apps.enableDemo`, provision the database secret, deploy the
-updated guest configuration and use:
-
-```console
-sudo homelab deploy demo
-sudo homelab logs demo
-sudo homelab update demo
-sudo homelab project-restart demo
-sudo homelab down demo
-sudo homelab exec apps -- nixus-project backup demo
-sudo homelab exec apps -- nixus-project lock demo
-```
-
-Deploy validates Compose and waits for health. The image itself defines the demo HTTP healthcheck;
-PostgreSQL/Redis have Compose healthchecks. Update explicitly pulls registry-backed services and
-keeps the locally Nix-built app image. Teardown retains volumes. The helper lock action writes
-image-only digest overrides without resolved environment secrets. Review and commit overrides;
-copy/deploy them into the corresponding `/srv/compose/<project>` directory. Replace the Arcane
-image reference with a reviewed immutable digest in `site.nix` too.
-
-The web app stores a visit count in PostgreSQL and uses Redis as a disposable cache. `/health`
-checks both dependencies without adding visits. It is a commissioning demo, not an authenticated
-production application. Do not publish its unauthenticated write endpoint as a real service.
-Docker/OCI tags are mutable; use tested digests and review security updates regularly.
-Changing a database password file alone does not rotate the password in an existing PG volume.
-Perform coordinated SQL/application rotation, take a backup and test reconnects.
-
-Additional CLI-owned projects live under `/srv/compose/NAME/compose.yaml`, preferably from a
-reviewed Git revision with runtime file secrets. UI-owned projects should instead use Arcane's
-Stacks > Git Repository or editor workflow. Keep one writer per project. CLI-owned external
-stacks have limited Arcane lifecycle/editing support; use the packaged helper for them.
-No additional Dockge/Komodo dashboard competes for control.
+Named volumes are Incus custom volumes and survive redeployments; Nixus never
+removes volumes. Runtime secrets use the SOPS project secrets UI. Each Incus
+project has one owner, so do not also manage Compose services by hand with
+`incus-compose`. Pin base images by digest for reproducible rebuilds, and review
+security updates regularly.
 
 ## Logs and monitoring
 
@@ -317,7 +272,7 @@ journalctl -u incus -u incus-preseed -u nixus-instances --since today
 journalctl -u nixus-incus-audit --since today
 journalctl -t nixus
 systemctl --failed
-sudo incus info apps --project lab --show-log
+sudo incus info NAME --project PROJECT --show-log
 sudo homelab logs demo
 sudo nft list ruleset
 sudo incus network show incusbr0
@@ -345,9 +300,8 @@ configured Nixus HTTPS port). **Authentication and session cookies are
 never served over HTTP.** Keep using the Nixus-generated TLS identity and
 verify its fingerprint on initial enrollment.
 
-The portal Overview and sidebar link to enabled Incus UI (:8443),
-Cockpit (configured port, normally :9090), and Arcane (configured
-port, normally :9443 on fresh installs or :9441 on older installs).
+The portal Overview and sidebar link to the enabled Incus UI (:8443)
+and Cockpit (configured port, normally :9090).
 Disabled or unconfigured services are not advertised as live. The
 **Help** page includes a copy-only homelab cheatsheet.
 Port 80 belongs to the *Nixus host IP*; a Mainsail server inside a
@@ -389,4 +343,4 @@ For SSH-key-only administrators, open a private host terminal and run `sudo nixu
 
 After approval, choose a unique lower-case Nixus username and a new 16–256 character portal password. The existing single-claim authority commits one verifier and invalidates every bootstrap browser. The winning browser receives an ordinary Nixus session; host proof is not ordinary portal authentication. Named first administrators use the existing `users.json` format; selecting `admin` uses the existing reserved `auth.json` format. Previously installed accounts retain their login and no new first-claim path opens for them. Local `reset-password` still resets the reserved recovery administrator `admin`, preserving other named accounts.
 
-This adds no password synchronization with Linux, Cockpit, Incus or Arcane. Default installer enrollment remains release-gated; do not remove a working legacy path or switch an established host without fresh-install/upgrade qualification. Browser bootstrap session metadata (`bootstrap-sessions.json`, root-only mode 0600) is bounded and contains hashes, scope, deadlines and rate counters, not reusable cookie values or host credentials. It is intentionally excluded from recovery kits; portable account verifiers and the existing claim authority remain included.
+This adds no password synchronization with Linux, Cockpit or Incus. Default installer enrollment remains release-gated; do not remove a working legacy path or switch an established host without fresh-install/upgrade qualification. Browser bootstrap session metadata (`bootstrap-sessions.json`, root-only mode 0600) is bounded and contains hashes, scope, deadlines and rate counters, not reusable cookie values or host credentials. It is intentionally excluded from recovery kits; portable account verifiers and the existing claim authority remain included.

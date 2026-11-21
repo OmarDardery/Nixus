@@ -35,8 +35,8 @@ Private delivery is an explicit exception to the *public-artifact* boundary:
   bundle. Configuration-only exports must exclude secret material.
 
 Do not remove the last working credential-delivery or console recovery route
-before its replacement is available and tested. Recovery must work with the apps
-VM, Arcane and other application services stopped.
+before its replacement is available and tested. Recovery must work with all
+application workloads stopped.
 
 ## Current producer-to-consumer inventory
 
@@ -82,14 +82,14 @@ This does not scrub historical journals or private files already created by olde
 
 ## Reproducible tests and evidence limits
 
-the Go unit tests provides distinct synthetic setup, Linux, Arcane,
+the Go unit tests provides distinct synthetic setup, Linux,
 P12, cookie, staged-secret and private-key values. `assert_public_clean` recursively
 checks mapping keys/values, lists and byte/text artifacts, including URL, base64 and
 hex forms. Failure messages name credential categories only. It is a test utility,
 not a general-purpose production redactor or proof against every encoding/hash.
 
 the Go unit tests checks the scanner itself and actual safe
-boundaries: failed Arcane subprocess output, rejected secret input, account
+boundaries: rejected secret input, account
 metadata/failed login/audit output and cancelled staged secrets. Existing
 the Go unit tests covers HTTPS auth/CSRF, staging exclusion and rollback;
 The Go unit tests (`cmd/nixus/nixus_test.go`) cover recovery archive and kit
@@ -128,10 +128,9 @@ matching NixOS CI evidence.
 ### Output-boundary hardening evidence
 
 Additional synthetic captures cover first-run and legacy installer summaries, installer
-child-command failures, interactive Arcane recovery results and failure paths, unauthenticated enrollment error responses, hostile
+child-command failures, unauthenticated enrollment error responses, hostile
 broker ValueErrors, transaction failure records/journal exceptions, child log routing,
-and legacy transaction output. Arcane recovery prompts for a supplied password rather than generating private
-credentials. Transient bootstrap-file disposal remains tracked separately.
+and legacy transaction output. Transient bootstrap-file disposal remains tracked separately.
 
 A complete #26 acceptance claim remains blocked on the final #27–#68 flows, diagnostics
 bundle #33, and real NixOS/generated-unit/journal evidence. Passing the public-boundary
@@ -140,8 +139,7 @@ regression tests alone must not close the issue.
 ### Credential retrieval retirement and release gate (#27)
 
 `installer.ensure_portal_account` returns no credential. `direct.activate` returns
-only its transaction record. Arcane authentication probes return strict boolean
-status, and the unused Linux plaintext lookup is removed. Installer summaries no
+only its transaction record. The unused Linux plaintext lookup is removed. Installer summaries no
 longer accept a credential argument or advertise setup/operator retrieval paths.
 The sign-in page directs users to available enrollment or authorized password
 rotation rather than an installer transcript. Retry, rollback and update errors
@@ -157,8 +155,7 @@ rotation, setup-file retirement and old-session rejection.
 
 This does **not** certify #27's complete web-first migration gate. OmarDardery/nixlab#63/OmarDardery/nixlab#64/#28
 still own verified default enrollment, durable first-claim semantics and approved
-browser recovery. Arcane now consumes transient first-boot input and supports
-reauthenticated supplied-password reset. Existing protected private service files, legacy verifiers
+browser recovery. Existing protected private service files, legacy verifiers
 and console recovery remain in place until those replacements are qualified.
 Do not close #27 merely because the output/helper regression tests pass.
 

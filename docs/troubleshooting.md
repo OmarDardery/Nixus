@@ -13,20 +13,6 @@ normal guarded main update. Do not disable the firewall, delete Incus data, assi
 a guessed static address or reboot an unconfirmed test activation to hide this
 failure. Confirm portal/SSH access and inspect the boot-default notice first.
 
-## Apps VM DHCP crashes during an update
-
-A core dump in `dhcpcd`'s `ipv6nd_expire` can match the upstream
-[interface-removal timer bug](https://github.com/NetworkConfiguration/dhcpcd/issues/614).
-The apps guest carries the [upstream fix](https://github.com/NetworkConfiguration/dhcpcd/commit/0c1f40749f1d1dad280988ccbe53ac4ba6f1d6c4)
-while the pinned package lacks it. Docker bridge/veth interfaces are also excluded
-from guest DHCP; the uplink retains DHCP and IPv6. Host networking is unaffected.
-
-The vendored patch is in `modules/patches/`; remove it when the pinned package
-includes that exact fix and the DHCP/Docker interface-churn test still passes.
-This source fix does not establish successful recovery of an already failed
-guest update. Inspect guest service logs and verify the guarded update, lease,
-Arcane and persistent data on the actual host before recording qualification.
-
 Start with the symptom. Keep the original error. Resist the traditional homelab
 ritual of changing six things and discovering none of them was the problem.
 
@@ -37,13 +23,8 @@ sudo nixus doctor
 systemctl --failed
 ```
 
-`doctor` checks the actual management address and enabled HTTPS interfaces,
-including Arcane administrator readiness. Its concise report is saved at
-`/var/lib/nixus-admin/last-health.json`.
-
-Arcane status probes use `/api/health` to avoid deprecated-endpoint
-warnings. Older custom images fall back to `/api/status` only on HTTP 404;
-authentication, TLS and server failures still fail the health check.
+`doctor` checks the actual management address and enabled HTTPS interfaces.
+Its concise report is saved at `/var/lib/nixus-admin/last-health.json`.
 
 The installer reports its original failure separately from rollback failures.
 Its report is `/var/lib/nixus-admin/installation-failure.json`; detailed build
@@ -119,14 +100,12 @@ Use the actual address in the installer output. Reserve your preferred address
 in the router, or make a reviewed static-network change in Nixus with console
 access available. Do not copy example NIC names or guest addresses into your host.
 
-Default interfaces use `https://HOST_IP:9440` (Nixus), `:8443` (Incus), `:9090`
-(Cockpit) and `:9443` (Arcane). Older installations can retain Arcane on
-`:9441`; use the reported/configured port.
+Default interfaces use `https://HOST_IP:9440` (Nixus), `:8443` (Incus) and `:9090`
+(Cockpit). Use the reported or configured port.
 
 ## SSH or Cockpit rejects my password
 
-SSH and Cockpit use **Linux accounts**, not the Nixus portal password and not the
-Arcane password. Root SSH and root Cockpit login are disabled. Try your existing
+SSH and Cockpit use **Linux accounts**, not the Nixus portal password. Root SSH and root Cockpit login are disabled. Try your existing
 non-root administrator account or the verified `operator` credential printed by
 the installer.
 
@@ -150,31 +129,6 @@ unconfirmed so the deadline restores the previous generation.
 A key generated on the server does not authorize your laptop. Check **Access**
 for the password-login policy. A locked Linux account still needs a usable password;
 enabling password authentication alone does not create one.
-
-## Arcane's saved password does not work
-
-An initialization password file cannot override an account already stored in the
-Arcane database. Nixus only presents stored credentials as current after an
-authenticated API login. If you changed the password, use that account or run:
-
-```sh
-sudo nixus arcane reset-password
-```
-
-The recovery command downloads the official helper before stopping Arcane,
-backs up its data, resets credentials, synchronizes the runtime files, restarts
-Arcane and verifies authentication before printing the result. It reports the
-backup path. This is an explicit recovery operation; it does not delete stacks.
-
-If recovery fails, keep its error and backup path and check:
-
-```sh
-sudo homelab exec apps -- systemctl status docker-arcane.service
-sudo homelab exec apps -- journalctl -b -u docker-arcane.service --no-pager
-sudo nixus doctor
-```
-
-Do not delete `/srv/arcane` to make a login screen look new again.
 
 ## Installation stopped halfway through
 
@@ -206,36 +160,23 @@ plan. Never delete the Incus database to get past this check. It is not a cache.
 
 ## Incus works, but another interface is broken
 
-Incus being reachable does not prove Cockpit, Nixus or Arcane is ready.
+Incus being reachable does not prove Cockpit or Nixus is ready.
 
 ```sh
 sudo nixus doctor
-sudo systemctl status nixus-ui.service nginx.service nixus-apps-onboarding.service
+sudo systemctl status nixus-ui.service nixus-admin-backend.service nginx.service
 ```
 
-For Arcane, check the apps VM and its agent:
+For a project application, check its Incus project and the deployment journal:
 
 ```sh
 sudo incus list --all-projects
-sudo homelab exec apps -- systemctl --failed
+sudo nixus-admin projects status
 ```
 
-If `nixus-apps-onboarding` reports a guest activation failure, inspect the guest
-as well as the host. The transport reports the numeric exit status without
-copying guest output, which may contain sensitive data, into host/API errors:
-
-```sh
-sudo incus exec apps --project lab -- journalctl -b -p err -n 50 --no-pager -o cat
-```
-
-A matching active/profile generation alone does not prove service health. Check
-the native service failures and Nixus doctor results before retrying an update.
-An explicitly reported guest rollback failure also requires investigation;
-host rollback does not establish that guest recovery succeeded.
-
-Also check the client is on a trusted management subnet, the current host address
-and any customized ports. Management interfaces are private; this documentation
-domain does not forward requests to them.
+The Projects page in the console shows each instance's status and a bounded
+read-only log. A failed deployment stays `partial` with its resources untouched;
+re-review and resume it rather than deleting instances.
 
 ## The browser does not trust the certificate
 

@@ -8,9 +8,8 @@ configured Nixus HTTPS port). **Authentication and session cookies are
 never served over HTTP.** Keep using the Nixus-generated TLS identity and
 verify its fingerprint on initial enrollment.
 
-The portal Overview and sidebar link to enabled Incus UI (:8443),
-Cockpit (configured port, normally :9090), and Arcane (configured
-port, normally :9443 on fresh installs or :9441 on older installs).
+The portal Overview and sidebar link to the enabled Incus UI (:8443)
+and Cockpit (configured port, normally :9090).
 Disabled or unconfigured services are not advertised as live. The
 **Help** page includes a copy-only homelab cheatsheet.
 Port 80 belongs to the *Nixus host IP*; a Mainsail server inside a

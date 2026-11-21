@@ -63,8 +63,7 @@ For unmanaged accounts (`cockpit.managePassword = false`), an authorized host
 terminal can use `sudo passwd operator`. A manual password change does not update
 a managed password file and may be overwritten by later activation. Existing
 account passwords are preserved.
-The portal, Linux account, Incus browser certificate and Arcane account are
-separate identities. Enroll the Incus browser certificate through the portal.
+The portal, Linux account and Incus browser certificate are separate identities. Enroll the Incus browser certificate through the portal.
 
 ## Portal access without printed passwords
 
@@ -136,9 +135,6 @@ build leaves its log and candidate for inspection, rather than erasing evidence.
 Credentials are generated once outside the activation rollback manifest, so a
 failure after database initialization does not cause password rotation on retry.
 The setup password is available again only while it matches the active account.
-Stored Arcane credentials are printed only after an authenticated API login.
-If that password has changed in Arcane, use the existing account or explicitly
-run recovery; a bootstrap file is never asserted to be the current password.
 
 ## Adopt an existing Incus host
 
@@ -168,7 +164,7 @@ sudo nixus doctor
 ```
 
 Installation confirms only after checking the Incus API/UI, Nixus portal,
-Cockpit and enabled Arcane proxy/status/administrator initialization over TLS.
+Cockpit and the port-80 redirect over TLS.
 Tests of local endpoints cannot prove connectivity from every LAN/VPN client.
 The startup identity service uses the assigned management address before TLS
 services start. Cockpit socket activation listens independently of DHCP readiness
@@ -176,8 +172,8 @@ and restarts a failed worker automatically. The firewall restricts management ac
 `nixus-management-health.service` checks all enabled interfaces after each boot,
 waits for readiness and retries on failure; inspect its journal if commissioning fails.
 The server disables display-manager/X11 startup and suspend/hibernation. Wi-Fi
-power saving is off when Wi-Fi provides connectivity; Bluetooth, monitoring history
-and demo applications remain optional.
+power saving is off when Wi-Fi provides connectivity; Bluetooth and monitoring history
+remain optional.
 
 `doctor` returns a nonzero status on failed endpoint checks and saves a bounded
 report at `/var/lib/nixus-admin/last-health.json`, without tokens or passwords.
@@ -194,21 +190,10 @@ NetworkManager connections that no longer exist.
 | Mandatory key at local console; server key confused with laptop key | Console-safe key policy, sshd-aware remote detection, `enroll-key` and policy output |
 | Late validation, partial checkout, manual resume/update | Disposable planning, atomic checkout publication, transaction reattachment and protected staged source updates |
 | Existing Incus blocked or at risk of overwrite | Explicit inventory/export/adoption with separate owned resources and collision refusal |
-| Nginx SSL listener missing certificates | Existing `onlySSL` fix retained; startup VM boots the actual apps-enabled proxy with verified upstream TLS |
-| Duplicate image fingerprint on retry | Existing idempotent import/alias implementation and the Go unit tests retained |
+| Duplicate image fingerprint on retry | Fingerprint-verified idempotent OCI image import |
 | Rollback masked original error or restarted missing units/connections | Separate error fields, loaded-unit checks and existing-UUID checks |
 | Cockpit address unavailable at boot; stale `.240` links | Address-independent listeners, runtime TLS identity, observed URLs; DHCP/reboot VM fixture |
-| Success despite broken interfaces | TLS endpoint and Arcane administrator readiness gate before confirmation |
+| Success despite broken interfaces | TLS endpoint readiness gate before confirmation |
 | Password login disappeared unexpectedly | Password login enabled by default, printed policy and explicit key-only option |
-| Arcane bootstrap secret disagreed with database | Private credential loading and a boolean authentication check; no plaintext retrieval helper |
-| Manual Arcane recovery left it stopped | Upstream interactive supplied-password recovery without service interruption |
-| TLS deprecation and confusing shutdown logs | Arcane TLS environment variables; readiness/exit status drives diagnostics |
 
-VM tests use controlled Arcane/Incus TLS backends for the proxy/reboot boundary
-and real Cockpit PAM/WebSocket and SSH password sessions before and after reboot.
-Actual registry pulls, nested KVM deployment and physical-host commissioning still
-need host testing.
-
-Upstream recovery/flag references:
-[Arcane recovery](https://getarcane.app/docs/users/account-recovery),
-[deprecated flags](https://getarcane.app/docs/reference/environment-variables).
+Nested KVM deployment and physical-host commissioning still need host testing.
