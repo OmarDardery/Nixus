@@ -476,7 +476,7 @@ in pkgs.testers.runNixOSTest {
         assert broker("/apps-repo/scan", {"url": url})["fingerprints"]
         view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
         assert view["configured"] and "error" not in view["status"], view
-        git = "${pkgs.git}/bin/git -c user.name=t -c user.email=t@t "
+        git = "${pkgs.git}/bin/git -c safe.directory=* -c user.name=t -c user.email=t@t "
         machine.succeed("rm -rf /tmp/apps && " + git + "clone -q /srv/git/apps.git /tmp/apps")
         for f in ["notes/Dockerfile", "notes/default.nix", "web/compose.yaml", "README.md"]:
             machine.succeed("test -f /tmp/apps/" + f)
@@ -485,7 +485,7 @@ in pkgs.testers.runNixOSTest {
         hello_dockerfile = "FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n"
         machine.succeed("mkdir -p /tmp/apps/hello && cat > /tmp/apps/hello/compose.yaml <<'EOF'\nservices:\n  hello:\n    build: .\nEOF\n"
                         "cat > /tmp/apps/hello/Dockerfile <<'EOF'\n" + hello_dockerfile + "EOF")
-        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main")
+        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main && chown -R git:git /srv/git/apps.git")
         view = broker("/apps-repo/check", {})
         pending = view["status"]["pending"]
         assert pending["apps"] == ["hello"] and len(pending["commits"]) == 1, pending
