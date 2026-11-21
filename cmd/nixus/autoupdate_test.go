@@ -92,3 +92,18 @@ func TestStartImageUpdateRefusesWithoutAvailableUpdate(t *testing.T) {
 		t.Fatal("accepted an invalid project")
 	}
 }
+
+func TestPlainNamedVolumeAcceptsOnlyComposeDefaults(t *testing.T) {
+	ok := []any{nil, M{}, M{"name": "web_data"}, M{"name": "web_data", "external": false}}
+	for _, props := range ok {
+		if !plainNamedVolume("web", "data", props) {
+			t.Fatalf("rejected default volume %v", props)
+		}
+	}
+	bad := []any{M{"name": "other"}, M{"external": true}, M{"driver": "local"}, M{"driver_opts": M{"type": "nfs"}}, "x"}
+	for _, props := range bad {
+		if plainNamedVolume("web", "data", props) {
+			t.Fatalf("accepted unsafe volume %v", props)
+		}
+	}
+}

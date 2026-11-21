@@ -491,6 +491,23 @@ func composeEnvironments(v any) error {
 	return nil
 }
 
+// plainNamedVolume accepts a local named volume as Compose normalizes it: no
+// options, or only the default "<project>_<name>" name and external: false.
+func plainNamedVolume(project, name string, props any) bool {
+	if props == nil {
+		return true
+	}
+	for k, v := range obj(props) {
+		switch {
+		case k == "name" && v == project+"_"+name:
+		case k == "external" && v == false:
+		default:
+			return false
+		}
+	}
+	return obj(props) != nil
+}
+
 func validateComposeModel(model M, project, revision, composePath string, files []sourceEntry) (M, error) {
 	if !fullmatch(composeServiceName, project) {
 		return nil, Public("Invalid project")
@@ -512,7 +529,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 			return nil, Public("Custom storage drivers, external volumes and unsafe volume options are forbidden")
 		}
 		for name, props := range volumes {
-			if !fullmatch(composeServiceName, name) || (props != nil && len(obj(props)) > 0) {
+			if !fullmatch(composeServiceName, name) || !plainNamedVolume(project, name, props) {
 				return nil, Public("Custom storage drivers, external volumes and unsafe volume options are forbidden")
 			}
 		}
