@@ -46,6 +46,8 @@ in pkgs.testers.runNixOSTest {
     virtualisation.incus = {
       enable = true;
       preseed = {
+        # As on real hosts (modules/incus.nix); incus-compose requires a listener.
+        config."core.https_address" = "127.0.0.1:8443";
         storage_pools = [ { name = "default"; driver = "dir"; } ];
         networks = [ { name = "incusbr0"; type = "bridge";
           config = { "ipv4.address" = "10.0.100.1/24"; "ipv4.nat" = "true"; "ipv6.address" = "none"; }; } ];
