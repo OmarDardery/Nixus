@@ -184,6 +184,16 @@ let
               default = {};
               description = "Reviewed USB passthrough by vendor/product ID.";
             };
+            serial = mkOption {
+              type = types.attrsOf (types.submodule {
+                options = {
+                  source = mkOption { type = types.strMatching "/dev/(serial/by-(id|path)/[A-Za-z0-9._:+-]+|tty(ACM|USB)[0-9]+)"; };
+                  path = mkOption { type = types.strMatching "/dev/[A-Za-z0-9._-]+"; default = "/dev/ttyACM0"; };
+                };
+              });
+              default = {};
+              description = "Serial port passthrough (hotplug); prefer /dev/serial/by-id paths.";
+            };
           };
         });
         default = {};

@@ -248,7 +248,27 @@ function settingsTab(p) {
       '<div class="toolbar"><input id="import-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
       '<button type="button" id="import-start">Import</button></div>' +
       (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
-      (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : "")) : "");
+      (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : "")) : "") +
+    devicesCard(p);
+}
+
+// Detected host serial/USB devices with the line that passes each through.
+function devicesCard(p) {
+  if (appView.devices === undefined) {
+    appView.devices = null;
+    api("devices").then(d => { appView.devices = d; }, () => { appView.devices = { serial: [], usb: [] }; })
+      .finally(() => { if (state.page === "projects") shell(); });
+  }
+  const d = appView.devices;
+  if (!d) return card("Devices", "<p>Loading…</p>");
+  const key = p.backend === "incus-compose" ? "compose" : "nix";
+  const rows = [...(d.serial || []).map(x => [x.source, x.product, x[key]]), ...(d.usb || []).map(x => [x.id, x.product, x[key]])];
+  if (!rows.length) return card("Devices", "<p>No USB or serial devices detected.</p>");
+  return card("Devices", '<div class="table-wrap"><table><thead><tr><th>Device</th><th>Name</th><th>' +
+    (key === "compose" ? "Add to the service in compose.yaml" : "Add to the instance") + "</th></tr></thead><tbody>" +
+    rows.map(([id, name, line]) => "<tr><td><code>" + esc(id) + "</code></td><td>" + esc(name || "") +
+      '</td><td><code>' + esc(line) + '</code> <button type="button" class="link" data-copy="' + esc(line) + '">Copy</button></td></tr>').join("") +
+    "</tbody></table></div>");
 }
 
 function appDetail(name) {
@@ -552,6 +572,7 @@ function bindApps() {
   const on = (selector, handler) => document.querySelector(selector)?.addEventListener("click", handler);
   const each = (selector, handler) => { for (const el of document.querySelectorAll(selector)) el.addEventListener("click", () => handler(el)); };
   on("#apps-refresh", () => void refreshApps());
+  each("[data-copy]", el => { void navigator.clipboard?.writeText(el.dataset.copy); el.textContent = "Copied"; });
   document.querySelector("#apps-filter")?.addEventListener("input", event => {
     appView.filter = event.target.value;
     const caret = event.target.selectionStart;

@@ -178,6 +178,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return appJobs(), nil
 	case p == "/apps/env":
 		return envNames(query.Get("project"))
+	case p == "/devices":
+		return hostDevices(), nil
 	case p == "/backups/snapshots":
 		return backupSnapshots()
 	case p == "/backups/restore-status":
@@ -669,7 +671,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}

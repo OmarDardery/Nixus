@@ -43,6 +43,8 @@ let
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
       environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
+      # An emulated FTDI USB serial adapter for the passthrough subtest.
+      virtualisation.qemu.options = lib.mkIf withRegistry [ "-device qemu-xhci,id=xhci" "-chardev null,id=ser0" "-device usb-serial,bus=xhci.0,chardev=ser0" ];
       services.dockerRegistry = lib.mkIf withRegistry { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
       # The local fixture registry has no TLS; mark only it as insecure.
       environment.etc."containers/registries.conf".text = ''
@@ -419,6 +421,49 @@ in pkgs.testers.runNixOSTest {
         assert setup["repository"] == "/var/lib/nixus-restic-drill" and "password" not in setup, setup
         saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
         assert saved["saved"], saved
+
+    with subtest("device passthrough: a serial port by-id and a USB device reach a Compose service"):
+        machine.wait_until_succeeds("ls /dev/serial/by-id/ | grep -q .", timeout=60)
+        devices = broker("/devices")
+        assert devices["serial"] and devices["serial"][0]["source"].startswith("/dev/serial/by-id/"), devices
+        byid = devices["serial"][0]["source"]
+        usbid = [u["id"] for u in devices["usb"] if u["id"] == devices["serial"][0]["id"]][0]
+        dbase = push_web("${webV1}")
+        printer = {
+            "Dockerfile": ("FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
+            "compose.yaml": ("services:\n  klipper:\n    build: .\n    devices:\n      - " + byid + ":/dev/ttyACM0\n"
+                             "    x-nixus:\n      usb: [\"" + usbid + "\"]\n").encode(),
+        }
+        pentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in printer.items()]
+        pp = broker("/project-import/prepare", {"project": "printer", "files": pentries})
+        for p, d in printer.items():
+            broker("/project-import/chunk", {"id": pp["id"], "path": p, "offset": 0, "data": base64.b64encode(d).decode()})
+        ps = broker("/project-import/finish", {"id": pp["id"], "manifestHash": pp["manifestHash"]})
+        broker("/apps/deploy", {"project": "printer", "kind": "source", "stagingId": ps["id"], "manifestHash": ps["manifestHash"]})
+        deadline = time.time() + 900
+        while broker("/apps")["printer"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        job = broker("/apps")["printer"]
+        if job["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|OCI-VM' | tail -n 60 >&2")
+        assert job["status"] == "deployed", job
+        inst = json.loads(machine.succeed("incus list --project printer --format=json"))[0]
+        kinds = sorted(d["type"] for d in inst["devices"].values() if d["type"] in ("unix-char", "usb"))
+        assert kinds == ["unix-char", "usb"], inst["devices"]
+        machine.succeed("incus exec " + inst["name"] + " --project printer -- /bin/sh -c 'test -c /dev/ttyACM0'")
+        # Anything outside the serial/USB subset is refused at review.
+        bad = {"compose.yaml": b"services:\n  x:\n    image: localhost:5000/nixus/webbase:1@" + dbase.encode() + b"\n    devices: [/dev/sda]\n"}
+        bentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in bad.items()]
+        bp = broker("/project-import/prepare", {"project": "badhw", "files": bentries})
+        broker("/project-import/chunk", {"id": bp["id"], "path": "compose.yaml", "offset": 0, "data": base64.b64encode(bad["compose.yaml"]).decode()})
+        bs = broker("/project-import/finish", {"id": bp["id"], "manifestHash": bp["manifestHash"]})
+        broker("/apps/deploy", {"project": "badhw", "kind": "source", "stagingId": bs["id"], "manifestHash": bs["manifestHash"]})
+        deadline = time.time() + 300
+        while broker("/apps")["badhw"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        assert broker("/apps")["badhw"]["status"] == "failed", broker("/apps")["badhw"]
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
