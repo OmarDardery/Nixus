@@ -110,7 +110,7 @@ func ack(v any) bool { return v == true }
 
 // --- broker ----------------------------------------------------------------------
 
-func brokerGet(p string) (any, error) {
+func brokerGet(p string, query url.Values) (any, error) {
 	m := NewManager("", "")
 	switch {
 	case p == "/enrollment":
@@ -174,6 +174,12 @@ func brokerGet(p string) (any, error) {
 		return NewSecrets("", "", "").inventory()
 	case strings.HasPrefix(p, "/deployment/"):
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
+	case p == "/project-overview":
+		return projectOverview(), nil
+	case p == "/project-file":
+		return projectFile(query.Get("path"))
+	case p == "/project-logs":
+		return projectLog(query.Get("project"), query.Get("instance"))
 	case p == "/project-backups":
 		return projectBackupStatus(), nil
 	case p == "/users":
@@ -382,7 +388,7 @@ func brokerHandler(w http.ResponseWriter, r *http.Request) {
 			replyError(w, 400, publicError(err))
 			return
 		}
-		result, err := brokerGet(r.URL.Path)
+		result, err := brokerGet(r.URL.Path, r.URL.Query())
 		switch {
 		case errors.Is(err, errNotFound):
 			replyError(w, 404, "Unknown endpoint")
@@ -605,7 +611,7 @@ func (a *Auth) stageCertificate(s *session, result M) (M, error) {
 var staticAssets = map[string][2]string{
 	"/": {"index.html", "text/html; charset=utf-8"}, "/app.js": {"app.js", "text/javascript; charset=utf-8"},
 	"/projects.js": {"projects.js", "text/javascript; charset=utf-8"}, "/incus-projects.js": {"incus-projects.js", "text/javascript; charset=utf-8"},
-	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
+	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/project-console.js": {"project-console.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
 	"/events.js": {"events.js", "text/javascript; charset=utf-8"}, "/operations.js": {"operations.js", "text/javascript; charset=utf-8"},
 	"/commands.js": {"commands.js", "text/javascript; charset=utf-8"}, "/setup.js": {"setup.js", "text/javascript; charset=utf-8"},
 	"/foundation.js": {"foundation.js", "text/javascript; charset=utf-8"}, "/style.css": {"style.css", "text/css; charset=utf-8"},
@@ -615,7 +621,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}
@@ -820,7 +826,7 @@ func (p *portal) get(w http.ResponseWriter, r *http.Request) error {
 		if s.role != "admin" {
 			return &AuthorizationError{"Administrator account required"}
 		}
-		result, err := brokerRequest("GET", strings.TrimPrefix(path, "/api"), nil)
+		result, err := brokerRequest("GET", strings.TrimPrefix(path, "/api")+forwardedQuery(path, r), nil)
 		if err != nil {
 			return err
 		}
@@ -1223,4 +1229,23 @@ func webMain() int {
 	}
 	server.ServeTLS(limited, "", "")
 	return 1
+}
+
+// forwardedQuery passes only the reviewed query parameters of read-only views.
+func forwardedQuery(path string, r *http.Request) string {
+	allowed := map[string][]string{"/api/project-file": {"path"}, "/api/project-logs": {"project", "instance"}}
+	names, ok := allowed[path]
+	if !ok {
+		return ""
+	}
+	q := url.Values{}
+	for _, n := range names {
+		if v := r.URL.Query().Get(n); v != "" {
+			q.Set(n, v)
+		}
+	}
+	if len(q) == 0 {
+		return ""
+	}
+	return "?" + q.Encode()
 }

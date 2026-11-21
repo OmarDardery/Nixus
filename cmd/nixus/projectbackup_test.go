@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,5 +93,32 @@ func TestConfigSnapshotCopiesOnlyIncludedReviewedBytes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(destination, "MANIFEST.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProjectFileAllowlist(t *testing.T) {
+	for _, ok := range []string{"backups.nix", "alpha/default.nix", "alpha/modules/net.nix", "alpha/modules/a/b.nix"} {
+		if !fullmatch(editableProjectFile, ok) {
+			t.Errorf("rejected %s", ok)
+		}
+	}
+	for _, bad := range []string{"flake.nix", "flake.lock", "alpha/secrets.enc.yaml", "alpha/../x.nix", "alpha/modules/.x.nix", "/etc/passwd", "alpha/.sops.yaml"} {
+		if fullmatch(editableProjectFile, bad) {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+	if _, err := projectFile("alpha/secrets.enc.yaml"); err == nil {
+		t.Fatal("ciphertext file opened in the editor")
+	}
+}
+
+func TestForwardedQueryOnlyPassesReviewedParameters(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/api/project-logs?project=beta&instance=web&evil=1", nil)
+	if got := forwardedQuery("/api/project-logs", r); got != "?instance=web&project=beta" {
+		t.Fatalf("logs: %q", got)
+	}
+	r, _ = http.NewRequest("GET", "/api/status?x=1", nil)
+	if forwardedQuery("/api/status", r) != "" {
+		t.Fatal("query forwarded for a view without parameters")
 	}
 }

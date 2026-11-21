@@ -324,7 +324,7 @@ function storage() {
 }
 function apps() {
   return card("Incus-native applications",
-    '<p>All application workloads belong to Incus projects. Use the Projects page to see observed resources.</p><button type="button" data-go="projects">Open Projects</button><p class="note">Native deployment requires an approved revision and is not implemented in this portal yet.</p>');
+    '<p>All application workloads belong to Incus projects. Use the Projects page to see observed resources.</p><button type="button" data-go="projects">Open Projects</button><p class="note">Workloads are created only by an approved, reviewed project deployment.</p>');
 }
 
 function security() {

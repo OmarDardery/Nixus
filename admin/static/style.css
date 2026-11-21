@@ -482,3 +482,6 @@ td code{font-size:12px}
 
 button.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 pre.command { white-space: pre-wrap; word-break: break-all; padding: 10px 12px; border: 1px solid var(--line, #2a313b); }
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;border:1px solid var(--line,#444)}
+.badge.ok{color:#7fd37f;border-color:#3d6b3d}.badge.bad{color:#ff8a80;border-color:#7a3a35}.badge.muted{opacity:.8}
+pre.log{max-height:360px;overflow:auto;white-space:pre-wrap;font-size:12px}
