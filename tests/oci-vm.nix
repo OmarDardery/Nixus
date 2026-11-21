@@ -38,6 +38,57 @@ let
   webV1 = webImage "v1" true;
   webV2 = webImage "v2" true;
   webBroken = webImage "broken" false;
+  hostNode = withRegistry: { lib, pkgs, ... }: {
+      imports = [ ../configuration-bootstrap.nix ];
+      virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
+      boot.kernelModules = lib.mkForce [ ];
+      environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
+      services.dockerRegistry = lib.mkIf withRegistry { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
+      # The local fixture registry has no TLS; mark only it as insecure.
+      environment.etc."containers/registries.conf".text = ''
+        [[registry]]
+        location = "localhost:5000"
+        insecure = true
+      '';
+      virtualisation.incus = {
+        enable = true;
+        preseed = {
+          # As on real hosts (modules/incus.nix); incus-compose requires a listener.
+          config."core.https_address" = "127.0.0.1:8443";
+          storage_pools = [ { name = "default"; driver = "dir"; } ];
+          networks = [ { name = "incusbr0"; type = "bridge";
+            config = { "ipv4.address" = "10.0.100.1/24"; "ipv4.nat" = "true"; "ipv6.address" = "none"; }; } ];
+          profiles = [ { name = "default"; devices = {
+            eth0 = { name = "eth0"; network = "incusbr0"; type = "nic"; };
+            root = { path = "/"; pool = "default"; type = "disk"; };
+          }; } ];
+        };
+      };
+      networking.nftables.enable = true;
+      # Surface isolated builder diagnostics in the journal.
+      systemd.services.nixus-admin-backend.environment.NIXUS_OCI_VM_TEST = "1";
+      systemd.services.nixus-test-fixture = {
+        wantedBy = [ "multi-user.target" ];
+        after = [ "systemd-tmpfiles-setup.service" ];
+        before = [ "nixus-management-identity.service" "nixus-admin-backend.service" "nixus-ui.service" ];
+        requiredBy = [ "nixus-management-identity.service" "nixus-admin-backend.service" "nixus-ui.service" ];
+        serviceConfig = { Type = "oneshot"; RemainAfterExit = true; UMask = "0077"; };
+        script = ''
+          root=/var/lib/nixus/config
+          mkdir -p "$root/lib" "$root/machine" /srv/nixus
+          chmod 0700 /srv/nixus
+          for f in site.nix site-defaults.nix lib/machine.nix lib/settings-migrations.nix; do
+            install -m 0600 ${siteSource}/$f "$root/$f"
+          done
+          echo '{"version": 1}' > "$root/machine/format.json"
+          cat > "$root/machine/settings.json" <<'JSON'
+          ${builtins.toJSON settings}
+          JSON
+          echo '{"interface": "eth0", "trustedCIDRs": ["127.0.0.0/8"]}' > "$root/machine/installation.json"
+          echo '["site.nix","site-defaults.nix","lib/machine.nix","lib/settings-migrations.nix","machine/format.json","machine/settings.json","machine/installation.json"]' > "$root/.nixus-files.json"
+        '';
+      };
+    };
 in pkgs.testers.runNixOSTest {
   name = "nixus-oci";
   globalTimeout = 2700;
@@ -45,57 +96,9 @@ in pkgs.testers.runNixOSTest {
     inventory = settings;
     installedBase = { ... }: { system.stateVersion = "26.05"; };
   };
-  nodes.machine = { lib, pkgs, ... }: {
-    imports = [ ../configuration-bootstrap.nix ];
-    virtualisation = { memorySize = 4096; diskSize = 8192; cores = 2; };
-    boot.kernelModules = lib.mkForce [ ];
-    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
-    services.dockerRegistry = { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
-    # The local fixture registry has no TLS; mark only it as insecure.
-    environment.etc."containers/registries.conf".text = ''
-      [[registry]]
-      location = "localhost:5000"
-      insecure = true
-    '';
-    virtualisation.incus = {
-      enable = true;
-      preseed = {
-        # As on real hosts (modules/incus.nix); incus-compose requires a listener.
-        config."core.https_address" = "127.0.0.1:8443";
-        storage_pools = [ { name = "default"; driver = "dir"; } ];
-        networks = [ { name = "incusbr0"; type = "bridge";
-          config = { "ipv4.address" = "10.0.100.1/24"; "ipv4.nat" = "true"; "ipv6.address" = "none"; }; } ];
-        profiles = [ { name = "default"; devices = {
-          eth0 = { name = "eth0"; network = "incusbr0"; type = "nic"; };
-          root = { path = "/"; pool = "default"; type = "disk"; };
-        }; } ];
-      };
-    };
-    networking.nftables.enable = true;
-    # Surface isolated builder diagnostics in the journal.
-    systemd.services.nixus-admin-backend.environment.NIXUS_OCI_VM_TEST = "1";
-    systemd.services.nixus-test-fixture = {
-      wantedBy = [ "multi-user.target" ];
-      after = [ "systemd-tmpfiles-setup.service" ];
-      before = [ "nixus-management-identity.service" "nixus-admin-backend.service" "nixus-ui.service" ];
-      requiredBy = [ "nixus-management-identity.service" "nixus-admin-backend.service" "nixus-ui.service" ];
-      serviceConfig = { Type = "oneshot"; RemainAfterExit = true; UMask = "0077"; };
-      script = ''
-        root=/var/lib/nixus/config
-        mkdir -p "$root/lib" "$root/machine" /srv/nixus
-        chmod 0700 /srv/nixus
-        for f in site.nix site-defaults.nix lib/machine.nix lib/settings-migrations.nix; do
-          install -m 0600 ${siteSource}/$f "$root/$f"
-        done
-        echo '{"version": 1}' > "$root/machine/format.json"
-        cat > "$root/machine/settings.json" <<'JSON'
-        ${builtins.toJSON settings}
-        JSON
-        echo '{"interface": "eth0", "trustedCIDRs": ["127.0.0.0/8"]}' > "$root/machine/installation.json"
-        echo '["site.nix","site-defaults.nix","lib/machine.nix","lib/settings-migrations.nix","machine/format.json","machine/settings.json","machine/installation.json"]' > "$root/.nixus-files.json"
-      '';
-    };
-  };
+  nodes.machine = hostNode true;
+  # An empty Nixus host for the cold-host restore (#44).
+  nodes.fresh = hostNode false;
   testScript = ''
     import base64, hashlib, json, time
 
@@ -226,6 +229,34 @@ in pkgs.testers.runNixOSTest {
         assert served == "guarded-oci-build\n", served
         running = json.loads(machine.succeed("incus list --project testapp --format=json"))
         assert len(running) == 1 and running[0]["status"] == "Running", running
+
+    with subtest("cold-host restore: an empty host rebuilds projects from the encrypted backup alone"):
+        machine.succeed("tar -C /var/lib -czf /tmp/restic-repo.tgz nixus-restic-drill")
+        machine.copy_from_vm("/tmp/restic-repo.tgz")
+        password = machine.succeed("cat /var/lib/nixus-secrets/project-restic-password")
+        fresh.start()
+        fresh.wait_for_unit("nixus-admin-backend.service")
+        fresh.wait_for_unit("incus.service")
+        fresh.copy_from_host(str(machine.out_dir / "restic-repo.tgz"), "/tmp/restic-repo.tgz")
+        fresh.succeed("tar -C /var/lib -xzf /tmp/restic-repo.tgz && mv /var/lib/nixus-restic-drill /var/lib/nixus-restic-in")
+        fresh.succeed("install -d -m 0700 /var/lib/nixus-secrets && install -m 0600 /dev/stdin /var/lib/nixus-secrets/restore-password <<'EOF'\n" + password + "EOF")
+        fresh.fail("test -e /srv/nixus/projects")
+        report = json.loads(fresh.succeed("nixus-admin project-backup restore --repository /var/lib/nixus-restic-in "
+                                          "--password-file /var/lib/nixus-secrets/restore-password"))
+        assert report["status"] == "restored", report
+        assert report["sources"] == {"testapp": revision}, report["sources"]
+        assert "testapp/" + json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"] in report["incus"]["started"], report["incus"]
+        assert fresh.succeed("cat /srv/nixus/projects/testapp/default.nix") == decl
+        assert fresh.succeed("cat /srv/nixus/projects/backups.nix") == policy
+        restored_src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
+        assert fresh.succeed("cat " + restored_src).encode() == files["Dockerfile"]
+        restored = json.loads(fresh.succeed("incus list --project testapp --format=json"))
+        assert len(restored) == 1 and restored[0]["status"] == "Running", restored
+        served = fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
+        assert served == "guarded-oci-build\n", served
+        # A second restore onto the now-populated host is refused before any change.
+        fresh.fail("nixus-admin project-backup restore --repository /var/lib/nixus-restic-in --password-file /var/lib/nixus-secrets/restore-password")
+        fresh.shutdown()
 
     def push_web(image):
         machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:" + image + " docker://localhost:5000/nixus/webbase:1")

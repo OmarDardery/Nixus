@@ -558,7 +558,7 @@ func githubKeyCommand() error {
 
 func projectBackupCLI(args []string) error {
 	if len(args) == 0 {
-		return Public("usage: nixus-admin project-backup {tick|run|status|github-key|check-destination}")
+		return Public("usage: nixus-admin project-backup {tick|run|status|github-key|check-destination|restore}")
 	}
 	switch args[0] {
 	case "tick", "run":
@@ -570,6 +570,8 @@ func projectBackupCLI(args []string) error {
 	case "status":
 		printJSON(projectBackupStatus())
 		return nil
+	case "restore":
+		return projectRestoreCLI(args[1:])
 	case "github-key":
 		return githubKeyCommand()
 	case "check-destination":

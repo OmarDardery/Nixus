@@ -497,3 +497,37 @@ Coverage is honest. A Compose project without a published source, or host bind
 mounts outside Incus volumes, is listed under `unknowns`. Keep the
 passphrase-encrypted recovery kit separately: without it, the restic password
 and age identity are lost with the host.
+
+### Restore onto an empty host
+
+On a freshly installed Nixus host (no `/srv/nixus/projects` yet), with the
+restic password copied into a root-only file:
+
+```sh
+sudo nixus-admin project-backup restore \
+  --repository rclone:gdrive:nixus-backups \
+  --rclone-config /var/lib/nixus-secrets/rclone.conf \
+  --password-file /var/lib/nixus-secrets/project-restic-password
+# --snapshot ID selects an older snapshot; the default is the latest Nixus one.
+```
+
+The restore:
+
+1. Downloads one snapshot and checks every file against the backup's SHA-256
+   manifest and every Incus export against its recorded checksum.
+2. Recreates the reviewed workspace, including `backups.nix`.
+3. Publishes each project's Dockerfile/Compose source again and confirms it
+   reproduces the exact recorded revision.
+4. Recreates the Incus projects, imports custom volumes and then instances, and
+   starts those that were running.
+
+Any existing workspace, published source, volume or instance with the same
+name stops the restore before Incus is changed. The report is written to
+`/var/lib/nixus-admin/project-restore-report.json`.
+
+Afterwards, restore the host age identity from the recovery kit before
+deploying projects that use encrypted secrets. Rebuild each Compose revision so
+its images regain build provenance, and check the application data itself.
+The CI VM test performs this restore on a second, empty VM and checks the
+workspace, the source bytes and a running restored container.
+
