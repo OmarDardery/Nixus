@@ -37,7 +37,8 @@ func nativeFixture(t *testing.T) (*fakeIncus, M) {
 		"storagePool": nil, "volumes": M{"printer-data": M{"size": "2GiB"}},
 		"instances": M{"printer": M{"type": "container", "image": "images:debian/13", "cpus": float64(1), "memory": nil,
 			"autostart": true, "network": nil, "disks": M{"data": M{"volume": "printer-data", "path": "/srv/data", "readOnly": false}},
-			"usb": M{"board": M{"vendorId": "1d50", "productId": "614e"}}}}}
+			"usb":    M{"board": M{"vendorId": "1d50", "productId": "614e"}},
+			"serial": M{"mcu": M{"source": "/dev/serial/by-id/usb-Klipper-if00", "path": "/dev/ttyACM0"}}}}}
 	return fake, project
 }
 
@@ -60,7 +61,7 @@ func TestNativeDeclaredPlanCreatesProjectVolumeAndInstance(t *testing.T) {
 	spec := declaredSpec(project, "printer")
 	devices := obj(spec["devices"])
 	if str(jget(devices, "root", "pool")) != "tank" || str(jget(devices, "data", "source")) != "printer-data" ||
-		str(jget(devices, "board", "vendorid")) != "1d50" || str(jget(spec, "config", "limits.cpu")) != "1" ||
+		str(jget(devices, "board", "vendorid")) != "1d50" || str(jget(devices, "mcu", "type")) != "unix-char" || str(jget(spec, "config", "limits.cpu")) != "1" ||
 		str(jget(spec, "config", "limits.memory")) != "2GiB" {
 		t.Fatalf("spec: %v", spec)
 	}

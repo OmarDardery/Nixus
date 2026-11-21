@@ -14,7 +14,7 @@ const BACKUP_FIELDS = {
   b2: [["bucket", "Bucket/path", "my-bucket:nixus"], ["accountId", "Key ID", ""], ["accountKey", "Application key", "", "password"]],
   rclone: [["remote", "Remote name", "gdrive"], ["folder", "Folder", "nixus-backups"], ["config", "rclone config (from `rclone config show`)", "", "textarea"]],
 };
-const BACKUP_PHASE_LABELS = [["config", "Config"], ["keys", "Secrets"], ["data", "Data"], ["offHost", "Upload"], ["verification", "Check"], ["github", "GitHub"]];
+const BACKUP_PHASE_LABELS = [["config", "Config"], ["keys", "Secrets"], ["data", "Data"], ["offHost", "Upload"], ["verification", "Check"]];
 
 async function refreshBackups() {
   if (backupView.loading) return;
@@ -66,7 +66,6 @@ function backupDestinationCard() {
     destinationFields("dest") +
     '<label class="field"><span>Schedule</span><select id="dest-schedule"><option>daily</option><option>hourly</option><option>weekly</option></select></label>' +
     '<label class="field"><span>Verify</span><select id="dest-verification"><option>metadata</option><option>full</option><option>none</option></select></label>' +
-    '<label class="field"><span>GitHub mirror (optional)</span><input id="dest-github" type="text" spellcheck="false" placeholder="git@github.com:you/nixus-config.git"></label>' +
     '<label class="field"><span>Password</span><input id="dest-password" type="password" autocomplete="current-password"></label>' +
     '<button type="button" id="backups-save">Save</button>' +
     (backupView.password ? '<p role="status"><b>Repository password — save it in your password manager now; it is shown once:</b> <code>' +
@@ -121,7 +120,7 @@ async function saveBackups() {
     if (!current) throw Error("Enter your password.");
     const body = Object.assign(readDestination("dest"), {
       schedule: document.querySelector("#dest-schedule")?.value, verification: document.querySelector("#dest-verification")?.value,
-      github: document.querySelector("#dest-github")?.value || "", data: true, current,
+      data: true, current,
     });
     const result = await api("apps/backup-setup", body);
     backupView.password = result.password || "";

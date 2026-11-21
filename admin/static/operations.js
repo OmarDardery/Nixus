@@ -89,7 +89,7 @@ function operationsPage() {
     ) +
     card(
       "Restore an independent export",
-      `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><a href="/docs/recovery.md">Full off-host recovery procedure</a>`,
+      `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><a href="/docs/backups.md">Full off-host recovery procedure</a>`,
     ) +
     card(
       "Nixus task history",

@@ -23,7 +23,7 @@ let shortcuts = vm.runInContext('quickManagementLinks(state.status.settings)', c
 for (const url of ['https://192.0.2.10:8443','https://192.0.2.10:9090']) {
   assert.ok(shortcuts.includes('href="' + url + '"'), 'Missing sidebar shortcut: ' + url);
 }
-assert.equal(vm.runInContext("pages.find(([id]) => id === 'commands')[1]",context), 'Help', 'Docs remain one primary navigation step away');
+assert.equal(vm.runInContext("pages.find(([id]) => id === 'commands')[1]",context), 'Info', 'Docs remain one primary navigation step away');
 assert.equal(vm.runInContext("pages.find(([id]) => id === 'projects')[1]",context), 'Apps', 'Apps navigation is first-class');
 assert.ok(shortcuts.includes('rel="noopener noreferrer"'), 'External tools must not retain opener access');
 let tools = vm.runInContext('homepageTools()', context);
@@ -46,8 +46,8 @@ tools = vm.runInContext('homepageTools()', context);
 assert.ok(!tools.includes(':8443"'));
 assert.ok(tools.includes('Finish setup'));
 assert.equal(vm.runInContext('quickManagementLinks(state.status.settings)', context), '', 'No unverified management shortcuts before setup');
-let resources = vm.runInContext('homepageResources()', context);
-for (const destination of ['https://github.com/community-scripts/Incus','https://community-scripts.org/','https://photos.example.com','roadmap.md','recovery.md']) {
+let resources = vm.runInContext('homepageResources() + referenceCatalog()', context);
+for (const destination of ['https://github.com/community-scripts/Incus','https://community-scripts.org/','https://photos.example.com','https://github.com/lxc/incus-compose','https://github.com/getsops/sops']) {
   assert.ok(resources.includes(destination), 'Missing destination: '+destination);
 }
 assert.ok(!resources.includes('https://*.example.com'), 'Wildcard DNS records are not browsable endpoints');

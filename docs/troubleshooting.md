@@ -7,7 +7,7 @@ Nixus still selects the port, identity generation fails and dependent services,
 including Incus, cannot start. Saved profiles with autoconnect disabled also
 explain a bridge disappearing after reload or reboot.
 
-Use the [console recovery command](operations.md#reviewed-upgrades).
+Use the [console recovery command](dev/operations.md#reviewed-upgrades).
 It repairs the existing connection and feeds the corrected selection through the
 normal guarded main update. Do not disable the firewall, delete Incus data, assign
 a guessed static address or reboot an unconfirmed test activation to hide this
@@ -77,7 +77,7 @@ systemctl cat cockpit.socket
 systemctl cat cockpit.service
 ```
 
-Update using the installation command in the [install guide](plain-nixos.md),
+Update using the installation command in the [install guide](install.md),
 then verify `doctor`, login and the Cockpit terminal after a reboot. Do not add
 network-online dependencies to `cockpit.socket`: early socket ordering can create
 a boot cycle. The service waits for identity preparation instead.
@@ -150,7 +150,7 @@ you deliberately want to retain the current platform source.
 
 ## An existing Incus database blocks installation
 
-Select the [adoption workflow](plain-nixos.md#adopt-an-existing-incus-host).
+Select the [adoption workflow](dev/plain-nixos.md#adopt-an-existing-incus-host).
 The installer inventories the host and backs up guests and custom volumes before
 using a separate Nixus bridge/pool. Interactive runs ask; unattended runs need
 `--adopt-incus`.
@@ -185,12 +185,12 @@ the host console before trusting that CA on a client. Use the detected address
 from installation; an old DHCP address can also cause a hostname mismatch.
 
 The public documentation site uses GitHub Pages HTTPS and is a separate service.
-See [website hosting](website.md) for public-domain certificate and DNS problems.
+See [website hosting](dev/website.md) for public-domain certificate and DNS problems.
 
 ## Rollback failed too
 
 Treat the original activation error and `rollbackError` as separate failures.
 Keep both reports and use a local console. Current recovery skips absent services
 and NetworkManager UUIDs that no longer exist, but OS rollback cannot restore
-Incus schema or guest database contents. Follow the [recovery guide](recovery.md)
+Incus schema or guest database contents. Follow the [recovery guide](backups.md)
 before attempting manual state changes.

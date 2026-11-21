@@ -6,10 +6,23 @@ function referenceLink(label, url) {
   return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
 }
 
+const userGuides = [["Install & update", "install"], ["Apps", "apps"], ["Apps repository", "apps-repo"], ["Env vars & secrets", "secrets"],
+  ["Backups & restore", "backups"], ["Networking", "networking"], ["Troubleshooting", "troubleshooting"], ["CLI", "administration"], ["Credits", "credits"]];
+
 function referenceCatalog() {
-  const row = item => `<div class="reference-row"><div><h3>${esc(item.name)}</h3><p>${esc(item.detail)}</p></div><div class="reference-links">${referenceLink("Nixus guide", "/docs/" + item.guide)}${item.source ? referenceLink("Source", item.source) : ""}${item.docs.map(([label, url]) => referenceLink(label, url)).join("")}${item.community.map(([label, url]) => referenceLink(label, url)).join("")}</div></div>`;
-  const local = [["Beta candidate", "beta"], ["Credits", "projects"], ["Install", "plain-nixos"], ["Troubleshoot", "troubleshooting"], ["CLI", "administration"], ["Helpers", "helpers"], ["Web setup", "setup"], ["Backups", "recovery"], ["Migration", "migration"], ["Roadmap", "roadmap"]];
-  return `<section class="reference-catalog" id="project-docs"><div class="section-label">DOCUMENTATION & COMMUNITY</div><h2>Upstream projects & credits</h2><div class="guide-shortcuts">${local.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("")}</div>${projectReferences.filter(item => !item.optional).map(row).join("")}<details class="more-references"><summary>Backups, secrets, ingress, metrics & host foundations</summary>${projectReferences.filter(item => item.optional).map(row).join("")}</details></section>`;
+  const row = item => "<tr><td><b>" + esc(item.name) + "</b><br><small>" + esc(item.detail) + "</small></td><td class=\"reference-links\">" +
+    [...item.docs, ...item.community].map(([label, url]) => referenceLink(label, url)).join(" · ") + "</td><td>" + (item.source ? referenceLink("Source", item.source) : "") + "</td></tr>";
+  const table = items => '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Docs</th><th>Code</th></tr></thead><tbody>' + items.map(row).join("") + "</tbody></table></div>";
+  return '<section class="reference-catalog" id="project-docs"><h2>Built with</h2>' + table(projectReferences.filter(item => !item.optional)) +
+    "<details><summary>Optional integrations</summary>" + table(projectReferences.filter(item => item.optional)) + "</details></section>";
+}
+
+function infoHeader() {
+  const release = state.status?.release || {};
+  const revision = release.revision ? String(release.revision).slice(0, 12) : "";
+  return card("Nixus", "<p>Version <b>" + esc(release.version || "unknown") + "</b>" + (revision ? " · <code>" + esc(revision) + "</code>" : "") + " · " +
+      referenceLink("Source", projectRepository) + " · " + referenceLink("Issues", projectRepository + "/issues") + "</p>") +
+    card("Guides", '<div class="guide-shortcuts">' + userGuides.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("") + "</div>");
 }
 
 function commandGroups() {
@@ -27,7 +40,7 @@ function commandGroups() {
       ["quick-recovery", "Show pending install checklist", "Host terminal", "See pending guest network, device and backup commissioning steps.", "sudo nixus install-plan"],
       ["quick-config", "Current change status", "Host terminal", "View reviewed configuration transactions.", "sudo nixus-admin config status"],
     ] },
-    { id: "updates", title: "Install & update", guide: "plain-nixos.md", items: [
+    { id: "updates", title: "Install & update", guide: "install.md", items: [
       ["platform-update", "Update Nixus", "Host terminal", "Update from main with build/impact review, guarded activation and separate fresh-session access confirmation. Requests sudo and resumes interrupted updates; no automatic reboot.", "nix run --refresh github:OmarDardery/Nixus#update"],
       ["package-review", "Review a package refresh", "Host terminal", "Build a candidate with refreshed pinned inputs. This does not activate it; inspect and apply it under Changes.", "sudo nixus-admin config review --update-inputs"],
       ["review-status", "Inspect the current transaction", "Host terminal", "Check build, activation or confirmation state before starting another change.", "sudo nixus-admin config status"],
@@ -48,7 +61,7 @@ function commandGroups() {
       ["guest-info", "Inspect a guest", "Host terminal", "Inspect resources, state and devices.", "sudo incus info GUEST --project PROJECT"],
       ["guest-shell", "Open a guest shell", "Host terminal", "Interactive access explicitly names its project.", "sudo incus exec GUEST --project PROJECT -- sh"],
     ] },
-    { id: "helpers", title: "Community helper commands", guide: "helpers.md", items: [
+    { id: "helpers", title: "Community helper commands", guide: "administration.md", items: [
       ["helper-list", "Browse the packaged helper catalog", "Host terminal", "List script IDs and compatibility metadata from the pinned sources.", "nixus-helpers list"],
       ["helper-doctor", "Check helper prerequisites", "Host terminal", "Verify Incus, images, networks and storage for the lab project.", "sudo nixus-helpers doctor --project lab"],
       ["helper-debian", "Example: Debian container wizard", "Host terminal", "Interactive Incus wizard; creates a guest. Helpers must be enabled. Choose its storage and network in the terminal.", "sudo nixus-helpers run debian --project lab"],
@@ -63,8 +76,8 @@ function commandRow(item) {
 }
 
 function commandsPage() {
-  return title("REFERENCE DESK", "Help", "Guides and useful commands.")
-    + `<div class="reference-jumps"><a href="#commands">Commands ↓</a><a href="#project-docs">Docs & community ↓</a></div><section class="command-library" id="commands">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>${homepageResources()}`;
+  return title("", "Info", "Version, guides, the projects Nixus is built on, and handy commands.") + infoHeader() + referenceCatalog()
+    + `<section class="command-library" id="commands"><h2>Commands</h2>${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>${publicApplications()}`;
 }
 
 function bindCommands() {

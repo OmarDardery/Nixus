@@ -788,6 +788,7 @@ func (s *Secrets) publish(actor string, token any, acknowledge bool) (M, error) 
 	durableUnlink(pending)
 	audit("native-secret-ciphertext-published", M{"principal": actor, "project": project, "key": record["key"],
 		"operation": record["action"], "revision": record["revision"]})
+	notifyAppsRepo()
 	return M{"project": project, "revision": record["revision"], "previous": base, "published": true,
 		"requiresApply": true, "note": "Ciphertext published; no Incus secret delivery occurred"}, nil
 }

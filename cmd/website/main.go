@@ -37,21 +37,18 @@ type group struct {
 }
 
 var groups = []group{
-	{"GET STARTED", []item{{"index", "Overview"}, {"plain-nixos", "Install Nixus"}, {"start", "First steps"}, {"home-server-scenario", "Homelab acceptance"}, {"architecture", "Architecture"}, {"target-architecture", "Target architecture (planned)"}, {"homelab", "Meet the current stack"}}},
-	{"USE YOUR SERVER", []item{{"administration", "Accounts & access"}, {"networking", "Networking"}, {"guest-deployments", "Guest updates"}, {"file-modules", "File configuration"}, {"hardware", "Hardware & disks"}, {"helpers", "Application helpers"}, {"setup", "Optional web wizard"}}},
-	{"WHEN THINGS HAPPEN", []item{{"troubleshooting", "Troubleshooting"}, {"recovery", "Backups & recovery"}, {"operations", "Operations & updates"}, {"commissioning", "Commissioning"}, {"trial", "Trial checklist"}, {"validation", "What is tested"}}},
-	{"INCUS-NATIVE REBUILD", []item{{"migration-plan", "NixLab → Nixus migration"}, {"incus-native-architecture", "Architecture contract"}, {"incus-native-structure", "Repository and host layout"}, {"incus-native-plan", "Execution plan"}, {"incus-native-secrets-ui", "Declarative secrets UI"}, {"oci-source-intake", "OCI source uploads & build safety"}, {"incus-native-file-inventory", "Full source-file inventory"}}},
-	{"PROJECT NOTES", []item{{"deployment", "Manual deployment"}, {"configuration-contract", "Configuration contract"}, {"ownership", "Ownership"}, {"credential-lifecycle", "Credential lifecycle"}, {"staged-transaction-secrets", "Staged credential lifetime"}, {"migration", "Migration"}, {"beta", "Beta candidate"}, {"projects", "Upstream credits"}, {"qualification", "Release qualification"}, {"roadmap", "Roadmap"}, {"website", "Website & DNS"}, {"go-runtime", "Go runtime"}}},
+	{"GET STARTED", []item{{"index", "Overview"}, {"install", "Install & update"}, {"apps", "Apps"}, {"apps-repo", "Apps repository"}}},
+	{"USE YOUR SERVER", []item{{"secrets", "Env vars & secrets"}, {"backups", "Backups & restore"}, {"networking", "Networking"}, {"administration", "CLI"}}},
+	{"WHEN THINGS HAPPEN", []item{{"troubleshooting", "Troubleshooting"}, {"credits", "Credits"}}},
 }
 
 var descriptions = map[string]string{
-	"index":               "Find the install guide, understand the stack, or skip directly to whatever is currently broken.",
-	"plain-nixos":         "One command on an installed NixOS server. Preserve the machine, configure the stack and verify access.",
-	"troubleshooting":     "Symptoms, checks and recovery commands from actual installation failures. Fewer guesses, better logs.",
-	"recovery":            "NixOS can roll back code. Your databases would like a separate plan.",
-	"commissioning":       "Prove the stack works on your hardware, including the very important second boot.",
-	"website":             "Publish the docs with GitHub Pages and connect nixus.dardery.work.",
-	"target-architecture": "Clean-slate Nixus: Incus projects, independent Nix flakes, Compose Web UI and one-time declarative backups. No historical server migration.",
+	"index":           "Install, deploy apps, keep them in git, back everything up.",
+	"install":         "One command on an installed NixOS server, then everything else from the browser.",
+	"apps":            "Compose apps, VMs and containers, USB and serial devices, safe image updates.",
+	"apps-repo":       "Keep your apps in git: review remote changes, push console changes.",
+	"troubleshooting": "Symptoms, checks and recovery commands.",
+	"backups":         "Encrypted backups of apps, data and secrets; restore a whole server.",
 }
 
 var root, source string
@@ -379,7 +376,7 @@ func build(output, base string) error {
 		search = append(search, entry{title, docURL(base, slug), plain})
 	}
 	var cards strings.Builder
-	for _, c := range [][2]string{{"plain-nixos", "Install Nixus ↗"}, {"troubleshooting", "Troubleshoot ↗"}, {"recovery", "Back up & recover ↗"}, {"commissioning", "Verify your hardware ↗"}} {
+	for _, c := range [][2]string{{"install", "Install Nixus ↗"}, {"apps", "Deploy apps ↗"}, {"apps-repo", "Apps in git ↗"}, {"backups", "Back up & restore ↗"}} {
 		cards.WriteString(`<a href="` + docURL(base, c[0]) + `"><h2>` + html.EscapeString(c[1]) + "</h2><p>" + html.EscapeString(descriptions[c[0]]) + "</p></a>")
 	}
 	body := "<p>Start with a plain installed NixOS server. The default installer configures Incus, Cockpit and the Nixus console, then verifies the enabled interfaces.</p><div class=\"docs-intro-grid\">" + cards.String() + "</div>"
@@ -392,7 +389,7 @@ func build(output, base string) error {
 	}
 	home, err := template(map[string]string{"BASE": base, "TITLE": "Read this before improvising.", "DESCRIPTION": descriptions["index"],
 		"CANONICAL": "/docs/", "NAV": navigation(base, "index", pages), "BODY": body,
-		"TOC": `<a href="` + docURL(base, "plain-nixos") + `">Start with installation →</a>`, "SOURCE": repo + "/tree/main/docs"})
+		"TOC": `<a href="` + docURL(base, "install") + `">Start with installation →</a>`, "SOURCE": repo + "/tree/main/docs"})
 	if err != nil {
 		return err
 	}

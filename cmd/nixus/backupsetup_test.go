@@ -38,7 +38,7 @@ func TestBackupDestinationBuildsRepositories(t *testing.T) {
 }
 
 func TestBackupPolicyTextValidates(t *testing.T) {
-	text := backupPolicyText("s3:s3.example.com/nixus", "daily", "full", true, "", "/var/lib/nixus-secrets/project-restic-environment", "")
+	text := backupPolicyText("s3:s3.example.com/nixus", "daily", "full", true, "", "/var/lib/nixus-secrets/project-restic-environment")
 	for _, want := range []string{`repository = "s3:s3.example.com/nixus";`, `environmentFile = "/var/lib/nixus-secrets/project-restic-environment";`, "initialize = true;", `verification = "full";`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %s in\n%s", want, text)

@@ -8,6 +8,7 @@ package main
 import (
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,9 +37,28 @@ func runtimeInstances(incusProject string) []any {
 	for _, raw := range incusQueryList(nativeIncus, "/1.0/instances?recursion=1&project="+url.QueryEscape(incusProject)) {
 		i := obj(raw)
 		out = append(out, M{"name": i["name"], "type": i["type"], "status": truncate(str(i["status"]), 32),
-			"owned": str(jget(i, "config", OWNER)) == "true", "compose": str(jget(i, "config", composeServiceLabel)) != ""})
+			"owned": str(jget(i, "config", OWNER)) == "true", "compose": str(jget(i, "config", composeServiceLabel)) != "",
+			"ports": publishedPorts(obj(i["devices"]))})
 	}
 	return out
+}
+
+// publishedPorts lists host TCP ports published by proxy devices.
+func publishedPorts(devices M) []any {
+	ports := []any{}
+	for _, name := range keys(devices) {
+		d := obj(devices[name])
+		if str(d["type"]) != "proxy" {
+			continue
+		}
+		parts := strings.Split(str(d["listen"]), ":")
+		if len(parts) >= 3 && parts[0] == "tcp" {
+			if n, err := strconv.Atoi(parts[len(parts)-1]); err == nil && n > 0 && n < 65536 {
+				ports = append(ports, n)
+			}
+		}
+	}
+	return ports
 }
 
 func projectOverview() M {

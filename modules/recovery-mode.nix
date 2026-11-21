@@ -9,9 +9,10 @@
     environment.etc."nixus/recovery-mode".text = "1\n";
     systemd.services = lib.genAttrs [
       "nixus-instances" "nixus-backup-recover"
-      "restic-backups-nixus" "nixus-backup-check"
+      "restic-backups-nixus" "nixus-backup-check" "nixus-apps-repo-check"
       "cloudflared-tunnel-${site.tunnel.uuid}"
     ] (_: { enable = lib.mkForce false; });
     systemd.timers.restic-backups-nixus.enable = lib.mkForce false;
+    systemd.timers.nixus-apps-repo-check.enable = lib.mkForce false;
   };
 }

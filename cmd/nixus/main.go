@@ -815,6 +815,8 @@ func adminMain(argv []string) int {
 		return generic(imageUpdatesCLI(rest))
 	case action == "apps" && root:
 		return generic(appsCLI(rest))
+	case action == "apps-repo" && root:
+		return generic(appsRepoCLI(rest))
 	case action == "project-backup" && root:
 		return generic(projectBackupCLI(rest))
 	case action == "config" && root:

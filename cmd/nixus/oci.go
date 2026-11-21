@@ -368,7 +368,7 @@ func classifyComposeSecrets(contents []byte, bindings M) (M, error) {
 var composeServiceName = re(`[a-z][a-z0-9_-]{0,62}`)
 var composeSource = re(`[A-Za-z0-9][A-Za-z0-9_.-]*`)
 var sensitiveEnv = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|TOKEN|SECRET|PRIVATE|AUTH|KEY|CREDENTIAL)`)
-var bannedService = map[string]bool{"privileged": true, "cap_add": true, "devices": true, "device_cgroup_rules": true,
+var bannedService = map[string]bool{"privileged": true, "cap_add": true, "device_cgroup_rules": true,
 	"security_opt": true, "userns_mode": true, "pid": true, "ipc": true, "uts": true, "cgroup": true, "cgroup_parent": true,
 	"cgroupns_mode": true, "network_mode": true, "volumes_from": true, "extends": true, "develop": true, "secrets": true,
 	"configs": true, "env_file": true, "x-incus": true, "x-incus-compose": true}
@@ -480,7 +480,7 @@ func composeEnvironments(v any) error {
 			return Public("Invalid environment variable name")
 		}
 		if sensitiveEnv.MatchString(k) {
-			return Public("Secret-like environment variable requires scoped #134 SOPS delivery")
+			return Public("Move " + k + " to the app's Env tab; secret-like variables are not allowed in compose.yaml")
 		}
 		switch value.(type) {
 		case nil, string, float64, bool, json.Number:
@@ -493,6 +493,75 @@ func composeEnvironments(v any) error {
 
 // plainNamedVolume accepts a local named volume as Compose normalizes it: no
 // options, or only the default "<project>_<name>" name and external: false.
+var serialSource = re(`/dev/(serial/by-(id|path)/[A-Za-z0-9._:+-]{1,200}|tty(ACM|USB)[0-9]{1,3})`)
+var deviceTarget = re(`/dev/[A-Za-z0-9._-]{1,64}`)
+var usbID = re(`([0-9a-f]{4}):([0-9a-f]{4})`)
+
+// composeDevices translates the supported device subset into Incus devices:
+// serial ports (Compose devices:) become hotpluggable unix-char devices and
+// x-nixus.usb vendor:product IDs become usb devices. Anything else is refused.
+func composeDevices(v any, ext any) (M, error) {
+	out := M{}
+	refuse := Public("Only serial devices (/dev/serial/by-id/..., /dev/ttyACM*, /dev/ttyUSB*) and x-nixus.usb IDs can be passed through")
+	items, ok := v.([]any)
+	if v != nil && !ok {
+		return nil, refuse
+	}
+	if len(items) > 8 {
+		return nil, refuse
+	}
+	for i, raw := range items {
+		var source, target, perms string
+		switch d := raw.(type) {
+		case string:
+			parts := strings.Split(d, ":")
+			if len(parts) > 3 {
+				return nil, refuse
+			}
+			source, target = parts[0], parts[0]
+			if len(parts) > 1 {
+				target = parts[1]
+			}
+			if len(parts) > 2 {
+				perms = parts[2]
+			}
+		case M:
+			for k := range d {
+				if k != "source" && k != "target" && k != "permissions" {
+					return nil, refuse
+				}
+			}
+			source, target, perms = str(d["source"]), str(d["target"]), str(d["permissions"])
+			if target == "" {
+				target = source
+			}
+		default:
+			return nil, refuse
+		}
+		if !fullmatch(serialSource, source) || !fullmatch(deviceTarget, target) && !fullmatch(serialSource, target) ||
+			(perms != "" && perms != "rwm" && perms != "rw") || strings.Contains(source+target, "..") {
+			return nil, refuse
+		}
+		out[fmt.Sprintf("nixus-serial%d", i)] = M{"type": "unix-char", "source": source, "path": target,
+			"required": "false", "mode": "0666"}
+	}
+	if ext != nil {
+		x := obj(ext)
+		usb, ok := x["usb"].([]any)
+		if x == nil || len(x) != 1 || !ok || len(usb) > 8 {
+			return nil, Public("x-nixus supports only usb: [\"vendor:product\"]")
+		}
+		for i, raw := range usb {
+			m := usbID.FindStringSubmatch(str(raw))
+			if m == nil || m[0] != str(raw) {
+				return nil, Public("USB IDs look like 1d50:614e")
+			}
+			out[fmt.Sprintf("nixus-usb%d", i)] = M{"type": "usb", "vendorid": m[1], "productid": m[2], "required": "false"}
+		}
+	}
+	return out, nil
+}
+
 func plainNamedVolume(project, name string, props any) bool {
 	if props == nil {
 		return true
@@ -562,7 +631,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 			return nil, Public("Invalid Compose service")
 		}
 		for k := range data {
-			if bannedService[k] || strings.HasPrefix(k, "x-") {
+			if bannedService[k] || (strings.HasPrefix(k, "x-") && k != "x-nixus") {
 				return nil, Public("Compose service requires forbidden host privileges or runtime secrets")
 			}
 		}
@@ -585,6 +654,10 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 			}
 		}
 		named, err := composeVolumes(data["volumes"])
+		if err != nil {
+			return nil, err
+		}
+		devices, err := composeDevices(data["devices"], data["x-nixus"])
 		if err != nil {
 			return nil, err
 		}
@@ -641,13 +714,28 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 			image = img
 		}
 		preview = append(preview, M{"service": service, "image": image, "built": built, "context": contextPath,
-			"dockerfile": dockerfilePath, "namedVolumes": strings2any(named), "ports": portList})
+			"dockerfile": dockerfilePath, "namedVolumes": strings2any(named), "ports": portList, "devices": devices})
 	}
 	lines := []string{"services:"}
 	for _, raw := range preview {
 		svc := obj(raw)
+		devices := obj(svc["devices"])
+		if !isTrue(svc["built"]) && len(devices) == 0 {
+			continue
+		}
+		lines = append(lines, "  "+str(svc["service"])+":")
 		if isTrue(svc["built"]) {
-			lines = append(lines, "  "+str(svc["service"])+":", "    image: "+jsonString(str(svc["image"])), "    build: !reset null")
+			lines = append(lines, "    image: "+jsonString(str(svc["image"])), "    build: !reset null")
+		}
+		if len(devices) > 0 {
+			lines = append(lines, "    x-incus-compose:", "      devices:")
+			for _, name := range keys(devices) {
+				lines = append(lines, "        "+name+":")
+				d := obj(devices[name])
+				for _, k := range keys(d) {
+					lines = append(lines, "          "+k+": "+jsonString(str(d[k])))
+				}
+			}
 		}
 	}
 	override := ""

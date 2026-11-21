@@ -130,7 +130,7 @@ must also pass the host's trusted-LAN boundary; creating a forward does not gran
 access from untrusted sources. The reserved incusbr0 has host-owned NAT/firewall;
 use an additional Incus-owned network for native forwarding rules.
 Switch trunks/router changes are external actions. See
-[ownership](ownership.md) before editing the reserved bootstrap network in Incus.
+[ownership](apps.md) before editing the reserved bootstrap network in Incus.
 
 
 ## Guest addresses in the Nixus console

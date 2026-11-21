@@ -12,7 +12,7 @@ vm.runInContext(read("apps.js") + "\nthis.appView = appView;", context);
 const render = () => vm.runInContext("appsPage()", context);
 
 vm.runInContext(`Object.assign(appView, { overview: { projects: [
-    { name: "web", backend: "incus-compose", incusProject: "web", instances: [{ name: "<b>app</b>", status: "Running" }] },
+    { name: "web", backend: "incus-compose", incusProject: "web", instances: [{ name: "<b>app</b>", status: "Running", ports: [3000, 3000, 70000] }] },
     { name: "printer", backend: "incus-native", incusProject: "printer", instances: [{ name: "printer", status: "Stopped" }] }] },
   jobs: { web: { status: "failed", error: "<i>bad</i>" } },
   updates: { projects: { web: { updates: 1, images: [{ ref: "<x>", status: "update-available", digest: "sha256:a", latest: "sha256:bbbb" }] } } } })`, context);
@@ -33,6 +33,15 @@ vm.runInContext('Object.assign(appView, { view: "web", tab: "deployments" })', c
 html = render();
 for (const tab of ["deployments", "logs", "env", "settings"]) assert.match(html, new RegExp('data-app-tab="' + tab + '"'));
 assert.match(html, /id="app-update-start"/);
+assert.match(html, /data-app-power="restart"/);
+assert.match(html, /data-app-power="stop"/, "a running app offers Stop");
+assert.doesNotMatch(html, /Open :3000/, "no Open link without a known server address");
+vm.runInContext('state.status = { managementAddress: "192.0.2.10" }', context);
+html = render();
+assert.equal((html.match(/href="http:\/\/192\.0\.2\.10:3000"/g) || []).length, 1, "one Open link per published port");
+assert.doesNotMatch(html, /70000/);
+vm.runInContext("state.status = { managementAddress: 'evil<script>' }", context);
+assert.doesNotMatch(render(), /Open :/, "only plain IP addresses become links");
 assert.match(html, /data-image-hold="web" data-digest="sha256:bbbb" data-held="0"/);
 assert.match(html, /failed/);
 vm.runInContext("appView.confirmUpdate = true", context);

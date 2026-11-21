@@ -55,7 +55,7 @@ func validateNativeDeclarations(p M) error {
 	}
 	for name, raw := range instances {
 		i := obj(raw)
-		if !fullmatch(projectName, name) || !exactKeys(i, "type", "image", "cpus", "memory", "autostart", "network", "disks", "usb") {
+		if !fullmatch(projectName, name) || !exactKeys(i, "type", "image", "cpus", "memory", "autostart", "network", "disks", "usb", "serial") {
 			return fail
 		}
 		if t := str(i["type"]); (t != "container" && t != "virtual-machine") || !fullmatch(imageAlias, str(i["image"])) {
@@ -75,9 +75,22 @@ func validateNativeDeclarations(p M) error {
 		if i["network"] != nil && !fullmatch(re(`[a-zA-Z0-9][a-zA-Z0-9_.-]{0,14}`), str(i["network"])) {
 			return fail
 		}
-		disks, usb := obj(i["disks"]), obj(i["usb"])
-		if disks == nil || usb == nil || len(disks) > 16 || len(usb) > 16 {
+		disks, usb, serial := obj(i["disks"]), obj(i["usb"]), obj(i["serial"])
+		if disks == nil || usb == nil || len(disks) > 16 || len(usb) > 16 || (i["serial"] != nil && serial == nil) || len(serial) > 8 {
 			return fail
+		}
+		for sname, sraw := range serial {
+			sp := obj(sraw)
+			if !fullmatch(projectName, sname) || !exactKeys(sp, "source", "path") || !fullmatch(serialSource, str(sp["source"])) ||
+				!fullmatch(deviceTarget, str(sp["path"])) || strings.Contains(str(sp["source"]), "..") {
+				return Public("Serial passthrough needs a /dev/serial/by-id/..., /dev/ttyACM* or /dev/ttyUSB* source and a /dev/ path")
+			}
+			if _, clash := disks[sname]; clash {
+				return fail
+			}
+			if _, clash := usb[sname]; clash {
+				return fail
+			}
 		}
 		for dname, draw := range disks {
 			d := obj(draw)
@@ -145,6 +158,11 @@ func declaredSpec(project M, name string) M {
 	for _, uname := range keys(usb) {
 		u := obj(usb[uname])
 		devices[uname] = M{"type": "usb", "vendorid": u["vendorId"], "productid": u["productId"]}
+	}
+	serial := obj(decl["serial"])
+	for _, sname := range keys(serial) {
+		sp := obj(serial[sname])
+		devices[sname] = M{"type": "unix-char", "source": sp["source"], "path": sp["path"], "required": "false", "mode": "0666"}
 	}
 	autostart := "false"
 	if isTrue(decl["autostart"]) {

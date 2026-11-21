@@ -17,13 +17,13 @@ const app = document.querySelector("#app");
 const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
-  ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Help"],
+  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],["repository","Repository"],
+  ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
-const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Help"]];
-const pageIcons = {setup:"✓",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
+const settingsPages = ["repository","network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Info"]];
+const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
@@ -101,9 +101,9 @@ function toggle(label, path, hint = "") {
 function secret(label, key, hint = "", textarea = false) {
   return `<label class="field full"><span>${esc(label)} ${state.host?.secretPresent?.[key] ? '<span class="tag">Already provisioned</span>' : ""}</span>${textarea ? `<textarea data-secret="${key}" spellcheck="false" placeholder="Leave empty to keep the current value">${esc(state.secrets[key] || "")}</textarea>` : `<input data-secret="${key}" type="password" autocomplete="new-password" value="${esc(state.secrets[key] || "")}" placeholder="${state.host?.secretPresent?.[key] ? "Leave empty to keep current" : "Enter an initial password"}">`}${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
 }
-const pageGuides = {overview:"start.md",guests:"networking.md",network:"networking.md",storage:"hardware.md",hardware:"hardware.md",integrations:"homelab.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"setup.md",files:"file-modules.md",review:"setup.md",operations:"recovery.md",commands:"helpers.md"};
+const pageGuides = {overview:"install.md",guests:"networking.md",network:"networking.md",storage:"apps.md",hardware:"apps.md",integrations:"apps.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"install.md",files:"administration.md",review:"install.md",operations:"backups.md",commands:"administration.md"};
 const title = (eyebrow, heading, text) =>
-  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "setup.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
+  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
 const card = (heading, body, caption = "") =>
   `<section class="card"><div class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</div>${body}</section>`;
 function ownershipBanner() {
@@ -145,8 +145,8 @@ function stagedBanner() {
 }
 function navigationHtml() {
   return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
-    const active = state.page === id || (id === "network" && settingsPages.includes(state.page));
-    const icon = id === "network" ? "⚙" : pageIcons[id];
+    const active = state.page === id || (id === "repository" && settingsPages.includes(state.page));
+    const icon = id === "repository" ? "⚙" : pageIcons[id];
     return `<button type="button" data-go="${id}" class="${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${icon}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
   }).join("")}</nav></div>`;
 }
@@ -229,6 +229,7 @@ function shell() {
   bindOperations();
   bindApps();
   if (typeof bindBackups === "function") bindBackups();
+  if (typeof bindRepository === "function") bindRepository();
   if (typeof bindQuickActions === "function") bindQuickActions();
   bindFoundation();
   bindCommands();
@@ -254,6 +255,7 @@ function renderPage() {
     files,
     review,
     operations: operationsPage,
+    repository: () => repositoryPage(),
     commands: commandsPage,
   }[state.page]();
 }
@@ -275,7 +277,7 @@ function publicApplications() {
   return apps ? card("Public applications", apps, "Configured hostnames") : "";
 }
 function homepageResources() {
-  return referenceCatalog() + publicApplications();
+  return publicApplications();
 }
 
 function flatDisks(devices) {

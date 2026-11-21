@@ -49,7 +49,7 @@ const review=vm.runInContext('platformReview()',context);
 assert.ok(review.includes('platform-password'));
 assert.ok(review.includes('platform-ack'));
 vm.runInContext("state.page='operations'", context);
-assert.ok(vm.runInContext("title('', 'Backups', '')",context).includes('href="/docs/recovery.md"'), 'Recovery guidance must stay local and available offline');
+assert.ok(vm.runInContext("title('', 'Backups', '')",context).includes('href="/docs/backups.md"'), 'Recovery guidance must stay local and available offline');
 console.log('Operations UI checks passed: roles, escaped metadata, source approval and offline guides.');
 vm.runInContext(`operationView.health={clock:{state:'plausible-but-unsynchronized',evidenceWarning:true,guidance:'Check <host> time'}}`,context);
 const clockHtml=vm.runInContext('healthSummary()',context);

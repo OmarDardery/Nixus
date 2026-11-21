@@ -246,7 +246,7 @@ in pkgs.testers.runNixOSTest {
         status = json.loads(machine.succeed("nixus-admin project-backup run"))
         phases = {k: v["state"] for k, v in status["phases"].items()}
         assert phases == {"config": "complete", "keys": "complete", "data": "complete", "offHost": "complete",
-                          "verification": "complete", "github": "skipped"}, status["phases"]
+                          "verification": "complete"}, status["phases"]
         assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
 
     with subtest("restore drill: restic restore, exact bytes, instance import and start"):
@@ -419,6 +419,117 @@ in pkgs.testers.runNixOSTest {
         assert setup["repository"] == "/var/lib/nixus-restic-drill" and "password" not in setup, setup
         saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
         assert saved["saved"], saved
+
+    with subtest("device passthrough: a serial port by-id and a USB device reach a Compose service"):
+        # A real UART behind a stable by-id style link, and QEMU's USB tablet as the USB device.
+        byid = "/dev/serial/by-id/usb-Nixus_Test_Board_0001-if00"
+        machine.succeed("test -c /dev/ttyS1 && mkdir -p /dev/serial/by-id && ln -sf /dev/ttyS1 " + byid)
+        devices = broker("/devices")
+        usbid = "0627:0001"
+        assert any(u["id"] == usbid and usbid in u["compose"] for u in devices["usb"]), devices
+        dbase = push_web("${webV1}")
+        printer = {
+            "Dockerfile": ("FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
+            "compose.yaml": ("services:\n  klipper:\n    build: .\n    devices:\n      - " + byid + ":/dev/ttyACM0\n"
+                             "    x-nixus:\n      usb: [\"" + usbid + "\"]\n").encode(),
+        }
+        pentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in printer.items()]
+        pp = broker("/project-import/prepare", {"project": "printer", "files": pentries})
+        for p, d in printer.items():
+            broker("/project-import/chunk", {"id": pp["id"], "path": p, "offset": 0, "data": base64.b64encode(d).decode()})
+        ps = broker("/project-import/finish", {"id": pp["id"], "manifestHash": pp["manifestHash"]})
+        broker("/apps/deploy", {"project": "printer", "kind": "source", "stagingId": ps["id"], "manifestHash": ps["manifestHash"]})
+        deadline = time.time() + 900
+        while broker("/apps")["printer"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        job = broker("/apps")["printer"]
+        if job["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|OCI-VM' | tail -n 60 >&2")
+        assert job["status"] == "deployed", job
+        inst = json.loads(machine.succeed("incus list --project printer --format=json"))[0]
+        kinds = sorted(d["type"] for d in inst["devices"].values() if d["type"] in ("unix-char", "usb"))
+        assert kinds == ["unix-char", "usb"], inst["devices"]
+        machine.succeed("incus exec " + inst["name"] + " --project printer -- /bin/sh -c 'test -c /dev/ttyACM0'")
+        # Anything outside the serial/USB subset is refused at review.
+        bad = {"compose.yaml": b"services:\n  x:\n    image: localhost:5000/nixus/webbase:1@" + dbase.encode() + b"\n    devices: [/dev/sda]\n"}
+        bentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in bad.items()]
+        bp = broker("/project-import/prepare", {"project": "badhw", "files": bentries})
+        broker("/project-import/chunk", {"id": bp["id"], "path": "compose.yaml", "offset": 0, "data": base64.b64encode(bad["compose.yaml"]).decode()})
+        bs = broker("/project-import/finish", {"id": bp["id"], "manifestHash": bp["manifestHash"]})
+        broker("/apps/deploy", {"project": "badhw", "kind": "source", "stagingId": bs["id"], "manifestHash": bs["manifestHash"]})
+        deadline = time.time() + 300
+        while broker("/apps")["badhw"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        assert broker("/apps")["badhw"]["status"] == "failed", broker("/apps")["badhw"]
+
+    with subtest("apps repository: connect over SSH, push the server's apps, review and deploy a pushed app"):
+        # A throwaway git-over-SSH server on :2222, created at runtime.
+        code, out = machine.execute(
+            "id git >/dev/null 2>&1 || useradd -r -U -M -d /srv/git -s ${pkgs.git}/bin/git-shell git; usermod -p '*' git; "
+            "install -d -o git -m 755 /srv/git && "
+            "runuser -u git -- ${pkgs.git}/bin/git init -q --bare --initial-branch=main /srv/git/apps.git 2>&1")
+        assert code == 0, out
+        key = broker("/apps-repo/key", {})["publicKey"]
+        machine.succeed("install -d -o git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
+                        "chown git: /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
+        machine.succeed("id sshd >/dev/null 2>&1 || useradd -r -M -d /var/empty -s /run/current-system/sw/bin/nologin sshd")
+        machine.succeed("mkdir -p /etc/test-sshd /var/empty && ${pkgs.openssh}/bin/ssh-keygen -q -t ed25519 -N \"\" -f /etc/test-sshd/host_key")
+        machine.succeed("cat > /etc/test-sshd/config <<'EOF'\nPort 2222\nListenAddress 127.0.0.1\nHostKey /etc/test-sshd/host_key\nUsePAM no\n"
+                        "PasswordAuthentication no\nKbdInteractiveAuthentication no\nAuthorizedKeysFile /srv/git/.ssh/authorized_keys\n"
+                        "PidFile /run/test-sshd.pid\nEOF")
+        machine.succeed("systemd-run --unit=test-sshd ${pkgs.openssh}/bin/sshd -D -e -f /etc/test-sshd/config")
+        code, _ = machine.execute("${pkgs.netcat}/bin/nc -z -w 30 127.0.0.1 2222")
+        if code != 0:
+            machine.succeed("journalctl -u test-sshd --no-pager | tail -n 20 >&2")
+        machine.wait_for_open_port(2222)
+        url = "ssh://git@localhost:2222/srv/git/apps.git"
+        code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                    "--data '{\"url\": \"" + url + "\", \"_actor\": \"admin\"}' http://localhost/apps-repo/scan")
+        if code != 0:
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |sshd' | tail -n 20 >&2; "
+                            "${pkgs.openssh}/bin/ssh-keyscan -v -T 10 -p 2222 localhost >&2 2>&1 || true; getent ahosts localhost >&2")
+        assert code == 0 and json.loads(out)["fingerprints"], out
+        view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
+        assert view["configured"] and "error" not in view["status"], view
+        # The repo belongs to the git user; let root's local clone and push use it.
+        machine.succeed("HOME=/root ${pkgs.git}/bin/git config --global --add safe.directory '*'")
+        git = "HOME=/root ${pkgs.git}/bin/git -c user.name=t -c user.email=t@t "
+        machine.succeed("rm -rf /tmp/apps && " + git + "clone -q /srv/git/apps.git /tmp/apps")
+        for f in ["notes/Dockerfile", "notes/default.nix", "web/compose.yaml", "README.md"]:
+            machine.succeed("test -f /tmp/apps/" + f)
+        # The age key and deploy key never reach the repository.
+        machine.fail("grep -rqE 'AGE-SECRET-KEY|PRIVATE KEY' /tmp/apps --exclude-dir=.git")
+        hello_dockerfile = "FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n"
+        machine.succeed("mkdir -p /tmp/apps/hello && cat > /tmp/apps/hello/compose.yaml <<'EOF'\nservices:\n  hello:\n    build: .\nEOF\n"
+                        "cat > /tmp/apps/hello/Dockerfile <<'EOF'\n" + hello_dockerfile + "EOF")
+        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main && chown -R git: /srv/git/apps.git")
+        view = broker("/apps-repo/check", {})
+        pending = view["status"]["pending"]
+        assert pending["apps"] == ["hello"] and len(pending["commits"]) == 1, pending
+        broker("/apps-repo/deploy", {"head": pending["head"]})
+        deadline = time.time() + 900
+        while broker("/apps-repo")["status"].get("deploy", {}).get("status") not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps-repo")
+            time.sleep(3)
+        job = broker("/apps-repo")["status"]["deploy"]
+        if job["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
+        assert job["status"] == "deployed", job
+        running = json.loads(machine.succeed("incus list --project hello --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
+        # A console change (an env var) is committed and pushed back.
+        broker("/apps/env", {"project": "hello", "vars": {"GREETING": "hi"}, "revision": None})
+        machine.wait_until_succeeds("cd /tmp/apps && " + git + "pull -q && test -f hello/secrets.enc.yaml && test -f hello/default.nix", timeout=120)
+        machine.fail("grep -q 'GREETING: hi' /tmp/apps/hello/secrets.enc.yaml")
+        assert "pending" not in broker("/apps-repo/check", {})["status"]
+        # Stop/start from the app page; secrets come back after the restart.
+        broker("/apps/power", {"project": "hello", "action": "stop"})
+        assert json.loads(machine.succeed("incus list --project hello --format=json"))[0]["status"] == "Stopped"
+        broker("/apps/power", {"project": "hello", "action": "start"})
+        name = json.loads(machine.succeed("incus list --project hello --format=json"))[0]["name"]
+        assert machine.succeed("incus exec " + name + " --project hello -- /bin/cat /run/secrets/GREETING") == "hi"
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"

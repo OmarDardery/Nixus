@@ -1265,6 +1265,7 @@ func (t *ProjectTransactions) publish(identityArg, planHash any) (M, error) {
 		t.write(identity, record)
 		writeJSON(filepath.Join(t.state, "project-last.json"), M{"id": identity})
 		audit("project-source-published", M{"identity": identity, "principal": record["principal"]})
+		notifyAppsRepo()
 		return t.status(identity)
 	})
 }
