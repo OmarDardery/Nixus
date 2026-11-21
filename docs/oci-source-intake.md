@@ -42,13 +42,34 @@ A project with `nixus.project.backend = "incus-compose"` and a bound source revi
 
 The `oci-builder` VM test deploys a two-service app, writes into a named volume, deploys a changed revision, then checks that the changed service was recreated and the volume data kept. It also checks that a stray instance blocks the adapter.
 
+## Image pinning and updates
+
+Every source plan records an **image lock**: each Compose `image:` and Dockerfile `FROM` with
+its registry, repository, tracked tag and pinned digest.
+
+- Services that are not built must use `name:tag@sha256:...`. Keep the tag: it is what update
+  detection follows.
+- A Dockerfile `FROM` must be `scratch`, an earlier build stage, or a digest-pinned image.
+  Anything else is rejected when the plan is reviewed, not later in the build.
+
+The daily `nixus-image-updates` timer (or `sudo nixus-admin image-updates check`) asks each
+registry, anonymously, which digest every tracked tag points to now. Nothing is pulled or
+changed. The **Image updates** card on the Projects page lists each image as `current`,
+`update-available`, `untracked`, `unpinned` or `error`.
+
+**Prepare update** stages a new source revision in which only the matching `@sha256:` digests
+are replaced; every other byte is unchanged. Review, publish, build and deploy it like any other
+revision. The previous revision stays published history for rollback.
+
 ## Still open
 
-- **#45 follow-ups:**
-  - Native project creation, claim adoption and native instance templates (image, network, storage, USB).
-  - The incus-compose health daemon and DNS sidecar (currently disabled because they pull registry images).
-- **#46:** delivering Compose `.env`/`env_file:` secrets from SOPS at runtime only.
-- **Base images:** builds are offline, so `FROM` must be `scratch` or an image already in local Buildah storage. Images whose files belong to non-root users cannot be built yet, because the sandbox maps only one user.
+- The incus-compose health daemon and DNS sidecar (currently disabled because they pull
+  registry images).
+- Fetching digest-pinned base images into the offline builder. Builds still only find
+  `scratch` or images already in local Buildah storage.
+- Images whose files belong to non-root users cannot be built yet, because the sandbox maps only
+  one user.
+- Automatic, health-gated application of image updates with snapshot rollback (#61).
 
 ## Scope
 

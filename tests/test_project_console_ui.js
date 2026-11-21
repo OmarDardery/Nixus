@@ -37,6 +37,12 @@ assert.match(text, /repository = "rclone:gdrive:nixus-backups";/);
 assert.match(text, /github.repository = "git@github.com:me\/cfg.git";/);
 assert.doesNotMatch(text, /password/i, "the policy must never contain credentials");
 
+vm.runInContext("imageUpdates.status = { checkedAt: 1, projects: { app: { updates: 1, images: [ { file: \"compose.yaml\", ref: \"<b>x</b>\", status: \"update-available\", digest: \"sha256:aa\", latest: \"sha256:bbbbbbbbbbbbbbbbbbbb\" } ] } } }", context);
+const updates = vm.runInContext("imageUpdatesCard()", context);
+assert.match(updates, /data-image-update="app"/);
+assert.match(updates, /update-available/);
+assert.doesNotMatch(updates, /<b>x<\/b>/, "image references must be escaped");
+
 const index = read("index.html");
 assert.ok(index.indexOf("project-console.js") < index.indexOf("incus-projects.js"), "console script loads before the project page");
 assert.match(read("incus-projects.js"), /projectConsoleCards\(\)/);
