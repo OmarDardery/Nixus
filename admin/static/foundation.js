@@ -85,7 +85,8 @@ function hostOverview() {
   const backupDetail = !s.backup?.enable ? "Not configured" : fresh ? "Host-reported status only" : "No fresh verification";
   const hostSignal = !fresh || !known ? "Unknown" : degraded.length || failed.length ? "Attention" : "Healthy";
   const hostDetail = !fresh ? "Status unavailable or stale" : !known ? "No loaded services observed" : "Observed host services";
-  return title("", "Overview", "Current host state, observed guests and the native tools that manage them.")
+  return title("", "Overview", "Server status and quick actions.")
+    + (typeof quickActions === "function" ? quickActions() : "")
     + `<div class="stats">
        <div class="stat"><div class="label">Host services</div><div class="value">${esc(hostSignal)}</div><div class="detail">${esc(hostDetail)}</div></div>
        <div class="stat"><div class="label">Incus guests</div><div class="value">${esc(guestCount)}</div><div class="detail">${esc(guestDetail)}</div></div>
@@ -117,8 +118,7 @@ function hostConnectivity() {
   return (
     title(
       "PHYSICAL NETWORKING",
-      "Networking",
-      "Ethernet bridges and VLANs are host prerequisites. Create guest networks, reservations, NIC attachments and ACLs in Incus.",
+      "Networking", "Host network, bridges and VLANs.",
     ) +
     card(
       "Management addressing",
@@ -169,8 +169,7 @@ function hostHardware() {
   return (
     title(
       "HARDWARE & DISKS",
-      "Hardware & disks",
-      "Nixus handles stable host identities and prerequisites. Assign devices and guest permissions in Incus.",
+      "Hardware", "USB and serial devices for passthrough.",
     ) +
     card(
       "USB serial devices",
@@ -206,8 +205,7 @@ function integrations() {
   return (
     title(
       "SERVICES",
-      "Services",
-      "Choose optional host and application tools. Guest lifecycle and networking stay in Incus.",
+      "Services", "Turn on Cockpit and other host tools.",
     ) +
     card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}${secret("Local operator password for Cockpit", "cockpitPassword", "At least 16 characters. This enrolls the Linux operator account; SSH accepts the same password when password login is enabled. Leave blank to retain an existing local account password.")}</div><p>Sign in as <code>operator</code> with its Linux password.</p>`) +
     apps() +

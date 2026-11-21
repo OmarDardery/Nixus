@@ -10,14 +10,14 @@ import (
 const recoveryMarker = "recovery-kit.json"
 
 var setupItems = [][4]string{
-	{"administrator", "Create your administrator account", "Approved from the host console and claimed in this browser.", "accounts"},
-	{"activation", "Activate the hypervisor", "Review and confirm the first configuration: Incus, Cockpit and this console.", "review"},
-	{"incusBrowser", "Enroll this browser for the Incus web UI", "Issue a browser certificate, import it, then open Incus.", "security"},
-	{"cockpitPassword", "Set the Cockpit operator password", "Choose the Linux operator password used for Cockpit and SSH.", "integrations"},
-	{"secretsKey", "Create the secrets encryption key", "Generate the host age identity used for SOPS-encrypted secrets.", "projects"},
-	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download the passphrase-protected kit, store it off this host, then verify it unlocks.", "projects"},
-	{"sshKey", "Enroll an SSH key (optional)", "Add your laptop public key for key-based remote administration.", "security"},
-	{"backup", "Configure off-host backups (optional)", "Choose a restic repository and schedule, then test a restore.", "operations"},
+	{"administrator", "Create your administrator account", "Created during sign-in.", "accounts"},
+	{"activation", "Activate the hypervisor", "Build, activate and confirm the first configuration.", "review"},
+	{"incusBrowser", "Enroll this browser for the Incus web UI", "Issue and import a browser certificate.", "security"},
+	{"cockpitPassword", "Set the Cockpit operator password", "Used for Cockpit and SSH.", "integrations"},
+	{"secretsKey", "Create the secrets encryption key", "Apps → Secrets.", "projects"},
+	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download it, store it off this server, then verify it.", "projects"},
+	{"sshKey", "Enroll an SSH key (optional)", "Your laptop's public key.", "security"},
+	{"backup", "Set up backups (optional)", "Save a backup policy on the Apps page.", "projects"},
 }
 
 func identityDigest(p string) any {
@@ -74,7 +74,7 @@ func setupProgress(status M) M {
 		"secretsKey":      key != nil,
 		"recoveryKit":     key != nil && equalJSON(marker["identity"], key),
 		"sshKey":          len(list(settings["adminKeys"])) > 0,
-		"backup":          isTrue(jget(settings, "backup", "enable")),
+		"backup":          isTrue(jget(settings, "backup", "enable")) || isTrue(projectBackupStatus()["enabled"]),
 	}
 	cockpit := obj(settings["cockpit"])
 	items := []any{}

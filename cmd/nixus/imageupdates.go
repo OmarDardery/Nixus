@@ -427,6 +427,13 @@ func imageUpdatesCLI(args []string) error {
 		}
 		return err
 	}
+	if len(args) == 1 && args[0] == "apply-all" {
+		result, err := applyAllImageUpdates("root")
+		if result != nil {
+			printJSON(result)
+		}
+		return err
+	}
 	if len(args) == 2 && args[0] == "apply" {
 		result, err := applyImageUpdate("root", args[1])
 		if result != nil {
@@ -441,7 +448,7 @@ func imageUpdatesCLI(args []string) error {
 		}
 		return err
 	}
-	return Public("usage: nixus-admin image-updates {check|status|auto|apply PROJECT|hold PROJECT DIGEST|unhold PROJECT DIGEST}")
+	return Public("usage: nixus-admin image-updates {check|status|auto|apply PROJECT|apply-all|hold PROJECT DIGEST|unhold PROJECT DIGEST}")
 }
 
 // --- pinned base images for the offline builder ------------------------------------

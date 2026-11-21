@@ -234,6 +234,7 @@ function shell() {
   bind();
   bindOperations();
   bindApps();
+  if (typeof bindQuickActions === "function") bindQuickActions();
   bindFoundation();
   bindCommands();
   bindSetup();
@@ -245,15 +246,15 @@ function renderPage() {
     setup: setupPage,
     overview: hostOverview,
     projects: appsPage,
-    guests: () => title("", "Guests & addresses", "Observed Incus guests and IP addresses. Manage guest lifecycles in Incus.") + guestNetwork(),
+    guests: () => title("", "Guests", "Every Incus container and VM with its addresses.") + guestNetwork(),
     network: hostConnectivity,
     hardware: hostHardware,
-    storage: () => title("", "Storage & mounts", "Discovered disks, existing filesystems and staged Nix-managed mounts.") + storage(),
+    storage: () => title("", "Storage", "Disks and mounts on this server.") + storage(),
     integrations,
     apps: integrations,
     security,
     ingress: ingressPage,
-    accounts: () => title("", "Portal accounts", "Portal permissions are separate from Linux accounts and Incus certificates.") + (administrator() ? accountCard() : card("Account permissions", "<p>Only administrators can manage portal accounts.</p>")),
+    accounts: () => title("", "Accounts", "Who can sign in to this console.") + (administrator() ? accountCard() : card("Account permissions", "<p>Only administrators can manage portal accounts.</p>")),
     system: () => system() + card("Host health", healthSummary()),
     files,
     review,
@@ -331,14 +332,14 @@ function security() {
   return (
     title(
       "MANAGEMENT ACCESS",
-      "Private by default.",
-      "Linux password or SSH key access for the host, certificate identities for Incus, and application-only public ingress.",
+      "Access",
+      "SSH, Cockpit and Incus sign-in for this server.",
     ) +
     `<div class="grid">${card("SSH administration", `<div class="fields">${toggle("Allow SSH password login for non-root Linux accounts", "access.sshPasswordLogin")}${field("Operator SSH public keys", "adminKeys", { type: "textarea", list: true, full: true, placeholder: "ssh-ed25519 AAAA… your-device", hint: "One public key per line. Private keys never belong here." })}</div><div class="fields"><label class="field"><span>Incus browser device name</span><input id="certificate-device" maxlength="32" autocomplete="off"></label><label class="field"><span>Bundle passphrase (at least 16 characters)</span><input id="certificate-passphrase" type="password" minlength="16" maxlength="256" autocomplete="new-password"></label></div><input id="certificate-renew" type="hidden"><div class="fields"><label class="field"><span>Current Nixus password</span><input id="certificate-current" type="password" autocomplete="current-password"></label><label class="field"><span><input id="certificate-full-admin" type="checkbox"> Grant unrestricted Incus host administration (advanced)</span></label></div><button data-action="certificate" ${!state.status.setupComplete ? "disabled" : ""}>Create an Incus browser identity</button><button data-action="certificate-download">Claim pending download</button><button data-action="certificate-list">Refresh browser identities</button><div id="certificate-result" aria-live="polite"></div><div id="certificate-list"></div>`)}</div>`
   );
 }
 function ingressPage() {
-  return title("", "Public application ingress", "Configure application-only ingress. Nixus, SSH, Cockpit and Incus administration must remain private.")
+  return title("", "Public ingress", "Expose apps to the internet through Cloudflare Tunnel.")
     + `<div class="grid">${card("Cloudflare Tunnel", `
       ${toggle("Enable a locally managed tunnel", "tunnel.enable")}
       <div class="fields">${field("Existing tunnel UUID", "tunnel.uuid", {full:true})}
@@ -360,8 +361,7 @@ function system() {
   return (
     title(
       "HOST PREFERENCES",
-      "Host preferences",
-      "Radio controls and maintenance settings use separate Nix modules and the same reviewed deployment path.",
+      "Maintenance", "Host name, time zone, packages, radios and monitoring.",
     ) +
     `<div class="grid">${card("Identity & maintenance", `<div class="fields">${field("Host name", "hostName")}${field("Time zone", "maintenance.timeZone", { placeholder: "Region/City" })}${field("Setup HTTPS port", "setup.port", { type: "number" })}${field("Confirmation window, seconds", "setup.confirmationSeconds", { type: "number", hint: "300–1800 seconds after activation completes." })}</div><div class="separator"></div>${toggle("Enable scheduled filesystem TRIM", "maintenance.trim")}${toggle("Deduplicate the Nix store weekly", "maintenance.optimiseStore")}${toggle("Laptop server: keep running with lid closed", "maintenance.laptopMode")}<button data-action="export-settings">Export desired settings JSON</button>`)}${card("Wi-Fi & Bluetooth", `${toggle("Enable Wi-Fi", "radios.wifi.enable")}<div class="fields">${field("Wi-Fi interface", "radios.wifi.interface", { options: wifiChoices, full: true })}</div>${toggle("Declare a Wi-Fi connection profile", "radios.wifi.manageProfile")}<div class="fields">${field("Network name / SSID", "radios.wifi.ssid", { full: true })}${secret("WPA password", "wifiPassword", "WPA personal networks are supported. Existing NetworkManager profiles can be retained without entering a new password.")}</div><div class="separator"></div>${toggle("Enable Bluetooth and power it on at boot", "radios.bluetooth.enable")}`)}${card("Change portal password", '<form id="password-form"><div class="fields"><label class="field full"><span>Current password</span><input name="current" type="password" autocomplete="current-password" required></label><label class="field full"><span>New password</span><input name="password" type="password" autocomplete="new-password" minlength="16" required></label></div><div class="actions"><button>Update password & sign out</button></div></form>')}${card("Monitoring history", `${toggle("Collect host metrics for external monitoring", "monitoring.collection")}${toggle("Enable local Prometheus history and alert rules", "monitoring.history")}<div class="fields">${field("Retention, days", "monitoring.retentionDays", { type: "number", hint: "1–90 days; default 14." })}${field("Metrics interval, seconds", "monitoring.scrapeSeconds", { type: "number", hint: "15–300 seconds; default 60." })}</div>`)}${card("Package maintenance", `<label class="toggle"><input type="checkbox" id="update-inputs" ${state.updateInputs ? "checked" : ""}> Refresh pinned Nixpkgs for the next review</label><button data-go="review">Build a maintenance review →</button>`)}</div>`
   );
@@ -370,8 +370,7 @@ function files() {
   return (
     title(
       "ADMINISTRATOR CONFIGURATION",
-      "Configuration files",
-      "Nix modules can define root services. Upload only code you trust; never include credentials.",
+      "Advanced", "Add your own NixOS modules to the host.",
     ) +
     (state.status.layoutVersion === 0
       ? card(
@@ -430,8 +429,8 @@ function review() {
   return (
     title(
       "REPRODUCIBLE DEPLOYMENT",
-      "Review. Build. Make it live.",
-      "The server validates structured settings, evaluates Nix, builds an immutable candidate and shows its activation output.",
+      "Changes",
+      "Build, activate and confirm staged host changes.",
     ) +
     deploymentTimeline() +
     moduleReview() +

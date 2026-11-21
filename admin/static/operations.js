@@ -76,8 +76,7 @@ function operationsPage() {
   return (
     title(
       "OFF-HOST RECOVERY",
-      "Backups & recovery",
-      "Incus owns ordinary snapshots and guest controls. Nixus coordinates independent backups and new-name disaster recovery.",
+      "Host backups", "Full-server exports and restores.",
     ) +
     card(
       "Backup status",

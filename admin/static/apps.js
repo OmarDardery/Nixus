@@ -216,7 +216,7 @@ function backupsCard() {
 
 function appsPage() {
   if (!appView.overview && !appView.loading) void refreshApps();
-  return appsCard() + addAppCard() + updatesCard() + backupsCard() +
+  return title("", "Apps", "Deploy, update and back up your apps.") + appsCard() + addAppCard() + updatesCard() + backupsCard() +
     (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
 

@@ -63,7 +63,7 @@ function commandRow(item) {
 }
 
 function commandsPage() {
-  return title("REFERENCE DESK", "Help", "Local guides, operational commands and the upstream projects behind this host.")
+  return title("REFERENCE DESK", "Help", "Guides and useful commands.")
     + `<div class="reference-jumps"><a href="#commands">Commands ↓</a><a href="#project-docs">Docs & community ↓</a></div><section class="command-library" id="commands">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>${homepageResources()}`;
 }
 

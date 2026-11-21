@@ -353,6 +353,10 @@ in pkgs.testers.runNixOSTest {
         running = json.loads(machine.succeed("incus list --project notes --format=json"))
         assert len(running) == 1 and running[0]["status"] == "Running", running
         assert machine.succeed("cat /srv/nixus/projects/notes/default.nix").strip().endswith("}")
+        # Nothing left to update: the one-click action refuses instead of starting a worker.
+        code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                    "--data '{\"_actor\": \"admin\"}' http://localhost/image-updates/apply-all")
+        assert code != 0 and "up to date" in out, out
         saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
         assert saved["saved"], saved
 

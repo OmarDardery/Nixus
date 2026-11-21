@@ -34,8 +34,7 @@ function setupStep(item, index, next) {
 }
 
 function setupPage() {
-  const intro = title("", "Set up your hypervisor",
-    "Work through these steps in any order. Progress is read from the host, so you can leave and come back at any time.");
+  const intro = title("", "Setup", "Finish these steps once after installing.");
   if (setupView.error) return intro + card("Setup", `<p class="error">${esc(setupView.error)}</p><button data-action="setup-refresh">Retry</button>`);
   const progress = setupView.progress;
   if (!progress) return intro + card("Setup", "<p>Loading setup progress…</p>");

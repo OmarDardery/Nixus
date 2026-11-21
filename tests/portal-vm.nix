@@ -89,7 +89,7 @@ in pkgs.testers.runNixOSTest {
         cross = machine.succeed("curl -sk -b /tmp/jar -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' -H 'X-Nixus-CSRF: " + login["csrf"] + "' -H 'Content-Type: application/json' --data '{}' https://127.0.0.1:9440/api/cancel-backup").strip()
         assert cross == "401", cross
         # Static assets, including the new console scripts, are served.
-        for asset in ["/", "/apps.js"]:
+        for asset in ["/", "/apps.js", "/quick.js"]:
             machine.succeed("curl -skf -o /dev/null https://127.0.0.1:9440" + asset)
 
     with subtest("root CLI uses the same broker"):
