@@ -1093,7 +1093,7 @@ func sourceFiles(root string) ([]sourceFile, error) {
 		ext := filepath.Ext(name)
 		switch {
 		case strings.HasPrefix(name, "machine/") && !(name == "machine/format.json" || name == "machine/settings.json" ||
-			name == "machine/installation.json" || (strings.HasPrefix(name, "machine/modules/") && (ext == ".nix" || ext == ".md")) ||
+			name == "machine/installation.json" || name == hostSecretsRelative || (strings.HasPrefix(name, "machine/modules/") && (ext == ".nix" || ext == ".md")) ||
 			(strings.HasPrefix(name, "machine/installed-system/") && ext == ".nix")):
 			return nil, Public("Unexpected file in machine configuration: " + name)
 		case strings.HasPrefix(name, "local/") && name != "local/settings.json" && name != "local/installation.json":
