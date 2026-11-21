@@ -15,10 +15,14 @@ let
   baseImage = pkgs.dockerTools.buildImage {
     name = "nixus/base";
     tag = "1";
-    copyToRoot = pkgs.runCommand "base-root" { } ''
-      mkdir -p $out/etc
-      echo nixus-base-layer > $out/etc/base-marker
-    '';
+    # busybox gives the deployed service a real command to run.
+    copyToRoot = [
+      pkgs.busybox
+      (pkgs.runCommand "base-root" { } ''
+        mkdir -p $out/etc
+        echo nixus-base-layer > $out/etc/base-marker
+      '')
+    ];
   };
 in pkgs.testers.runNixOSTest {
   name = "nixus-oci";
@@ -41,7 +45,15 @@ in pkgs.testers.runNixOSTest {
     '';
     virtualisation.incus = {
       enable = true;
-      preseed.storage_pools = [ { name = "default"; driver = "dir"; } ];
+      preseed = {
+        storage_pools = [ { name = "default"; driver = "dir"; } ];
+        networks = [ { name = "incusbr0"; type = "bridge";
+          config = { "ipv4.address" = "10.0.100.1/24"; "ipv4.nat" = "true"; "ipv6.address" = "none"; }; } ];
+        profiles = [ { name = "default"; devices = {
+          eth0 = { name = "eth0"; network = "incusbr0"; type = "nic"; };
+          root = { path = "/"; pool = "default"; type = "disk"; };
+        }; } ];
+      };
     };
     networking.nftables.enable = true;
     # Surface isolated builder diagnostics in the journal.
@@ -93,7 +105,7 @@ in pkgs.testers.runNixOSTest {
 
     with subtest("stage, review and publish the original source bytes"):
         files = {
-            "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\nCMD [\"/payload-app\"]\n").encode(),
+            "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
             "payload.txt": b"guarded-oci-build\n",
         }
         entries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in files.items()]
@@ -144,6 +156,31 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("test -s " + rootfs)
         listing = machine.succeed("tar -tf " + rootfs)
         assert "base-marker" in listing and "payload.txt" in listing, listing
+
+    with subtest("a reviewed project revision deploys the imported image with incus-compose"):
+        broker("/project/initialize", {"flake": "{ outputs = { self }: {}; }\n",
+                                       "lock": json.dumps({"nodes": {"root": {}}, "root": "root", "version": 7})})
+        decl = '{ ... }: { nixus.project = { backend = "incus-compose"; incusProject = "testapp"; }; }\n'
+        reviewed = broker("/project/review", {"changes": {"testapp/default.nix": decl}, "sourceRevisions": {"testapp": revision}})
+        actions = [a for a in reviewed["runtimeActions"] if a["project"] == "testapp"]
+        assert [a["action"] for a in actions] == ["compose-up"], reviewed["runtimeActions"]
+        broker("/project/publish", {"id": reviewed["id"], "planHash": reviewed["planHash"]})
+        broker("/project/deploy", {"id": reviewed["id"], "planHash": reviewed["planHash"]})
+        deadline = time.time() + 900
+        while True:
+            project = broker("/project/status")
+            if project["deployment"] in ("verified", "partial", "interrupted"):
+                break
+            assert time.time() < deadline, project
+            time.sleep(5)
+        if project["deployment"] != "verified":
+            machine.succeed("journalctl -b -u nixus-admin-backend -u 'nixus-project-*' --no-pager | tail -n 120 >&2")
+        assert project["deployment"] == "verified", project
+        running = json.loads(machine.succeed("incus list --project testapp --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
+        assert running[0]["config"]["volatile.base_image"] == artifact["incusFingerprint"], running[0]["config"]
+        served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
+        assert served == "guarded-oci-build\n", served
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
