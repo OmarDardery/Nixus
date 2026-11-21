@@ -45,6 +45,10 @@ func projectOverview() M {
 	t := NewProjectTransactions("", "")
 	inventory, plan, transaction := lastProjectJob(t)
 	if inventory == nil {
+		// A restored host has a workspace but no project review yet.
+		inventory, _ = liveInventory()
+	}
+	if inventory == nil {
 		return M{"available": false, "projects": []any{}, "reason": "no reviewed project revision yet"}
 	}
 	coverage := obj(projectBackupStatus()["coverage"])

@@ -257,7 +257,7 @@ func configSnapshot(t *ProjectTransactions, policy, inventory M, destination str
 		projects[name] = entry
 	}
 	manifest := M{"format": 1, "workspaceSourceHash": workspace["sourceHash"], "projects": projects, "files": hashes,
-		"excludes": "plaintext credentials, age identities, builder caches, OCI layers and the Nix store are never included"}
+		"excludes": "builder caches, OCI layers and the Nix store are not included; age identities and backup credentials are added only inside the encrypted restic snapshot"}
 	if err := writeJSON(filepath.Join(destination, "MANIFEST.json"), manifest); err != nil {
 		return nil, err
 	}
@@ -475,8 +475,13 @@ func runProjectBackup(force bool) (M, error) {
 		return status, err
 	}
 	setPhase(status, "config", "complete", fmt.Sprintf("%d files", len(obj(manifest["files"]))))
+	if keys := presentKeyFiles(); len(keys) > 0 {
+		setPhase(status, "keys", "complete", "age identity and credentials included in the encrypted snapshot")
+	} else {
+		setPhase(status, "keys", "skipped", "no age identity or credentials on this host yet")
+	}
 	status["coverage"] = manifest["projects"]
-	paths := []string{snapshot}
+	paths := append([]string{snapshot}, presentKeyFiles()...)
 	if isTrue(policy["data"]) {
 		err := func() error {
 			release, err := lockFile(incusLock, true)

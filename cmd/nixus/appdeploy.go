@@ -213,7 +213,14 @@ func appsCLI(args []string) error {
 		printJSON(appJobs())
 		return nil
 	}
-	return Public("usage: nixus-admin apps {status|deploy APP}")
+	if len(args) == 1 && args[0] == "deliver-secrets" {
+		result, err := deliverAllSecrets()
+		if result != nil {
+			printJSON(result)
+		}
+		return err
+	}
+	return Public("usage: nixus-admin apps {status|deploy APP|deliver-secrets}")
 }
 
 // saveBackupPolicy reviews and publishes backups.nix in one step. The policy

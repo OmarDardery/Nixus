@@ -285,7 +285,11 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			case "/project-secrets/review":
 				return s.review(actor, body["project"], body["key"], str(body["action"]), body["value"], body["expectedRevision"])
 			case "/project-secrets/publish":
-				return s.publish(actor, body["reviewId"], ack(body["acknowledge"]))
+				result, err := s.publish(actor, body["reviewId"], ack(body["acknowledge"]))
+				if err == nil {
+					result["delivery"] = deliverPublishedSecrets(str(result["project"]))
+				}
+				return result, err
 			case "/project-secrets/recover":
 				return s.recover(actor, body["project"])
 			case "/project-secrets/reindex":

@@ -201,6 +201,21 @@ in pkgs.testers.runNixOSTest {
         served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
 
+    with subtest("secrets: an app secret is encrypted, published and delivered to /run/secrets"):
+        broker("/project-secrets/enroll", {"mode": "generate", "acknowledge": True})
+        sreview = broker("/project-secrets/review", {"project": "testapp", "key": "API_TOKEN", "action": "set",
+                                                     "value": "s3cret-value", "expectedRevision": None})
+        spub = broker("/project-secrets/publish", {"reviewId": sreview["reviewId"], "acknowledge": True})
+        assert spub["delivery"].get("files") == 1, spub
+        app = json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"]
+        delivered = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN")
+        assert delivered == "s3cret-value", delivered
+        machine.fail("grep -r s3cret-value /srv/nixus /var/lib/nixus-admin /run/nixus-secret-delivery")
+        # A container restart clears /run; the delivery command restores it.
+        machine.succeed("incus restart " + app + " --project testapp")
+        machine.succeed("nixus-admin apps deliver-secrets >&2")
+        assert machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
+
     with subtest("project backup: config, Incus data, encrypted off-host copy and full verification"):
         machine.succeed("install -d -m 0700 /var/lib/nixus-secrets && head -c 32 /dev/urandom | base64 > /var/lib/nixus-secrets/project-restic-password && chmod 0600 /var/lib/nixus-secrets/project-restic-password")
         policy = ('{ ... }: { nixus.backups = { enable = true; schedule = "daily"; verification = "full";\n'
@@ -209,7 +224,7 @@ in pkgs.testers.runNixOSTest {
         broker("/project/publish", {"id": breview["id"], "planHash": breview["planHash"]})
         status = json.loads(machine.succeed("nixus-admin project-backup run"))
         phases = {k: v["state"] for k, v in status["phases"].items()}
-        assert phases == {"config": "complete", "data": "complete", "offHost": "complete",
+        assert phases == {"config": "complete", "keys": "complete", "data": "complete", "offHost": "complete",
                           "verification": "complete", "github": "skipped"}, status["phases"]
         assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
 
@@ -252,6 +267,8 @@ in pkgs.testers.runNixOSTest {
         assert fresh.succeed("cat " + restored_src).encode() == files["Dockerfile"]
         restored = json.loads(fresh.succeed("incus list --project testapp --format=json"))
         assert len(restored) == 1 and restored[0]["status"] == "Running", restored
+        assert report["keys"]["projectsIdentity"] == "restored", report["keys"]
+        assert fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
         served = fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
         # A second restore onto the now-populated host is refused before any change.
