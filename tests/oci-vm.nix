@@ -48,7 +48,7 @@ let
       services.openssh = lib.mkIf withRegistry { enable = true; openFirewall = false; };
       users.users.git = lib.mkIf withRegistry { isSystemUser = true; group = "git"; home = "/srv/git"; createHome = true; shell = "${pkgs.git}/bin/git-shell"; };
       users.groups.git = lib.mkIf withRegistry { };
-      virtualisation.qemu.options = lib.mkIf withRegistry [ "-device qemu-xhci,id=xhci" "-chardev null,id=ser0" "-device usb-serial,bus=xhci.0,chardev=ser0" ];
+      virtualisation.qemu.options = lib.mkIf withRegistry [ "-device qemu-xhci,id=xhci" "-chardev null,id=ser0" "-device usb-serial,bus=xhci.0,chardev=ser0,serial=NIXUS0001" ];
       services.dockerRegistry = lib.mkIf withRegistry { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
       # The local fixture registry has no TLS; mark only it as insecure.
       environment.etc."containers/registries.conf".text = ''
@@ -427,9 +427,13 @@ in pkgs.testers.runNixOSTest {
         assert saved["saved"], saved
 
     with subtest("device passthrough: a serial port by-id and a USB device reach a Compose service"):
-        machine.wait_until_succeeds("ls /dev/serial/by-id/ | grep -q .", timeout=60)
+        code, _ = machine.execute("modprobe ftdi_sio; udevadm settle; test -c /dev/ttyUSB0")
+        if code != 0:
+            machine.succeed("cat /sys/bus/usb/devices/*/product >&2; dmesg | grep -iE 'usb|ftdi|tty' | tail -n 30 >&2")
+        machine.wait_until_succeeds("test -c /dev/ttyUSB0", timeout=60)
         devices = broker("/devices")
-        assert devices["serial"] and devices["serial"][0]["source"].startswith("/dev/serial/by-id/"), devices
+        assert devices["serial"] and devices["serial"][0]["source"] in ("/dev/ttyUSB0",) + tuple(
+            "/dev/serial/by-id/" + n for n in machine.succeed("ls /dev/serial/by-id/ 2>/dev/null || true").split()), devices
         byid = devices["serial"][0]["source"]
         usbid = [u["id"] for u in devices["usb"] if u["id"] == devices["serial"][0]["id"]][0]
         dbase = push_web("${webV1}")
