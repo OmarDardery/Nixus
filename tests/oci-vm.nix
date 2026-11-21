@@ -24,9 +24,23 @@ let
       '')
     ];
   };
+  # Three versions of one tag for the image update scenario (#61).
+  webImage = version: withBusybox: pkgs.dockerTools.buildImage {
+    name = "nixus/webbase";
+    tag = "1";
+    copyToRoot = (if withBusybox then [ pkgs.busybox ] else [ ]) ++ [
+      (pkgs.runCommand "web-root-${version}" { } ''
+        mkdir -p $out/etc
+        echo ${version} > $out/etc/web-version
+      '')
+    ];
+  };
+  webV1 = webImage "v1" true;
+  webV2 = webImage "v2" true;
+  webBroken = webImage "broken" false;
 in pkgs.testers.runNixOSTest {
   name = "nixus-oci";
-  globalTimeout = 1500;
+  globalTimeout = 2700;
   node.specialArgs = {
     inventory = settings;
     installedBase = { ... }: { system.stateVersion = "26.05"; };
@@ -35,7 +49,7 @@ in pkgs.testers.runNixOSTest {
     imports = [ ../configuration-bootstrap.nix ];
     virtualisation = { memorySize = 4096; diskSize = 8192; cores = 2; };
     boot.kernelModules = lib.mkForce [ ];
-    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo ];
+    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
     services.dockerRegistry = { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
     # The local fixture registry has no TLS; mark only it as insecure.
     environment.etc."containers/registries.conf".text = ''
@@ -183,6 +197,112 @@ in pkgs.testers.runNixOSTest {
         assert running[0]["config"]["volatile.base_image"] == artifact["incusFingerprint"], running[0]["config"]
         served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
+
+    with subtest("project backup: config, Incus data, encrypted off-host copy and full verification"):
+        machine.succeed("install -d -m 0700 /var/lib/nixus-secrets && head -c 32 /dev/urandom | base64 > /var/lib/nixus-secrets/project-restic-password && chmod 0600 /var/lib/nixus-secrets/project-restic-password")
+        policy = ('{ ... }: { nixus.backups = { enable = true; schedule = "daily"; verification = "full";\n'
+                  '  restic = { repository = "/var/lib/nixus-restic-drill"; initialize = true; }; }; }\n')
+        breview = broker("/project/review", {"changes": {"backups.nix": policy}})
+        broker("/project/publish", {"id": breview["id"], "planHash": breview["planHash"]})
+        status = json.loads(machine.succeed("nixus-admin project-backup run"))
+        phases = {k: v["state"] for k, v in status["phases"].items()}
+        assert phases == {"config": "complete", "data": "complete", "offHost": "complete",
+                          "verification": "complete", "github": "skipped"}, status["phases"]
+        assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
+
+    with subtest("restore drill: restic restore, exact bytes, instance import and start"):
+        machine.succeed("RESTIC_PASSWORD_FILE=/var/lib/nixus-secrets/project-restic-password "
+                        "restic -r /var/lib/nixus-restic-drill restore latest --target /tmp/restore >&2")
+        restored_decl = machine.succeed("cat $(find /tmp/restore -path '*/workspace/testapp/default.nix' | head -n1)")
+        assert restored_decl == decl, restored_decl
+        restored_df = machine.succeed("cat $(find /tmp/restore -path '*/sources/testapp/Dockerfile' | head -n1)")
+        assert restored_df.encode() == files["Dockerfile"], restored_df
+        archive = machine.succeed("find /tmp/restore -name 'instance-*.tar.gz' | head -n1").strip()
+        assert archive, "no instance export in the restored snapshot"
+        machine.succeed("incus project create drill -c features.images=false -c features.profiles=false -c features.storage.volumes=false")
+        machine.succeed("incus import " + archive + " restored --project drill")
+        machine.succeed("incus start restored --project drill")
+        served = machine.succeed("incus exec restored --project drill -- /bin/cat /payload.txt")
+        assert served == "guarded-oci-build\n", served
+        running = json.loads(machine.succeed("incus list --project testapp --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
+
+    def push_web(image):
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:" + image + " docker://localhost:5000/nixus/webbase:1")
+        return machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/webbase:1 | jq -r .Digest").strip()
+
+    def run_auto(expect_ok):
+        code, out = machine.execute("nixus-admin image-updates auto 2>&1")
+        if (code == 0) != expect_ok:
+            machine.succeed("nixus-admin image-updates status >&2; journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|OCI-VM' | tail -n 60 >&2")
+        assert (code == 0) == expect_ok, out
+
+    def web_instance():
+        found = json.loads(machine.succeed("incus list --project web --format=json"))
+        assert len(found) == 1, found
+        return found[0]
+
+    def web_exec(command):
+        return machine.succeed("incus exec " + web_instance()["name"] + " --project web -- /bin/sh -c '" + command + "'")
+
+    with subtest("image updates: deploy a Compose project with a named volume and an auto policy"):
+        d1 = push_web("${webV1}")
+        web_files = {
+            "Dockerfile": ("FROM localhost:5000/nixus/webbase:1@" + d1 + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
+            "compose.yaml": b"services:\n  app:\n    build: .\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n",
+        }
+        wentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in web_files.items()]
+        wp = broker("/project-import/prepare", {"project": "web", "files": wentries})
+        for p, d in web_files.items():
+            broker("/project-import/chunk", {"id": wp["id"], "path": p, "offset": 0, "data": base64.b64encode(d).decode()})
+        ws = broker("/project-import/finish", {"id": wp["id"], "manifestHash": wp["manifestHash"]})
+        wr = broker("/project-import/review", {"id": wp["id"], "manifestHash": ws["manifestHash"]})
+        web_rev = broker("/project-import/publish", {"id": wp["id"], "reviewId": wr["reviewId"], "acknowledge": True})["revision"]
+        wo = broker("/oci/review", {"project": "web", "revision": web_rev})
+        broker("/oci/build", {"id": wo["id"], "planHash": wo["planHash"]})
+        deadline = time.time() + 900
+        while broker("/oci/status")["status"] not in ("imported", "failed", "interrupted"):
+            assert time.time() < deadline
+            time.sleep(3)
+        assert broker("/oci/status")["status"] == "imported", broker("/oci/status")
+        web_decl = '{ ... }: { nixus.project = { backend = "incus-compose"; updates = { policy = "auto"; healthSeconds = 10; }; }; }\n'
+        wrev = broker("/project/review", {"changes": {"web/default.nix": web_decl}, "sourceRevisions": {"web": web_rev}})
+        broker("/project/publish", {"id": wrev["id"], "planHash": wrev["planHash"]})
+        broker("/project/deploy", {"id": wrev["id"], "planHash": wrev["planHash"]})
+        deadline = time.time() + 900
+        while broker("/project/status")["deployment"] not in ("verified", "partial", "interrupted"):
+            assert time.time() < deadline
+            time.sleep(3)
+        assert broker("/project/status")["deployment"] == "verified", broker("/project/status")
+        assert web_exec("cat /etc/web-version").strip() == "v1"
+        web_exec("echo keep-me > /data/marker")
+
+    with subtest("image updates: a new digest is applied automatically and volume data survives"):
+        d2 = push_web("${webV2}")
+        checked = json.loads(machine.succeed("nixus-admin image-updates check"))
+        img = [i for i in checked["projects"]["web"]["images"] if i["file"] == "Dockerfile"][0]
+        assert img["status"] == "update-available" and img["latest"] == d2, img
+        run_auto(True)
+        view = json.loads(machine.succeed("nixus-admin image-updates status"))
+        assert view["projects"]["web"]["lastUpdate"]["status"] == "updated", view["projects"]["web"]
+        assert web_instance()["status"] == "Running"
+        assert web_exec("cat /etc/web-version").strip() == "v2"
+        assert web_exec("cat /data/marker").strip() == "keep-me"
+
+    with subtest("image updates: a broken image is rolled back, data restored, digest held"):
+        web_exec("echo still-here > /data/marker")
+        d3 = push_web("${webBroken}")
+        machine.succeed("nixus-admin image-updates check >&2")
+        run_auto(False)
+        view = json.loads(machine.succeed("nixus-admin image-updates status"))
+        assert view["projects"]["web"]["lastUpdate"]["status"] == "rolled-back", view["projects"]["web"]
+        assert d3 in view["projects"]["web"]["holds"], view["projects"]["web"]
+        assert web_instance()["status"] == "Running"
+        assert web_exec("cat /etc/web-version").strip() == "v2"
+        assert web_exec("cat /data/marker").strip() == "still-here"
+        rechecked = json.loads(machine.succeed("nixus-admin image-updates check"))
+        assert rechecked["projects"]["web"]["updates"] == 0, rechecked["projects"]["web"]
+        run_auto(True)
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"

@@ -40,6 +40,13 @@ assert.doesNotMatch(text, /password/i, "the policy must never contain credential
 vm.runInContext("imageUpdates.status = { checkedAt: 1, projects: { app: { updates: 1, images: [ { file: \"compose.yaml\", ref: \"<b>x</b>\", status: \"update-available\", digest: \"sha256:aa\", latest: \"sha256:bbbbbbbbbbbbbbbbbbbb\" } ] } } }", context);
 const updates = vm.runInContext("imageUpdatesCard()", context);
 assert.match(updates, /data-image-update="app"/);
+assert.match(updates, /data-image-apply="app"/, "update-now action is offered");
+assert.match(updates, /data-image-hold="app" data-digest="sha256:bbbbbbbbbbbbbbbbbbbb" data-held="0"/, "skip-this-version action is offered");
+vm.runInContext("imageUpdates.status = { checkedAt: 1, projects: { app: { updates: 0, lastUpdate: { status: \"rolled-back\", error: \"<i>bad</i>\" }, images: [ { file: \"Dockerfile\", ref: \"r\", status: \"held\", digest: \"sha256:aa\", latest: \"sha256:cc\" } ] } } }", context);
+const held = vm.runInContext("imageUpdatesCard()", context);
+assert.match(held, /data-held="1"/, "held digests offer release");
+assert.doesNotMatch(held, /data-image-apply/, "no update action without an unheld update");
+assert.doesNotMatch(held, /<i>bad<\/i>/, "update errors are escaped");
 assert.match(updates, /update-available/);
 assert.doesNotMatch(updates, /<b>x<\/b>/, "image references must be escaped");
 

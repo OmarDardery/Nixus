@@ -222,18 +222,47 @@ function imageUpdatesCard() {
   const rows = projects.map(([name, project]) => (project.images || []).map(img =>
     "<tr><td>" + esc(name) + "</td><td><code>" + esc(img.file) + "</code></td><td><code>" + esc(img.ref) + "</code></td><td>" +
     projectStatusBadge(img.status) + (img.detail ? " " + esc(img.detail) : "") + "</td><td>" +
-    (img.latest && img.latest !== img.digest ? "<code>" + esc(img.latest.slice(7, 19)) + "</code>" : "") + "</td></tr>").join("")).join("");
+    (img.latest && img.latest !== img.digest ? "<code>" + esc(img.latest.slice(7, 19)) + "</code> " +
+      holdButton(name, img.latest, img.status === "held") : "") + "</td></tr>").join("")).join("");
+  const history = projects.filter(([, p]) => p.lastUpdate).map(([name, p]) =>
+    "<li>" + esc(name) + ": " + projectStatusBadge(p.lastUpdate.status) +
+    (p.lastUpdate.error ? " " + esc(p.lastUpdate.error) : "") + "</li>").join("");
   const updatable = projects.filter(([, p]) => p.updates > 0).map(([name]) => name);
   return card("Image updates",
     "<p>Last check: " + esc(checked) + ". A daily check asks each registry for the current digest of every tracked tag. Nothing is pulled or changed.</p>" +
     '<button type="button" id="image-updates-check"' + (imageUpdates.busy ? " disabled" : "") + ">Check now</button>" +
     (rows ? '<div class="table-wrap"><table><thead><tr><th>Project</th><th>File</th><th>Image</th><th>Status</th><th>New digest</th></tr></thead><tbody>' +
       rows + "</tbody></table></div>" : "<p>No published project images yet.</p>") +
-    (updatable.length ? "<p>Preparing an update stages a new source revision with only the changed digests replaced. Review, publish, build and deploy it as usual; the previous revision stays available for rollback.</p>" +
+    (history ? "<p>Last update per project:</p><ul>" + history + "</ul>" : "") +
+    (updatable.length ? "<p><strong>Update now</strong> re-pins the new digests, rebuilds offline, snapshots the project's volumes, deploys and waits for a health check. " +
+      "If anything fails it restores the snapshot, redeploys the previous images and holds the failed digest. Projects with <code>updates.policy = \"auto\"</code> do this on the daily check.</p>" +
+      "<p>Preparing an update stages a new source revision with only the changed digests replaced. Review, publish, build and deploy it as usual; the previous revision stays available for rollback.</p>" +
       '<label class="field"><span>Current administrator password</span><input type="password" id="image-update-password" autocomplete="current-password"></label>' +
-      updatable.map(name => '<button type="button" data-image-update="' + esc(name) + '">Prepare update for ' + esc(name) + "</button> ").join("") : "") +
+      updatable.map(name => '<button type="button" data-image-apply="' + esc(name) + '">Update ' + esc(name) + " now</button> " +
+        '<button type="button" class="small" data-image-update="' + esc(name) + '">Prepare update for ' + esc(name) + "</button> ").join("") : "") +
     (imageUpdates.error ? '<p class="error" role="alert">' + esc(imageUpdates.error) + "</p>" : "") +
     (imageUpdates.message ? '<p role="status">' + esc(imageUpdates.message) + "</p>" : ""));
+}
+
+function holdButton(project, digest, held) {
+  return '<button type="button" class="small" data-image-hold="' + esc(project) + '" data-digest="' + esc(digest) + '" data-held="' +
+    (held ? "1" : "0") + '">' + (held ? "Release hold" : "Skip this version") + "</button>";
+}
+
+async function imageUpdateRequest(path, body, message) {
+  if (imageUpdates.busy) return;
+  imageUpdates.busy = true;
+  imageUpdates.error = imageUpdates.message = "";
+  try {
+    await api(path, body);
+    imageUpdates.message = message;
+    imageUpdates.status = await api("image-updates");
+  } catch (error) {
+    imageUpdates.error = error.message || "Image update action failed.";
+  } finally {
+    imageUpdates.busy = false;
+    if (state.page === "projects") shell();
+  }
 }
 
 async function refreshImageUpdates() {
@@ -274,4 +303,17 @@ function bindImageUpdates() {
   document.querySelector("#image-updates-check")?.addEventListener("click", () => void imageUpdateAction(""));
   for (const button of document.querySelectorAll("[data-image-update]"))
     button.addEventListener("click", () => void imageUpdateAction(button.dataset.imageUpdate));
+  for (const button of document.querySelectorAll("[data-image-apply]")) {
+    button.addEventListener("click", () => {
+      const current = document.querySelector("#image-update-password")?.value || "";
+      if (!current) { imageUpdates.error = "Enter your administrator password."; shell(); return; }
+      void imageUpdateRequest("image-updates/apply", { project: button.dataset.imageApply, current },
+        "Update started for " + button.dataset.imageApply + ". Progress appears under “Last update per project”.");
+    });
+  }
+  for (const button of document.querySelectorAll("[data-image-hold]")) {
+    button.addEventListener("click", () => void imageUpdateRequest("image-updates/hold",
+      { project: button.dataset.imageHold, digest: button.dataset.digest, hold: button.dataset.held !== "1" },
+      button.dataset.held === "1" ? "Hold released." : "This version will be skipped until you release the hold."));
+  }
 }

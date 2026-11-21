@@ -68,13 +68,56 @@ published source is never modified.
 are replaced; every other byte is unchanged. Review, publish, build and deploy it like any other
 revision. The previous revision stays published history for rollback.
 
+### Automatic, health-gated updates (#61)
+
+Set a policy in the project's `default.nix`:
+
+```nix
+{ ... }: {
+  nixus.project = {
+    backend = "incus-compose";
+    updates = {
+      policy = "auto";          # manual (default) | notify | auto
+      window = "02:00-05:00";   # local time; null = any time
+      healthSeconds = 60;       # how long services must stay running
+    };
+  };
+}
+```
+
+- `manual` only reports updates on the card.
+- `notify` also fails the `nixus-image-updates` unit while an update is waiting, so the failure
+  webhook fires (enable `nixus.notifications`).
+- `auto` applies updates after the daily check, inside the window, one project at a time.
+
+**Update now** on the card (or `sudo nixus-admin image-updates apply PROJECT`) runs the same
+transaction:
+
+1. Stage and publish a revision with only the new digests.
+2. Rebuild offline and import.
+3. Snapshot every custom volume in the project's Incus project.
+4. Deploy through a reviewed project revision. The review may rebind a source revision without
+   any Nix edit.
+5. Wait `healthSeconds`, then require every service to run the new image.
+
+If a step after publication fails, Nixus publishes the previous revision again, stops the
+project's instances, restores the volume snapshots, redeploys the previous images, and **holds**
+the failed digests so they are not retried. A failed rebuild changes nothing that is running.
+**Skip this version** holds a digest by hand; **Release hold** (or `image-updates unhold PROJECT
+DIGEST`) lets it be offered again. Each update is recorded in the audit log, and its journal is
+shown on the card. Snapshots named `nixus-update-*` are kept for manual inspection.
+
+Registries on `localhost:PORT` or `127.0.0.1:PORT` are queried over plain HTTP, as Docker does.
+Every other registry must use HTTPS.
+
 ## Still open
 
 - The incus-compose health daemon and DNS sidecar (currently disabled because they pull
   registry images).
 - Images whose files belong to non-root users cannot be built yet, because the sandbox maps only
   one user.
-- Automatic, health-gated application of image updates with snapshot rollback (#61).
+- Application-level health checks (HTTP or command probes). Updates currently gate on every
+  service running the new image for `healthSeconds`.
 
 ## Scope
 

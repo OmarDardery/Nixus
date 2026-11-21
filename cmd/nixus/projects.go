@@ -345,8 +345,12 @@ func validateInventory(raw M) (M, error) {
 		if !fullmatch(projectName, name) || p == nil {
 			return nil, Public("Invalid declarative project identity")
 		}
-		if !exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances") {
+		if !exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances") &&
+			!exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances", "updates") {
 			return nil, Public("Unknown project inventory field")
+		}
+		if err := validateUpdatePolicy(p["updates"]); err != nil {
+			return nil, err
 		}
 		if err := validateNativeDeclarations(p); err != nil {
 			return nil, err
@@ -1072,9 +1076,15 @@ func (t *ProjectTransactions) review(changesArg any, principal string, sourceRev
 	if !ok {
 		return nil, Public("Supply one to sixteen project Nix file edits")
 	}
-	changes, err := projectPatches(changesM)
-	if err != nil {
-		return nil, err
+	// A review may only rebind published source revisions (for example an
+	// image update) without editing any Nix file.
+	rebindOnly := len(changesM) == 0 && len(obj(sourceRevisions)) > 0
+	changes := changesM
+	var err error
+	if !rebindOnly {
+		if changes, err = projectPatches(changesM); err != nil {
+			return nil, err
+		}
 	}
 	return lockedValue(false, func() (M, error) {
 		if err := t.rootState(""); err != nil {
@@ -1147,7 +1157,7 @@ func (t *ProjectTransactions) review(changesArg any, principal string, sourceRev
 		if err != nil {
 			return nil, err
 		}
-		if str(before["sourceHash"]) == str(after["sourceHash"]) {
+		if str(before["sourceHash"]) == str(after["sourceHash"]) && !rebindOnly {
 			return nil, Public("Project source has no changes to publish")
 		}
 		if again, err := validateWorkspace(live, true); err != nil || str(again["sourceHash"]) != str(before["sourceHash"]) {
@@ -1580,4 +1590,32 @@ func (t *ProjectTransactions) cancel(identityArg any) (M, error) {
 		audit("project-source-cancelled", M{"identity": identity})
 		return t.status(identity)
 	})
+}
+
+// abandonDeployment releases a partial or interrupted deployment so a
+// rollback can deploy the previous revision. The journal is kept and marked
+// superseded; nothing in Incus is changed here.
+func (t *ProjectTransactions) abandonDeployment(identity, reason string) error {
+	_, err := lockedValue(false, func() (M, error) {
+		if str(readObj(filepath.Join(t.state, "project-deploy-active.json"))["id"]) != identity {
+			return nil, Public("Only the active project deployment can be superseded")
+		}
+		dir, err := t.job(identity)
+		if err != nil {
+			return nil, err
+		}
+		path := filepath.Join(dir, "deployment.json")
+		journal := readObj(path)
+		if s := str(journal["status"]); s != "partial" && s != "interrupted" {
+			return nil, Public("Only a stopped deployment can be superseded")
+		}
+		journal["status"], journal["supersededAt"], journal["supersededReason"] = "superseded", now(), reason
+		if err := writeJSON(path, journal); err != nil {
+			return nil, err
+		}
+		durableUnlink(filepath.Join(t.state, "project-deploy-active.json"))
+		audit("project-deploy-superseded", M{"identity": identity, "reason": reason})
+		return M{}, nil
+	})
+	return err
 }

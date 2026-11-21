@@ -9,7 +9,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"net/http"
 	"os"
 	"path"
@@ -224,8 +223,17 @@ func anonymousToken(challenge string) (string, error) {
 }
 
 // registryDigest returns the manifest digest a tag currently points to.
+// registrySchemeFor uses plain HTTP only for loopback registries (as Docker
+// and containers/image do); every other registry must use HTTPS.
+func registrySchemeFor(registry string) string {
+	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
+		return "http"
+	}
+	return registryScheme
+}
+
 var registryDigest = func(r imageRef) (string, error) {
-	url := registryScheme + "://" + registryHost(r.Registry) + "/v2/" + r.Repository + "/manifests/" + r.Tag
+	url := registrySchemeFor(r.Registry) + "://" + registryHost(r.Registry) + "/v2/" + r.Repository + "/manifests/" + r.Tag
 	head := func(token string) (*http.Response, error) {
 		req, _ := http.NewRequest("HEAD", url, nil)
 		req.Header.Set("Accept", manifestAccept)
@@ -288,6 +296,7 @@ func checkImageUpdates() (M, error) {
 			continue
 		}
 		images := imageLock(folder, files)
+		held := heldDigests(e.Name())
 		updates := 0
 		for _, raw := range images {
 			img := obj(raw)
@@ -305,6 +314,8 @@ func checkImageUpdates() (M, error) {
 					img["status"], img["detail"] = "error", publicError(err)
 				} else if latest == str(img["digest"]) {
 					img["status"], img["latest"] = "current", latest
+				} else if held[latest] {
+					img["status"], img["latest"] = "held", latest
 				} else {
 					img["status"], img["latest"] = "update-available", latest
 					updates++
@@ -388,35 +399,13 @@ func prepareImageUpdate(actor string, projectArg any) (M, error) {
 	for _, f := range files {
 		entries = append(entries, M{"path": f.Path, "size": len(contents[f.Path]), "sha256": sha256hex(contents[f.Path])})
 	}
-	return lockedValue(false, func() (M, error) {
-		staging, err := NewImportStaging("")
-		if err != nil {
-			return nil, err
-		}
-		candidate, err := staging.prepare(actor, project, entries, false)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range files {
-			data := contents[f.Path]
-			for off := 0; off < len(data); off += importMaxChunk {
-				end := off + importMaxChunk
-				if end > len(data) {
-					end = len(data)
-				}
-				if _, err := staging.chunk(candidate["id"], actor, f.Path, float64(off), base64.StdEncoding.EncodeToString(data[off:end])); err != nil {
-					return nil, err
-				}
-			}
-		}
-		result, err := staging.finish(candidate["id"], actor, candidate["manifestHash"])
-		if err != nil {
-			return nil, err
-		}
-		result["imageChanges"] = changed
-		audit("image-update-prepared", M{"principal": actor, "project": project, "changes": len(changed)})
-		return result, nil
-	})
+	result, err := stageFiles(actor, project, entries, files, contents)
+	if err != nil {
+		return nil, err
+	}
+	result["imageChanges"] = changed
+	audit("image-update-prepared", M{"principal": actor, "project": project, "changes": len(changed)})
+	return result, nil
 }
 
 func imageUpdatesCLI(args []string) error {
@@ -428,10 +417,31 @@ func imageUpdatesCLI(args []string) error {
 		return err
 	}
 	if len(args) == 1 && args[0] == "status" {
-		printJSON(readObj(imageUpdatesPath()))
+		printJSON(imageUpdatesView())
 		return nil
 	}
-	return Public("usage: nixus-admin image-updates {check|status}")
+	if len(args) == 1 && args[0] == "auto" {
+		result, err := autoImageUpdates()
+		if result != nil {
+			printJSON(result)
+		}
+		return err
+	}
+	if len(args) == 2 && args[0] == "apply" {
+		result, err := applyImageUpdate("root", args[1])
+		if result != nil {
+			printJSON(result)
+		}
+		return err
+	}
+	if len(args) == 3 && (args[0] == "hold" || args[0] == "unhold") {
+		result, err := setHold("root", args[1], args[2], args[0] == "hold", "held from the root CLI")
+		if err == nil {
+			printJSON(result)
+		}
+		return err
+	}
+	return Public("usage: nixus-admin image-updates {check|status|auto|apply PROJECT|hold PROJECT DIGEST|unhold PROJECT DIGEST}")
 }
 
 // --- pinned base images for the offline builder ------------------------------------

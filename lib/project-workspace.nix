@@ -120,6 +120,16 @@ let
         default = {};
         description = "Metadata-only per-instance SOPS secret delivery declarations.";
       };
+      # Image updates for Compose projects (#61): manual (default) only reports,
+      # notify also fails the check unit so a webhook fires, auto applies
+      # inside the optional maintenance window with snapshot and rollback.
+      updates.policy = mkOption { type = types.enum [ "manual" "notify" "auto" ]; default = "manual"; };
+      updates.window = mkOption {
+        type = types.nullOr (types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]");
+        default = null;
+        description = "Local-time maintenance window such as 02:00-05:00; null means any time.";
+      };
+      updates.healthSeconds = mkOption { type = types.ints.between 5 3600; default = 60; };
       backup.enable = mkOption { type = types.bool; default = true; };
       backup.consistency = mkOption {
         type = types.enum [ "stop" "quiesce" "none" ];
@@ -267,7 +277,7 @@ let
       fail "Project ${directoryName} exceeds 256 Nix module files"
     else {
       name = p.name;
-      inherit (p) enable backend incusProject resources secrets backup storagePool volumes instances;
+      inherit (p) enable backend incusProject resources secrets backup storagePool volumes instances updates;
       claims = lib.unique (p.claims ++ map (name: "instance/${name}") (sorted (builtins.attrNames p.instances)));
       source = directoryName;
       modules = map (path:
