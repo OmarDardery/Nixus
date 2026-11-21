@@ -20,6 +20,10 @@ var envAPI = func(method, path string, body any, etag string) (M, string, error)
 	if err != nil {
 		return nil, "", Public("Incus refused the environment change")
 	}
+	// PUT is asynchronous; a restart before it finishes is refused as busy.
+	if err := waitOperation(payload); err != nil {
+		return nil, "", Public("Incus did not apply the environment change")
+	}
 	return obj(payload["metadata"]), tag, nil
 }
 

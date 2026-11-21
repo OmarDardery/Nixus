@@ -120,23 +120,29 @@ func writeInstance(project, name string, data M, etag string) error {
 	if err != nil {
 		return err
 	}
-	if str(payload["type"]) == "async" {
-		op, err := url.Parse(str(payload["operation"]))
-		if err != nil || op.Host != "" || !strings.HasPrefix(op.Path, "/1.0/operations/") {
-			return Hidden("Invalid Incus operation path")
-		}
-		wait := op.Path + "/wait"
-		if op.RawQuery != "" {
-			wait += "?" + op.RawQuery
-		}
-		out, err := incusCLI("query", wait)
-		if err != nil {
-			return err
-		}
-		result, _ := parseObject([]byte(out))
-		if v, _ := num(result["status_code"]); v != 200 {
-			return Hidden("Incus configuration operation failed")
-		}
+	return waitOperation(payload)
+}
+
+// waitOperation blocks until an async Incus response's operation finishes.
+func waitOperation(payload M) error {
+	if str(payload["type"]) != "async" {
+		return nil
+	}
+	op, err := url.Parse(str(payload["operation"]))
+	if err != nil || op.Host != "" || !strings.HasPrefix(op.Path, "/1.0/operations/") {
+		return Hidden("Invalid Incus operation path")
+	}
+	wait := op.Path + "/wait"
+	if op.RawQuery != "" {
+		wait += "?" + op.RawQuery
+	}
+	out, err := incusCLI("query", wait)
+	if err != nil {
+		return err
+	}
+	result, _ := parseObject([]byte(out))
+	if v, _ := num(result["status_code"]); v != 200 {
+		return Hidden("Incus configuration operation failed")
 	}
 	return nil
 }
