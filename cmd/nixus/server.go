@@ -174,6 +174,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return NewSecrets("", "", "").inventory()
 	case strings.HasPrefix(p, "/deployment/"):
 		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
+	case p == "/apps":
+		return appJobs(), nil
 	case p == "/image-updates":
 		return imageUpdatesView(), nil
 	case p == "/project-overview":
@@ -376,8 +378,16 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return checkImageUpdates()
 	case "/image-updates/prepare":
 		return prepareImageUpdate(actor, body["project"])
+	case "/apps/deploy":
+		return startAppDeploy(actor, body)
+	case "/apps/backup-policy":
+		return saveBackupPolicy(actor, body["policy"])
+	case "/apps/backup-run":
+		return startProjectBackup(actor)
 	case "/image-updates/apply":
 		return startImageUpdate(actor, body["project"])
+	case "/image-updates/apply-all":
+		return startAllImageUpdates(actor)
 	case "/image-updates/hold":
 		return setHold(actor, body["project"], body["digest"], ack(body["hold"]), "held by an administrator")
 	case "/revoke-browser-certificate":
@@ -620,8 +630,8 @@ func (a *Auth) stageCertificate(s *session, result M) (M, error) {
 
 var staticAssets = map[string][2]string{
 	"/": {"index.html", "text/html; charset=utf-8"}, "/app.js": {"app.js", "text/javascript; charset=utf-8"},
-	"/projects.js": {"projects.js", "text/javascript; charset=utf-8"}, "/incus-projects.js": {"incus-projects.js", "text/javascript; charset=utf-8"},
-	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/project-console.js": {"project-console.js", "text/javascript; charset=utf-8"}, "/paste-source.js": {"paste-source.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
+	"/projects.js": {"projects.js", "text/javascript; charset=utf-8"}, "/apps.js": {"apps.js", "text/javascript; charset=utf-8"}, "/quick.js": {"quick.js", "text/javascript; charset=utf-8"},
+	"/incus-secrets.js": {"incus-secrets.js", "text/javascript; charset=utf-8"}, "/api.js": {"api.js", "text/javascript; charset=utf-8"},
 	"/events.js": {"events.js", "text/javascript; charset=utf-8"}, "/operations.js": {"operations.js", "text/javascript; charset=utf-8"},
 	"/commands.js": {"commands.js", "text/javascript; charset=utf-8"}, "/setup.js": {"setup.js", "text/javascript; charset=utf-8"},
 	"/foundation.js": {"foundation.js", "text/javascript; charset=utf-8"}, "/style.css": {"style.css", "text/css; charset=utf-8"},
@@ -631,7 +641,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
 var portalActions = map[string]bool{}
@@ -643,7 +653,7 @@ func init() {
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
-		/api/image-updates/apply /api/image-updates/hold`) {
+		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-policy /api/apps/backup-run /api/image-updates/apply-all`) {
 		portalActions[a] = true
 	}
 }
@@ -990,7 +1000,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply":
+	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-policy", "/api/image-updates/apply-all":
 		if strings.HasPrefix(path, "/api/oci/") && !ack(body["acknowledge"]) {
 			return Public("Explicitly acknowledge the offline OCI build and resource costs")
 		}

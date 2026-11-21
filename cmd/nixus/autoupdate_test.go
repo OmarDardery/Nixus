@@ -107,3 +107,10 @@ func TestPlainNamedVolumeAcceptsOnlyComposeDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestStartAllImageUpdatesNeedsAnUpdate(t *testing.T) {
+	useState(t)
+	if _, err := startAllImageUpdates("admin"); err == nil || !strings.Contains(publicError(err), "up to date") {
+		t.Fatalf("started with nothing to update: %v", err)
+	}
+}

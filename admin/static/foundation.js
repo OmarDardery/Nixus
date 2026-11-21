@@ -3,13 +3,13 @@
 function settingsMigrationReview() {
   const migration = state.status.job?.settingsMigration;
   if (!migration || migration.from === migration.to) return "";
-  return card("Settings schema migration", `<p>Version ${esc(migration.from)} → ${esc(migration.to)}. Reading settings does not rewrite the installed file. This reviewed activation publishes the candidate; rollback retains the previous settings and source.</p>`);
+  return card("Settings schema migration", `<p>Version ${esc(migration.from)} → ${esc(migration.to)}.</p>`);
 }
 
 function candidateOverridesReview() {
   const overrides = state.status.job?.candidateOverrides;
   if (!overrides?.length) return "";
-  return card("Host module overrides in this candidate", `<p>These evaluated values take precedence over the JSON intent. Change their owning host modules to change them.</p>${overrides.map(item => `<div class="diff"><code>${esc(item.setting)}</code><span class="before">${esc(JSON.stringify(item.before))}</span><span class="after">${esc(JSON.stringify(item.after))}</span></div>`).join("")}`);
+  return card("Host module overrides in this candidate", `${overrides.map(item => `<div class="diff"><code>${esc(item.setting)}</code><span class="before">${esc(JSON.stringify(item.before))}</span><span class="after">${esc(JSON.stringify(item.after))}</span></div>`).join("")}`);
 }
 
 function guestDeploymentReview() {
@@ -21,7 +21,7 @@ function guestDeploymentReview() {
     const status = deployment?.targets?.[target.id];
     return `<tr><td><code>${esc(target.project)}/${esc(target.name)}</code><br><small>${esc(target.dependsOn.length ? "After: " + target.dependsOn.join(", ") : "After host confirmation")}</small></td><td><small>Current: <code>${esc(status?.currentSystem || target.currentSystem || "Unknown / not yet reachable")}</code><br>Target: <code>${esc(target.targetSystem)}</code></small></td><td>${esc(status?.phase || "Not deployed")}<br><small>${esc(status?.attempts || 0)}/${esc(target.maxAttempts)} attempts · reboot: ${esc(target.restartPolicy)}<br>Checks: ${esc(target.healthUnits.join(", "))}${target.httpChecks ? " · " + esc(target.httpChecks) + " HTTP" : ""}</small>${status?.checkedAt ? `<p><small>Last passed: ${esc(new Date(status.checkedAt * 1000).toLocaleString())}</small></p>` : ""}${status?.error ? `<p class="error">${esc(status.error)}</p>` : !status && target.observation ? `<p>${esc(target.observation)}</p>` : ""}</td></tr>`;
   }).join("");
-  return card("Guest deployment", `<p>Host access and guest health are separate. After confirming the host, deploy these reviewed OS closures in dependency order. Overall: <b>${esc(deployment?.status || "Not started")}</b>.</p><div class="table-wrap" tabindex="0"><table><thead><tr><th>Guest & order</th><th>OS generations</th><th>Deployment state</th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${esc(plan.boundary)}</p>${deployment?.error ? `<p class="error">${esc(deployment.error)}</p>` : ""}<div class="actions"><button data-action="deploy-guests" ${!administrator() || job.status !== "confirmed" || busy || deployment?.status === "abandoned" ? "disabled" : ""}>${deployment ? "Resume / recheck guests" : "Deploy reviewed guests"}</button>${deployment && !busy && deployment.status !== "abandoned" ? `<button data-action="abandon-deployment" ${!administrator() ? "disabled" : ""}>Abandon retries</button>` : ""}</div><p><a href="/docs/guest-deployments.md">Guest update and recovery guide →</a></p>`);
+  return card("Guest deployment", `<p>Overall: <b>${esc(deployment?.status || "Not started")}</b>.</p><div class="table-wrap" tabindex="0"><table><thead><tr><th>Guest & order</th><th>OS generations</th><th>Deployment state</th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${esc(plan.boundary)}</p>${deployment?.error ? `<p class="error">${esc(deployment.error)}</p>` : ""}<div class="actions"><button data-action="deploy-guests" ${!administrator() || job.status !== "confirmed" || busy || deployment?.status === "abandoned" ? "disabled" : ""}>${deployment ? "Resume / recheck guests" : "Deploy reviewed guests"}</button>${deployment && !busy && deployment.status !== "abandoned" ? `<button data-action="abandon-deployment" ${!administrator() ? "disabled" : ""}>Abandon retries</button>` : ""}</div><p><a href="/docs/guest-deployments.md">Guest update and recovery guide →</a></p>`);
 }
 
 function impactReview() {
@@ -56,7 +56,7 @@ function guestNetwork() {
   const stale = !freshObservation(snapshot);
   const tools = managementServices();
   const incus = tools.find(tool => tool.name === "Incus");
-  if (!snapshot?.available) return card("Guests & addresses", `<p>${esc(failed || "Guest inventory is not available yet.")}</p><p class="note">No empty or healthy inventory is assumed. Incus retains guest and network management.</p><a href="/docs/networking.md">Networking guide</a>`);
+  if (!snapshot?.available) return card("Guests & addresses", `<p>${esc(failed || "Guest inventory is not available yet.")}</p><a href="/docs/networking.md">Networking guide</a>`);
   const conflicts = (snapshot.conflicts || []).map(item => `<li><code>${esc(item.address)}</code> on ${esc(item.project)}/${esc(item.network)}: ${esc(item.owners.join(", "))}</li>`).join("");
   const topologyNote = snapshot.bridgeTopologyAvailable === false
     ? '<p class="note">Host bridge membership is unavailable.</p>' : "";
@@ -64,7 +64,7 @@ function guestNetwork() {
     const nics = guest.nics.length ? guest.nics : [{name: "—", network: "Not reported", observed: guest.observed, reserved: []}];
     return nics.map((nic, index) => `<tr>${index === 0 ? `<td rowspan="${nics.length}"><b>${esc(guest.name)}</b><br><small>${esc(guest.project)} · ${esc(guest.type === "virtual-machine" ? "VM" : guest.type)}</small></td><td rowspan="${nics.length}">${esc(guest.status)}</td>` : ""}<td>${esc(nic.network)}<br><small>${esc(nic.name)}</small>${guestNicDetails(nic)}</td><td>${nic.observed.map(ip => `<code>${esc(ip)}</code>`).join("<br>") || '<span class="muted">Not reported</span>'}</td><td>${nic.reserved.map(ip => `<code>${esc(ip)}</code>`).join("<br>") || '<span class="muted">Dynamic / not set</span>'}${nic.unobservedReservation ? '<br><small class="error">Reservation not observed</small>' : ""}</td></tr>`);
   }).join("");
-  return card("Guests & addresses", `${failed || stale ? `<p class="error">${esc(failed || "Inventory is stale. Refresh before relying on these addresses.")}</p>` : ""}${conflicts ? `<div class="network-warning"><b>Potential address conflict</b><ul>${conflicts}</ul></div>` : ""}${topologyNote}<div class="table-wrap guest-addresses" tabindex="0" role="region" aria-label="Guest network addresses"><table><thead><tr><th>Guest / project</th><th>State</th><th>Network / NIC</th><th>Reported IP</th><th>Reservation</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No guests reported by Incus.</td></tr>'}</tbody></table></div><p class="note">Reported addresses come from Incus, not an application health check. Reservations are configuration, not proof of connectivity. Last checked: ${esc(new Date(snapshot.checkedAt * 1000).toLocaleTimeString())}.</p><div class="service-shortcuts">${incus?.url ? `<a href="${esc(incus.url)}" target="_blank" rel="noopener noreferrer">Manage guests & IPs in Incus</a>` : ""}<a href="/docs/networking.md">Addressing & routing guide</a><a href="https://linuxcontainers.org/incus/docs/main/howto/network_manage/" target="_blank" rel="noopener noreferrer">Incus network docs</a></div>`, "Read-only · all projects");
+  return card("Guests & addresses", `${failed || stale ? `<p class="error">${esc(failed || "Inventory is stale. Refresh before relying on these addresses.")}</p>` : ""}${conflicts ? `<div class="network-warning"><b>Potential address conflict</b><ul>${conflicts}</ul></div>` : ""}${topologyNote}<div class="table-wrap guest-addresses" tabindex="0" role="region" aria-label="Guest network addresses"><table><thead><tr><th>Guest / project</th><th>State</th><th>Network / NIC</th><th>Reported IP</th><th>Reservation</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No guests reported by Incus.</td></tr>'}</tbody></table></div><p class="note">Last checked: ${esc(new Date(snapshot.checkedAt * 1000).toLocaleTimeString())}.</p><div class="service-shortcuts">${incus?.url ? `<a href="${esc(incus.url)}" target="_blank" rel="noopener noreferrer">Manage guests & IPs in Incus</a>` : ""}<a href="/docs/networking.md">Addressing & routing guide</a><a href="https://linuxcontainers.org/incus/docs/main/howto/network_manage/" target="_blank" rel="noopener noreferrer">Incus network docs</a></div>`, "Read-only · all projects");
 }
 
 function hostOverview() {
@@ -85,7 +85,8 @@ function hostOverview() {
   const backupDetail = !s.backup?.enable ? "Not configured" : fresh ? "Host-reported status only" : "No fresh verification";
   const hostSignal = !fresh || !known ? "Unknown" : degraded.length || failed.length ? "Attention" : "Healthy";
   const hostDetail = !fresh ? "Status unavailable or stale" : !known ? "No loaded services observed" : "Observed host services";
-  return title("", "Overview", "Current host state, observed guests and the native tools that manage them.")
+  return title("", "Overview", "Server status and quick actions.")
+    + (typeof quickActions === "function" ? quickActions() : "")
     + `<div class="stats">
        <div class="stat"><div class="label">Host services</div><div class="value">${esc(hostSignal)}</div><div class="detail">${esc(hostDetail)}</div></div>
        <div class="stat"><div class="label">Incus guests</div><div class="value">${esc(guestCount)}</div><div class="detail">${esc(guestDetail)}</div></div>
@@ -117,12 +118,11 @@ function hostConnectivity() {
   return (
     title(
       "PHYSICAL NETWORKING",
-      "Networking",
-      "Ethernet bridges and VLANs are host prerequisites. Create guest networks, reservations, NIC attachments and ACLs in Incus.",
+      "Networking", "Host network, bridges and VLANs.",
     ) +
     card(
       "Management addressing",
-      `${toggle("Declare management addressing", "management.configure")}<div class="fields">${field("Interface or declared bridge", "management.interface", { hint: "Discovered/declared: " + [...new Set(choices)].join(", ") })}${field("IPv4 address", "management.address")}${field("Prefix length", "management.prefixLength", { type: "number" })}${field("Gateway", "management.gateway")}${field("DNS servers", "management.dns", { list: true, type: "textarea" })}${field("Trusted management CIDRs", "management.trustedCIDRs", { list: true, type: "textarea" })}</div><p class="note">When bridging the management NIC, move its address onto the bridge in the same review. Keep console access; an unconfirmed activation restores the previous host configuration.</p>`,
+      `${toggle("Declare management addressing", "management.configure")}<div class="fields">${field("Interface or declared bridge", "management.interface", { hint: "Discovered/declared: " + [...new Set(choices)].join(", ") })}${field("IPv4 address", "management.address")}${field("Prefix length", "management.prefixLength", { type: "number" })}${field("Gateway", "management.gateway")}${field("DNS servers", "management.dns", { list: true, type: "textarea" })}${field("Trusted management CIDRs", "management.trustedCIDRs", { list: true, type: "textarea" })}</div><p>Move the management address onto the bridge in the same change and keep console access.</p>`,
     ) +
     recordEditor(
       "Ethernet LAN bridges",
@@ -145,7 +145,7 @@ function hostConnectivity() {
     ) +
     card(
       "Private guest firewall integration",
-      `<div class="fields">${field("Private Incus bridge interfaces", "connectivity.guestInterfaces", { list: true, type: "textarea", full: true, hint: "Register private bridge names after creating them in Incus. Never list physical/LAN interfaces here." })}</div>${toggle("Permit trusted LAN clients to reach private guests", "connectivity.trustedLANAccess", "Private guest addresses require a route on your router/client. Incus forwards and ACLs remain in Incus.")}<p class="note">The reserved incusbr0 baseline uses host NAT. Additional Incus networks own their own NAT. Host management is isolated from private guests.</p>`,
+      `<div class="fields">${field("Private Incus bridge interfaces", "connectivity.guestInterfaces", { list: true, type: "textarea", full: true, hint: "Register private bridge names after creating them in Incus. Never list physical/LAN interfaces here." })}</div>${toggle("Permit trusted LAN clients to reach private guests", "connectivity.trustedLANAccess", "Private guest addresses require a route on your router/client. Incus forwards and ACLs remain in Incus.")}`,
     ) +
     recordEditor(
       "Narrow guest access to LAN services",
@@ -159,7 +159,7 @@ function hostConnectivity() {
     ) +
     card(
       "Bootstrap guest network",
-      `<p>The initial private network is source-managed. Existing address space requires a migration, not a casual edit in either UI.</p><div class="fields">${field("Subnet", "guests.cidr")}${field("Bridge address/prefix", "guests.gatewayCIDR")}${field("DHCP range", "guests.dhcpRange")}</div><button data-action="suggest">Suggest an unused subnet</button><p class="note">LAN bridges use your Ethernet network’s DHCP/router. Switch trunks and router routes are configured on that equipment. Wi-Fi cannot be bridged as an Ethernet port.</p><a href="/docs/networking.md">Network ownership and examples</a>`,
+      `<div class="fields">${field("Subnet", "guests.cidr")}${field("Bridge address/prefix", "guests.gatewayCIDR")}${field("DHCP range", "guests.dhcpRange")}</div><button data-action="suggest">Suggest an unused subnet</button><a href="/docs/networking.md">Network ownership and examples</a>`,
     )
   );
 }
@@ -169,8 +169,7 @@ function hostHardware() {
   return (
     title(
       "HARDWARE & DISKS",
-      "Hardware & disks",
-      "Nixus handles stable host identities and prerequisites. Assign devices and guest permissions in Incus.",
+      "Hardware", "USB and serial devices for passthrough.",
     ) +
     card(
       "USB serial devices",
@@ -180,7 +179,7 @@ function hostHardware() {
             `<div class="service-row"><div class="service-copy"><h3>${esc(d.product || d.path)}</h3><p><code>${esc(d.path)}</code> · ${esc(d.vendorId)}:${esc(d.productId)} · ${esc(d.serial || "No unique serial")}</p><small>${esc(d.driver)} · ${esc(d.stablePaths.join(", "))}</small></div><button data-serial-pick="${index}" ${d.serial ? "" : "disabled"}>Declare stable alias</button></div>`,
         )
         .join("") ||
-        "<p>No USB serial devices detected. Nothing will be assigned or installed automatically.</p>",
+        "<p>No USB serial devices detected.</p>",
     ) +
     recordEditor(
       "Selected stable serial aliases",
@@ -195,7 +194,7 @@ function hostHardware() {
     ) +
     card(
       "Use the device in Incus",
-      '<p>An alias such as <code>/dev/nixus/serial-device</code> identifies one selected device. In Incus, add a unix-char device with that source, an appropriate guest path, <code>required=false</code>, and the application’s guest UID/GID and mode.</p><p>Do not pass all of /dev or make the container privileged. Reconnect and reboot behavior must be tested with the actual device. No application-specific service is bundled.</p><a href="/docs/hardware.md">Attachment and hardware qualification guide</a>',
+      '<p>An alias such as <code>/dev/nixus/serial-device</code> identifies one selected device. In Incus, add a unix-char device with that source, an appropriate guest path, <code>required=false</code>, and the application’s guest UID/GID and mode.</p><a href="/docs/hardware.md">Attachment and hardware qualification guide</a>',
     ) +
     storage()
   );
@@ -206,25 +205,24 @@ function integrations() {
   return (
     title(
       "SERVICES",
-      "Services",
-      "Choose optional host and application tools. Guest lifecycle and networking stay in Incus.",
+      "Services", "Turn on Cockpit and other host tools.",
     ) +
-    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}${secret("Local operator password for Cockpit", "cockpitPassword", "At least 16 characters. This enrolls the Linux operator account; SSH accepts the same password when password login is enabled. Leave blank to retain an existing local account password.")}</div><p>Sign in as operator using its Linux password, or use an existing non-root local account. Portal accounts and passwords are separate. The operator has sudo administration rights.</p>`) +
+    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}${secret("Local operator password for Cockpit", "cockpitPassword", "At least 16 characters. This enrolls the Linux operator account; SSH accepts the same password when password login is enabled. Leave blank to retain an existing local account password.")}</div><p>Sign in as <code>operator</code> with its Linux password.</p>`) +
     apps() +
     '<details class="card"><summary>Optional provisioning tools</summary>' +
     card(
       "Community Scripts",
-      `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><p>The upstream interactive wizard selects resources, storage and network. Its guests remain Incus-managed. Nothing on this page executes a script.</p><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><p>Proxmox-specific host/VM scripts requiring pct, qm or /etc/pve are unsupported. Upstream Incus scripts are available; Nixus verification is recorded separately.</p><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixus" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/helpers.md">Runner, prerequisites and compatibility</a>`,
+      `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixus" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/helpers.md">Runner, prerequisites and compatibility</a>`,
     ) +
     '</details>' +
-    '<p class="note">Looking for commands or upstream resources? <button class="small" data-go="commands">Help →</button></p>'
+    ''
   );
 }
 
 function backupSettings() {
   return card(
     "Scheduled off-host backup",
-    `${toggle("Enable independent restic backups", "backup.enable")}<div class="fields">${field("Repository", "backup.repository", { full: true })}${field("Schedule", "backup.schedule", { hint: "systemd calendar, for example daily or *-*-* 03:00:00" })}${field("Free staging reserve, MiB", "backup.reserveMiB", { type: "number" })}${secret("Repository password", "resticPassword")}${secret("Cloud credential environment as JSON", "resticEnvironment", "Runtime credentials stay outside the Nix store.", true)}${field("Maintenance exclusions: project/guest", "backup.exclude", { list: true, type: "textarea", full: true })}<label class="field full"><span>Additional consistency groups</span><textarea id="backup-groups" placeholder="lab/database, lab/frontend">${esc((state.draft.backup.groups || []).map((g) => g.join(", ")).join("\n"))}</textarea><small>One group per line. Shared writable volumes automatically join their consumers.</small></label></div>${toggle("Initialize a new repository", "backup.initialize")}<p>Guests stop one group at a time and immediately recover their original state. Incus guests tagged <code>user.nixus.backup=manual</code> are excluded with their consistency group. Coverage exclusions stay visible and do not refresh the full-host success indicator.</p><p class="note">Allow space for two retained complete generations plus a full new export and overhead. Preflight estimates exports from observed usage and previous archives plus a reserve; unknown estimates stay explicit. Estimates cannot guarantee future growth or compression. External bind mounts and raw disks require independent protection. Restic keeps 7 daily, 4 weekly and 6 monthly snapshots. Staging contains root-only plaintext credentials; choose its filesystem on Hardware & Disks.</p>`,
+    `${toggle("Enable independent restic backups", "backup.enable")}<div class="fields">${field("Repository", "backup.repository", { full: true })}${field("Schedule", "backup.schedule", { hint: "systemd calendar, for example daily or *-*-* 03:00:00" })}${field("Free staging reserve, MiB", "backup.reserveMiB", { type: "number" })}${secret("Repository password", "resticPassword")}${secret("Cloud credential environment as JSON", "resticEnvironment", "Runtime credentials stay outside the Nix store.", true)}${field("Maintenance exclusions: project/guest", "backup.exclude", { list: true, type: "textarea", full: true })}<label class="field full"><span>Additional consistency groups</span><textarea id="backup-groups" placeholder="lab/database, lab/frontend">${esc((state.draft.backup.groups || []).map((g) => g.join(", ")).join("\n"))}</textarea><small>One group per line. Shared writable volumes automatically join their consumers.</small></label></div>${toggle("Initialize a new repository", "backup.initialize")}`,
   );
 }
 

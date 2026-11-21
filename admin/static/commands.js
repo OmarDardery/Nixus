@@ -9,7 +9,7 @@ function referenceLink(label, url) {
 function referenceCatalog() {
   const row = item => `<div class="reference-row"><div><h3>${esc(item.name)}</h3><p>${esc(item.detail)}</p></div><div class="reference-links">${referenceLink("Nixus guide", "/docs/" + item.guide)}${item.source ? referenceLink("Source", item.source) : ""}${item.docs.map(([label, url]) => referenceLink(label, url)).join("")}${item.community.map(([label, url]) => referenceLink(label, url)).join("")}</div></div>`;
   const local = [["Beta candidate", "beta"], ["Credits", "projects"], ["Install", "plain-nixos"], ["Troubleshoot", "troubleshooting"], ["CLI", "administration"], ["Helpers", "helpers"], ["Web setup", "setup"], ["Backups", "recovery"], ["Migration", "migration"], ["Roadmap", "roadmap"]];
-  return `<section class="reference-catalog" id="project-docs"><div class="section-label">DOCUMENTATION & COMMUNITY</div><h2>Upstream projects & credits</h2><p>Community resources are references, not verified Nixus integrations. Plugins, templates and scripts have their own platform requirements.</p><div class="guide-shortcuts">${local.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("")}</div>${projectReferences.filter(item => !item.optional).map(row).join("")}<details class="more-references"><summary>Backups, secrets, ingress, metrics & host foundations</summary>${projectReferences.filter(item => item.optional).map(row).join("")}</details></section>`;
+  return `<section class="reference-catalog" id="project-docs"><div class="section-label">DOCUMENTATION & COMMUNITY</div><h2>Upstream projects & credits</h2><div class="guide-shortcuts">${local.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("")}</div>${projectReferences.filter(item => !item.optional).map(row).join("")}<details class="more-references"><summary>Backups, secrets, ingress, metrics & host foundations</summary>${projectReferences.filter(item => item.optional).map(row).join("")}</details></section>`;
 }
 
 function commandGroups() {
@@ -63,7 +63,7 @@ function commandRow(item) {
 }
 
 function commandsPage() {
-  return title("REFERENCE DESK", "Help", "Local guides, operational commands and the upstream projects behind this host.")
+  return title("REFERENCE DESK", "Help", "Guides and useful commands.")
     + `<div class="reference-jumps"><a href="#commands">Commands ↓</a><a href="#project-docs">Docs & community ↓</a></div><section class="command-library" id="commands">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>${homepageResources()}`;
 }
 

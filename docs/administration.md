@@ -248,7 +248,7 @@ means deleting data. Explicit deletion uses authenticated `incus delete` after a
 
 ## Compose applications
 
-Compose applications are managed on the **Projects** page and run as Incus OCI
+Compose applications are managed on the **Apps** page and run as Incus OCI
 containers in their own Nixus-owned Incus project; there is no Docker daemon or
 applications VM. The workflow is:
 

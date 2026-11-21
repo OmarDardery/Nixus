@@ -228,37 +228,7 @@ func buildRevision(actor, project, revision string) (string, error) {
 // deployRevision binds the project to a published source revision through a
 // reviewed project transaction and waits for the deployment to verify.
 func deployRevision(actor, project, revision string) (string, error) {
-	t := NewProjectTransactions("", "")
-	review, err := t.review(M{}, actor, M{project: revision})
-	if err != nil {
-		return "", err
-	}
-	id := str(review["id"])
-	if _, err := t.publish(review["id"], review["planHash"]); err != nil {
-		return id, err
-	}
-	if _, err := t.deploy(review["id"], review["planHash"], false); err != nil {
-		return id, err
-	}
-	deadline := time.Now().Add(45 * time.Minute)
-	for time.Now().Before(deadline) {
-		status, err := t.status(id)
-		if err != nil {
-			return id, err
-		}
-		switch str(status["deployment"]) {
-		case "verified":
-			return id, nil
-		case "partial", "interrupted":
-			detail := str(status["deploymentError"])
-			if detail == "" {
-				detail = "deployment stopped"
-			}
-			return id, Public(detail)
-		}
-		time.Sleep(updatePoll)
-	}
-	return id, Public("The deployment timed out")
+	return deployChange(actor, M{}, M{project: revision})
 }
 
 // healthy waits healthSeconds, then requires every service to run the
@@ -565,4 +535,51 @@ func startImageUpdate(actor string, projectArg any) (M, error) {
 	}
 	audit("image-update-requested", M{"principal": actor, "project": project})
 	return M{"project": project, "status": "started"}, nil
+}
+
+// applyAllImageUpdates updates every app with an unheld update, one at a time,
+// regardless of its policy. Each update keeps its own snapshot and rollback.
+func applyAllImageUpdates(actor string) (M, error) {
+	status := obj(readObj(imageUpdatesPath())["projects"])
+	results := M{}
+	var failed []string
+	for _, name := range keys(status) {
+		if n, _ := num(obj(status[name])["updates"]); n == 0 {
+			continue
+		}
+		journal, err := applyImageUpdate(actor, name)
+		results[name] = M{"status": journal["status"], "error": journal["error"]}
+		if err != nil {
+			failed = append(failed, name)
+		}
+	}
+	out := M{"projects": results}
+	if len(failed) > 0 {
+		return out, Public("Updates failed for: " + strings.Join(failed, ", "))
+	}
+	return out, nil
+}
+
+// startAllImageUpdates runs applyAllImageUpdates in a worker unit.
+func startAllImageUpdates(actor string) (M, error) {
+	if err := requireNormal(); err != nil {
+		return nil, err
+	}
+	pending := 0
+	for _, raw := range obj(readObj(imageUpdatesPath())["projects"]) {
+		if n, _ := num(obj(raw)["updates"]); n > 0 {
+			pending++
+		}
+	}
+	if pending == 0 {
+		return nil, Public("All apps are up to date")
+	}
+	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-image-update-all",
+		"--property=RuntimeMaxSec=21600", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"),
+		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
+		adminLauncher(), "admin", "image-updates", "apply-all"}, nil, 20*time.Second); err != nil {
+		return nil, Public("App updates are already running")
+	}
+	audit("image-update-all-requested", M{"principal": actor, "apps": pending})
+	return M{"started": true, "apps": pending}, nil
 }

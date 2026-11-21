@@ -21,7 +21,7 @@ function repositoryVerification() {
   const verification = operationView.backupVerification || {};
   const mode = verification.lastMode || verification.mode;
   const scope = mode === "full" ? "full repository data read" : mode === "metadata" ? "metadata only; data blocks were not read" : "scope unknown";
-  return `<p>Repository verification: <b>${esc(verification.state || "unknown")}</b> · ${esc(scope)}</p>${verification.reason === "repository-unverified" ? "<p>The repository target has no matching verification evidence. Run a new check.</p>" : ""}${verification.finishedAt ? `<p>Last check: ${esc(new Date(verification.finishedAt * 1000).toLocaleString())}</p>` : ""}${verification.scheduled ? `<p>Schedule: ${esc(verification.schedule)} · next checks use ${verification.mode === "full" ? "full data reads" : "metadata checks"}</p>` : ""}${verification.timeWarning ? '<p class="error">Verification timestamps are unreliable; check host time synchronization.</p>' : ""}<p class="note">Repository integrity checks do not prove that a guest or application can be restored.</p>`;
+  return `<p>Repository verification: <b>${esc(verification.state || "unknown")}</b> · ${esc(scope)}</p>${verification.reason === "repository-unverified" ? "<p>The repository target has no matching verification evidence. Run a new check.</p>" : ""}${verification.finishedAt ? `<p>Last check: ${esc(new Date(verification.finishedAt * 1000).toLocaleString())}</p>` : ""}${verification.scheduled ? `<p>Schedule: ${esc(verification.schedule)} · next checks use ${verification.mode === "full" ? "full data reads" : "metadata checks"}</p>` : ""}${verification.timeWarning ? '<p class="error">Verification timestamps are unreliable; check host time synchronization.</p>' : ""}`;
 }
 
 function healthSummary() {
@@ -48,7 +48,7 @@ function healthSummary() {
 function backupCoverage(status) {
   const coverage = status.coverage, capacity = status.capacity;
   const gaps = (coverage?.items || []).filter(item => item.status !== "included");
-  return `<p>Coverage: <b>${coverage ? (coverage.complete ? "Inventoried exports included" : "Incomplete") : "Not assessed"}</b></p>${gaps.length ? `<ul class="error">${gaps.map(item => `<li>${esc(item.identity)}: ${esc(item.status)}</li>`).join("")}</ul>` : ""}${capacity ? `<p>Estimated new staging: ${esc(formatBytes(capacity.estimatedNewBytes))} plus ${esc(formatBytes(capacity.reserveBytes))} reserve; ${esc(formatBytes(capacity.availableBytes))} available.</p>${capacity.unknown?.length ? `<p class="error">Current size unknown for ${esc(capacity.unknown.length)} archive(s). Estimates may be incomplete.</p>` : ""}` : ""}<p>Application restore: unverified. A successful export or repository check does not prove recovery.</p>`;
+  return `<p>Coverage: <b>${coverage ? (coverage.complete ? "Inventoried exports included" : "Incomplete") : "Not assessed"}</b></p>${gaps.length ? `<ul class="error">${gaps.map(item => `<li>${esc(item.identity)}: ${esc(item.status)}</li>`).join("")}</ul>` : ""}${capacity ? `<p>Estimated new staging: ${esc(formatBytes(capacity.estimatedNewBytes))} plus ${esc(formatBytes(capacity.reserveBytes))} reserve; ${esc(formatBytes(capacity.availableBytes))} available.</p>${capacity.unknown?.length ? `<p class="error">Current size unknown for ${esc(capacity.unknown.length)} archive(s). Estimates may be incomplete.</p>` : ""}` : ""}`;
 }
 
 function operationsPage() {
@@ -76,8 +76,7 @@ function operationsPage() {
   return (
     title(
       "OFF-HOST RECOVERY",
-      "Backups & recovery",
-      "Incus owns ordinary snapshots and guest controls. Nixus coordinates independent backups and new-name disaster recovery.",
+      "Host backups", "Full-server exports and restores.",
     ) +
     card(
       "Backup status",
@@ -87,11 +86,11 @@ function operationsPage() {
     backupSettings() +
     card(
       "Complete local generations",
-      `<div class="table-wrap"><table><thead><tr><th>Created</th><th>Coverage</th><th>Archives</th></tr></thead><tbody>${operationView.generations.map((g) => `<tr><td>${esc(new Date(g.created * 1000).toLocaleString())}<br><code>${esc(g.id)}</code></td><td>${esc(g.coverage)} · ${esc(g.guests)} guest(s)${g.excluded.length ? `<br>Excluded: ${esc(g.excluded.join(", "))}` : ""}</td><td>${esc(g.archives)}</td></tr>`).join("") || '<tr><td colspan="3">No complete generations recorded.</td></tr>'}</tbody></table></div><p>Incomplete exports never replace a complete generation. Off-host backups are inspected with the restic client; recover their files to an isolated directory and register an instance archive with <code>nixus-admin guests register-export</code>.</p>`,
+      `<div class="table-wrap"><table><thead><tr><th>Created</th><th>Coverage</th><th>Archives</th></tr></thead><tbody>${operationView.generations.map((g) => `<tr><td>${esc(new Date(g.created * 1000).toLocaleString())}<br><code>${esc(g.id)}</code></td><td>${esc(g.coverage)} · ${esc(g.guests)} guest(s)${g.excluded.length ? `<br>Excluded: ${esc(g.excluded.join(", "))}` : ""}</td><td>${esc(g.archives)}</td></tr>`).join("") || '<tr><td colspan="3">No complete generations recorded.</td></tr>'}</tbody></table></div>`,
     ) +
     card(
       "Restore an independent export",
-      `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><p>Verify networking, volumes and credentials in Incus before releasing a restored instance with the recovery CLI. Snapshots and ordinary guest operations stay in Incus.</p><a href="/docs/recovery.md">Full off-host recovery procedure</a>`,
+      `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><a href="/docs/recovery.md">Full off-host recovery procedure</a>`,
     ) +
     card(
       "Nixus task history",
@@ -111,7 +110,7 @@ function operationsPage() {
     (administrator()
       ? card(
           "Portable recovery kit",
-          `<p>Export host configuration and optionally separately encrypted credentials. VM/application data still requires its independent backup.</p><div class="fields"><label class="field full"><span>age public recipient (optional)</span><input id="recovery-recipient" placeholder="age1…"></label><label class="field"><span>Your password</span><input id="recovery-password" type="password" autocomplete="current-password"></label></div><button data-download-recovery>Download recovery kit</button>`,
+          `<div class="fields"><label class="field full"><span>age public recipient (optional)</span><input id="recovery-recipient" placeholder="age1…"></label><label class="field"><span>Your password</span><input id="recovery-password" type="password" autocomplete="current-password"></label></div><button data-download-recovery>Download recovery kit</button>`,
         )
       : "")
   );
@@ -120,7 +119,7 @@ function operationsPage() {
 function accountCard() {
   return card(
     "Portal accounts",
-    `<ul>${operationView.users.map((u) => `<li>${esc(u.username)} · ${esc(u.role)}</li>`).join("")}</ul><p>Administrators control the host. Operators can run permitted guest actions in lab. Viewers can inspect status. SSH/sudo and Incus certificates have their own permissions.</p><div class="fields"><label class="field"><span>Account name</span><input id="account-name" autocomplete="off"></label><label class="field"><span>Role</span><select id="account-role"><option>viewer</option><option>operator</option><option>admin</option></select></label><label class="field"><span>New account password (blank keeps an existing password)</span><input id="account-password" type="password" autocomplete="new-password"></label><label class="field"><span>Your password</span><input id="account-current" type="password" autocomplete="current-password"></label></div><button data-account-save>Save account</button> <button class="danger" data-account-delete>Delete named account</button>`,
+    `<ul>${operationView.users.map((u) => `<li>${esc(u.username)} · ${esc(u.role)}</li>`).join("")}</ul><div class="fields"><label class="field"><span>Account name</span><input id="account-name" autocomplete="off"></label><label class="field"><span>Role</span><select id="account-role"><option>viewer</option><option>operator</option><option>admin</option></select></label><label class="field"><span>New account password (blank keeps an existing password)</span><input id="account-password" type="password" autocomplete="new-password"></label><label class="field"><span>Your password</span><input id="account-current" type="password" autocomplete="current-password"></label></div><button data-account-save>Save account</button> <button class="danger" data-account-delete>Delete named account</button>`,
   );
 }
 
@@ -135,7 +134,7 @@ function platformReview() {
   const files = job?.platformChanges || [];
   const historical = job?.status === "confirmed";
   const changes = files.map(file => `<tr><td><code>${esc(file.path)}</code></td><td>${file.after === null ? "Removed" : file.before === null ? "Added" : "Changed"}</td></tr>`).join("");
-  return card("Platform update", `<p>Installed: ${esc(state.status.release?.version || "unknown")} · <code>${esc((state.status.release?.revision || "unknown").slice(0, 12))}</code>. Machine settings and modules are retained.</p>
+  return card("Platform update", `<p>Installed: ${esc(state.status.release?.version || "unknown")} · <code>${esc((state.status.release?.revision || "unknown").slice(0, 12))}</code></p>
     <button type="button" data-load-main>Review latest main</button><p class="note" id="platform-selected">${esc(platformSelectionText())}</p>
     <details><summary>Advanced: published release or commit</summary><button type="button" data-load-releases>Find published releases</button><label class="field full"><span>Release</span><select id="platform-release"><option value="">Select a release</option>${operationView.releases.map(r => `<option value="${esc(r.revision)}">${esc(r.name)} · ${esc(r.tag)}</option>`).join("")}</select></label><label class="field full"><span>Upstream commit SHA (optional)</span><input id="platform-revision" value="${esc(state.platformRevision || "")}" maxlength="40" placeholder="40 hexadecimal characters"></label></details>
     <div class="fields"><label class="field"><span>Current portal password for privileged code</span><input id="platform-password" type="password" autocomplete="current-password"></label></div><label class="toggle"><input id="platform-ack" type="checkbox">I approve building the selected privileged platform revision and staged Nix modules.</label>

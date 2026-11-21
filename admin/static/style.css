@@ -485,3 +485,7 @@ pre.command { white-space: pre-wrap; word-break: break-all; padding: 10px 12px; 
 .badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;border:1px solid var(--line,#444)}
 .badge.ok{color:#7fd37f;border-color:#3d6b3d}.badge.bad{color:#ff8a80;border-color:#7a3a35}.badge.muted{opacity:.8}
 pre.log{max-height:360px;overflow:auto;white-space:pre-wrap;font-size:12px}
+
+.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem; margin-bottom: .75rem; }
+.quick-actions > div { display: flex; flex-direction: column; gap: .25rem; }
+.quick-actions small { color: var(--muted, #8b949e); }

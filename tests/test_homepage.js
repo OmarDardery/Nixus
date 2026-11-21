@@ -10,7 +10,7 @@ const context = vm.createContext({document:{querySelector:()=>({})},setInterval:
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../admin/static/projects.js'),'utf8'),context);
 for (const name of ['foundation.js', 'operations.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'../admin/static',name),'utf8'),context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../admin/static/commands.js'), 'utf8'), context);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../admin/static/incus-projects.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../admin/static/apps.js'), 'utf8'), context);
 vm.runInContext(source.slice(0,bootstrap), context);
 vm.runInContext(`
 state.status = {setupComplete:true, settings:{
@@ -24,7 +24,7 @@ for (const url of ['https://192.0.2.10:8443','https://192.0.2.10:9090']) {
   assert.ok(shortcuts.includes('href="' + url + '"'), 'Missing sidebar shortcut: ' + url);
 }
 assert.equal(vm.runInContext("pages.find(([id]) => id === 'commands')[1]",context), 'Help', 'Docs remain one primary navigation step away');
-assert.equal(vm.runInContext("pages.find(([id]) => id === 'projects')[1]",context), 'Projects', 'Native project navigation is first-class');
+assert.equal(vm.runInContext("pages.find(([id]) => id === 'projects')[1]",context), 'Apps', 'Apps navigation is first-class');
 assert.ok(shortcuts.includes('rel="noopener noreferrer"'), 'External tools must not retain opener access');
 let tools = vm.runInContext('homepageTools()', context);
 assert.ok(tools.includes('data-go="integrations"'), 'Overview must expose native service settings');
@@ -88,10 +88,6 @@ let network = vm.runInContext('guestNetwork()', context);
 for (const expected of ['another-project', '10.77.0.5', '10.77.0.9', 'Potential address conflict', 'Reservation not observed']) assert.ok(network.includes(expected));
 assert.ok(network.includes('&lt;script&gt;bad&lt;/script&gt;'));
 assert.ok(!network.includes('<script>bad') && !network.includes('<img src=x>'));
-const projectPage = vm.runInContext('nativeProjectPage()',context);
-assert.ok(projectPage.includes('another-project'));
-assert.ok(projectPage.includes('&lt;script&gt;bad&lt;/script&gt;'));
-assert.ok(!projectPage.includes('<script>bad'), 'Project inventory must HTML-escape untrusted guest names');
 assert.ok(!network.includes('href="http://10.77.0.5') && !network.includes('data-guest-action'), 'Observed addresses must not invent service endpoints or duplicate lifecycle controls');
 vm.runInContext('operationView.network.checkedAt -= 100', context);
 assert.ok(vm.runInContext('guestNetwork()', context).includes('Inventory is stale'));
@@ -112,7 +108,6 @@ assert.ok(vm.runInContext('quickManagementLinks()', context).includes('https://[
 
 vm.runInContext('state.status.setupComplete=true; state.status.settings.apps.enable=false; state.status.effectiveSettings=null',context);
 const freshAppsCard=vm.runInContext('apps()',context);
-assert.ok(freshAppsCard.includes('All application workloads belong to Incus projects'));
 assert.ok(!freshAppsCard.includes('Initial Arcane administrator password'));
 assert.ok(!freshAppsCard.includes('arcane-reuse'));
 assert.ok(!freshAppsCard.includes('data-field="apps.enable"'), 'No first-install Arcane enable toggle');

@@ -697,7 +697,7 @@ func enrollKey(m *Manager, publicKeyFile string, settings M) error {
 	return nil
 }
 
-const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|project-backup|image-updates|disk prepare}"
+const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|approve-enrollment|reset-password|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
 
 func adminMain(argv []string) int {
 	syscall.Umask(0o027)
@@ -813,6 +813,8 @@ func adminMain(argv []string) int {
 		return 0
 	case action == "image-updates" && root:
 		return generic(imageUpdatesCLI(rest))
+	case action == "apps" && root:
+		return generic(appsCLI(rest))
 	case action == "project-backup" && root:
 		return generic(projectBackupCLI(rest))
 	case action == "config" && root:

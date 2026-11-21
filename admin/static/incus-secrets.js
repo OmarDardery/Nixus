@@ -21,10 +21,10 @@ function nativeSecretsPanel() {
   const identity = v.data?.identity || {};
   const status = identity.configured && identity.healthy
     ? '<p>Age recipient: <code>' + esc(identity.recipient) +
-      '</code>. The private identity remains on the host; keep a separately protected offline backup.</p>'
+      '</code></p>'
     : identity.configured
       ? '<p role="alert" class="error">Installed age identity is unhealthy. Never regenerate over it; restore the original identity safely.</p>'
-      : '<p>No project age identity enrolled. Choose generate or restore explicitly before adding secrets.</p>';
+      : '<p>No age identity. Generate or restore one first.</p>';
   const setup = !identity.configured
     ? '<fieldset><legend>Initialize project age identity once</legend>' +
       '<label class="field"><span>Identity action</span><select id="native-age-mode">' +
@@ -32,7 +32,7 @@ function nativeSecretsPanel() {
       '<option value="restore">Restore an existing identity</option></select></label>' +
       '<label class="field"><span>Recovery key (only for restore)</span>' +
       '<textarea id="native-age-restore" rows="3" autocomplete="off" spellcheck="false" placeholder="AGE-SECRET-KEY-1…"></textarea></label>' +
-      '<p class="note">Generation does not reveal or download the private key. Arrange an independent offline recovery copy before storing irreplaceable secrets.</p>' +
+      '<p>Export a recovery kit after generating.</p>' +
       '<label class="field"><span>Current administrator password</span>' +
       '<input type="password" id="native-age-password" autocomplete="current-password"></label>' +
       '<label><input id="native-age-ack" type="checkbox"> I understand the identity must be backed up separately and never silently replaced</label>' +
@@ -45,7 +45,7 @@ function nativeSecretsPanel() {
       projects.map(item => '<option value="' + esc(item.project) + '"' +
         (project?.project === item.project ? " selected" : "") + '>' +
         esc(item.project) + '</option>').join("") + '</select></label>'
-    : '<p>No declarative projects with default.nix are available. Create a project in the project workspace first.</p>';
+    : '<p>No apps yet.</p>';
   const summary = project
     ? '<p>Encrypted revision: <code>' + esc(project.revision || "none") + '</code> · ' +
       esc(project.secretCount) + ' keys · ' +
@@ -74,7 +74,7 @@ function nativeSecretsPanel() {
       '<input id="native-secret-review-password" type="password" autocomplete="current-password"></label>' +
       '<button type="button" id="native-secret-review"' + (v.busy || !project.indexed ? ' disabled' : '') +
       '>Prepare encrypted review</button>' +
-      '<p class="note">SOPS encrypts the value through the root broker before any review artifact is written. No plaintext .env or build-time secret is published.</p></fieldset>'
+      '</fieldset>'
     : "";
   const recipientsPanel = identity.healthy && project && project.revision && !v.review
     ? '<fieldset><legend>Rotate SOPS/age recipients</legend>' +
@@ -83,14 +83,14 @@ function nativeSecretsPanel() {
       '<label class="field"><span>Complete recipient list, one age1 public key per line</span>' +
       '<textarea id="native-recipient-list" rows="3" spellcheck="false" autocomplete="off">' +
       esc((project.recipients || [identity.recipient]).join("\n")) + '</textarea></label>' +
-      '<p class="note">The host key must remain. Removed recipients cannot decrypt *new* ciphertext; old revisions and backups remain decryptable until retired. Rotate actual values when revoking access.</p>' +
+      '' +
       '<label class="field"><span>Administrator password</span><input type="password" id="native-recipient-password" autocomplete="current-password"></label>' +
       '<button type="button" id="native-recipient-review"' + (v.busy || !project.indexed ? ' disabled' : '') +
       '>Review recipient rekey</button></fieldset>'
     : "";
   const importPanel = identity.healthy && project && !v.review
     ? '<fieldset><legend>Import .env values directly into SOPS</legend>' +
-      '<p class="note">The selected .env file is parsed locally. Only validated secret variables are sent to the authenticated encrypted-review endpoint. Raw .env files are never published.</p>' +
+      '' +
       '<label class="field"><span>Local .env file</span><input id="native-env-import-file" type="file" accept=".env,.txt,text/plain"></label>' +
       '<label class="field"><span>Current administrator password</span><input id="native-env-import-password" type="password" autocomplete="current-password"></label>' +
       '<button type="button" id="native-env-import-review"' + (v.busy || !project.indexed ? " disabled" : "") +
@@ -103,7 +103,7 @@ function nativeSecretsPanel() {
          (v.review.changedKeys || [v.review.key]).join(", ")) + '</code></p>' +
       '<p>From: <code>' + esc(v.review.baseRevision || "none") +
       '</code> → <code>' + esc(v.review.revision) + '</code></p>' +
-      '<p class="note">New ciphertext is verified, but publishing it does not automatically deploy or restart a guest.</p>' +
+      '<p>Publishing does not restart running apps.</p>' +
       '<label class="field"><span>Current administrator password</span>' +
       '<input id="native-secret-publish-password" type="password" autocomplete="current-password"></label>' +
       '<label><input type="checkbox" id="native-secret-publish-ack"> Publish this exact encrypted revision</label>' +
@@ -111,7 +111,7 @@ function nativeSecretsPanel() {
       '>Publish encrypted secrets</button></fieldset>'
     : "";
   const recoveryPanel = '<fieldset><legend>Offline encrypted recovery</legend>' +
-    '<p>Export an authenticated, passphrase-encrypted recovery kit. Keep it offline and separate from the Git-synced SOPS ciphertext. Verify the kit before relying on it.</p>' +
+    '<p>Store the recovery kit offline.</p>' +
     (identity.healthy
       ? '<label class="field"><span>Recovery passphrase (16+ characters)</span><input id="native-recovery-export-passphrase" type="password" autocomplete="new-password"></label>' +
         '<label class="field"><span>Repeat passphrase</span><input id="native-recovery-export-confirm" type="password" autocomplete="new-password"></label>' +
@@ -120,7 +120,7 @@ function nativeSecretsPanel() {
         '<button type="button" id="native-recovery-export"' + (v.busy ? " disabled" : "") +
         '>Download encrypted recovery kit</button>'
       : '') +
-    '<p>To verify or restore a kit, select the encrypted JSON file and enter its passphrase. Restoring never overwrites a host age identity or existing backup credentials.</p>' +
+    '' +
     '<label class="field"><span>Encrypted recovery kit</span><input id="native-recovery-kit-file" type="file" accept=".json,application/json"></label>' +
     '<label class="field"><span>Recovery passphrase</span><input id="native-recovery-import-passphrase" type="password" autocomplete="off"></label>' +
     '<label class="field"><span>Administrator password</span><input id="native-recovery-import-admin" type="password" autocomplete="current-password"></label>' +
@@ -131,7 +131,7 @@ function nativeSecretsPanel() {
     (v.busy || identity.configured ? ' disabled' : '') + '>Restore kit on new host</button></fieldset>';
   const reindexPanel = project && !project.indexed
     ? '<fieldset><legend>Reconcile restored ciphertext</legend>' +
-      '<p class="note">An encrypted project file differs from its metadata index. Inspect source and keys before adopting it; never overwrite the encrypted file.</p>' +
+      '<p>The encrypted file differs from its index.</p>' +
       '<label class="field"><span>Administrator password</span><input id="native-reindex-password" type="password" autocomplete="current-password"></label>' +
       '<label><input id="native-reindex-ack" type="checkbox"> Adopt verified SOPS ciphertext and rebuild key-name metadata</label>' +
       '<button type="button" id="native-secret-reindex">Rebuild metadata</button></fieldset>'
@@ -139,9 +139,8 @@ function nativeSecretsPanel() {
   const errors = (v.error ? '<p role="alert" class="error">' + esc(v.error) + '</p>' : '') +
                  (v.message ? '<p role="status">' + esc(v.message) + '</p>' : '');
   return card("Environment & secrets · SOPS/age",
-    '<p>Encrypted, declarative variables managed in this Web UI. Only key names and ciphertext hashes are returned; plaintext is never readable through this interface.</p>' +
-    status + setup + choose + summary + form + importPanel + recipientsPanel + review + reindexPanel + recoveryPanel + errors +
-    '<p><a href="/docs/incus-native-secrets-ui.md">Secret management, delivery and recovery boundaries</a></p>');
+    '' +
+    status + setup + choose + summary + form + importPanel + recipientsPanel + review + reindexPanel + recoveryPanel + errors);
 }
 
 async function nativeSecretsRefresh() {

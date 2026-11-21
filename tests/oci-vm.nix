@@ -335,6 +335,31 @@ in pkgs.testers.runNixOSTest {
         assert rechecked["projects"]["web"]["updates"] == 0, rechecked["projects"]["web"]
         run_auto(True)
 
+    with subtest("one-step app deploy, as the Apps page does it"):
+        notes = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode()}
+        nentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in notes.items()]
+        np_ = broker("/project-import/prepare", {"project": "notes", "files": nentries})
+        broker("/project-import/chunk", {"id": np_["id"], "path": "Dockerfile", "offset": 0, "data": base64.b64encode(notes["Dockerfile"]).decode()})
+        ns = broker("/project-import/finish", {"id": np_["id"], "manifestHash": np_["manifestHash"]})
+        broker("/apps/deploy", {"project": "notes", "kind": "source", "stagingId": ns["id"], "manifestHash": ns["manifestHash"]})
+        deadline = time.time() + 900
+        while broker("/apps")["notes"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        job = broker("/apps")["notes"]
+        if job["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|OCI-VM' | tail -n 60 >&2")
+        assert job["status"] == "deployed", job
+        running = json.loads(machine.succeed("incus list --project notes --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
+        assert machine.succeed("cat /srv/nixus/projects/notes/default.nix").strip().endswith("}")
+        # Nothing left to update: the one-click action refuses instead of starting a worker.
+        code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                    "--data '{\"_actor\": \"admin\"}' http://localhost/image-updates/apply-all")
+        assert code != 0 and "up to date" in out, out
+        saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
+        assert saved["saved"], saved
+
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
         assert machine.succeed("cat " + src).encode() == files["Dockerfile"]

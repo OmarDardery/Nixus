@@ -4,7 +4,9 @@ This document covers source intake, the isolated build and the verified Incus im
 
 ## Supported source intake
 
-- Paste a Dockerfile, Compose file and small build-context files directly on the Projects page; each pasted file is staged byte-for-byte like an upload.
+- On the **Apps** page, **Add or update app** takes pasted or uploaded files (or a folder). **Deploy**
+  hashes them in the browser, stages them byte for byte, publishes the source, builds it offline and
+  deploys the reviewed project revision in one step. Progress shows in the Apps list.
 - Upload multiple original files, a folder, or **one explicitly selected** ZIP, TAR, TAR.GZ or TGZ archive from the Projects browser UI. Copy original file bytes and nested relative names without rewriting YAML, Dockerfiles or `.dockerignore`.
 - Source is stored in root-owned staging, published into immutable revision directories at `/srv/nixus/project-sources/<project>/revisions/<sha256>/source/`, **never in the world-readable Nix store**. The existing separate reauthenticated review/publish contract applies.
 - Direct and unpacked source quotas: at most **256 files**, **64 MiB per file**, **128 MiB total**, **12 path components**; archives at most **64 MiB compressed** and 1024 entries including directories. Realistic binary assets are supported up to these limits without silent truncation.
@@ -55,7 +57,7 @@ its registry, repository, tracked tag and pinned digest.
 
 The daily `nixus-image-updates` timer (or `sudo nixus-admin image-updates check`) asks each
 registry, anonymously, which digest every tracked tag points to now. Nothing is pulled or
-changed. The **Image updates** card on the Projects page lists each image as `current`,
+changed. The **Image updates** card on the **Apps** page lists each image as `current`,
 `update-available`, `untracked`, `unpinned` or `error`.
 
 Before an offline build, the broker fetches each digest-pinned `FROM` image with `skopeo` into the
@@ -64,7 +66,7 @@ build workspace; the digest reference makes the content self-verifying, and the 
 private copy of the Dockerfile whose pinned `FROM` references point at those local images. The
 published source is never modified.
 
-**Prepare update** stages a new source revision in which only the matching `@sha256:` digests
+`image-updates` preparation stages a new source revision in which only the matching `@sha256:` digests
 are replaced; every other byte is unchanged. Review, publish, build and deploy it like any other
 revision. The previous revision stays published history for rollback.
 
@@ -90,7 +92,7 @@ Set a policy in the project's `default.nix`:
   webhook fires (enable `nixus.notifications`).
 - `auto` applies updates after the daily check, inside the window, one project at a time.
 
-**Update now** on the card (or `sudo nixus-admin image-updates apply PROJECT`) runs the same
+**Update** on the Apps list (or `sudo nixus-admin image-updates apply PROJECT`) runs the same
 transaction:
 
 1. Stage and publish a revision with only the new digests.
@@ -103,7 +105,7 @@ transaction:
 If a step after publication fails, Nixus publishes the previous revision again, stops the
 project's instances, restores the volume snapshots, redeploys the previous images, and **holds**
 the failed digests so they are not retried. A failed rebuild changes nothing that is running.
-**Skip this version** holds a digest by hand; **Release hold** (or `image-updates unhold PROJECT
+**Skip** holds a digest by hand; **Unskip** (or `image-updates unhold PROJECT
 DIGEST`) lets it be offered again. Each update is recorded in the audit log, and its journal is
 shown on the card. Snapshots named `nixus-update-*` are kept for manual inspection.
 
