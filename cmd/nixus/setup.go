@@ -14,8 +14,8 @@ var setupItems = [][4]string{
 	{"activation", "Activate the hypervisor", "Build, activate and confirm the first configuration.", "review"},
 	{"incusBrowser", "Enroll this browser for the Incus web UI", "Issue and import a browser certificate.", "security"},
 	{"cockpitPassword", "Set the Cockpit operator password", "Used for Cockpit and SSH.", "integrations"},
-	{"secretsKey", "Create the secrets encryption key", "Apps → Secrets.", "projects"},
-	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download it, store it off this server, then verify it.", "projects"},
+	{"secretsKey", "Create the secrets encryption key", "Backups → Encryption key.", "operations"},
+	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download it, store it off this server, then verify it.", "operations"},
 	{"sshKey", "Enroll an SSH key (optional)", "Your laptop's public key.", "security"},
 	{"backup", "Set up backups (optional)", "Save a backup policy on the Apps page.", "projects"},
 }

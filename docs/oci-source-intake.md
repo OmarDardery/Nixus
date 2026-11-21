@@ -7,6 +7,11 @@ This document covers source intake, the isolated build and the verified Incus im
 - On the **Apps** page, **Add or update app** takes pasted or uploaded files (or a folder). **Deploy**
   hashes them in the browser, stages them byte for byte, publishes the source, builds it offline and
   deploys the reviewed project revision in one step. Progress shows in the Apps list.
+- **Pin image digests** rewrites unpinned `FROM` and `image:` references in pasted files to
+  `name:tag@sha256:…`, using each registry's current digest.
+- The **Nix** tab has a **VM or container** form (type, image, CPUs, memory, data disk, USB
+  device) that generates the declaration. Each instance has a **Console** link to Incus.
+- **Import data** copies a `.tar`/`.tar.gz` into a folder inside an app's instance.
 - Upload multiple original files, a folder, or **one explicitly selected** ZIP, TAR, TAR.GZ or TGZ archive from the Projects browser UI. Copy original file bytes and nested relative names without rewriting YAML, Dockerfiles or `.dockerignore`.
 - Source is stored in root-owned staging, published into immutable revision directories at `/srv/nixus/project-sources/<project>/revisions/<sha256>/source/`, **never in the world-readable Nix store**. The existing separate reauthenticated review/publish contract applies.
 - Direct and unpacked source quotas: at most **256 files**, **64 MiB per file**, **128 MiB total**, **12 path components**; archives at most **64 MiB compressed** and 1024 entries including directories. Realistic binary assets are supported up to these limits without silent truncation.

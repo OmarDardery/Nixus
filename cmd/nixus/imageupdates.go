@@ -544,3 +544,114 @@ func rewriteBases(text string, bases []any) string {
 	}
 	return strings.Join(lines, "")
 }
+
+// --- pinning pasted source ----------------------------------------------------------
+
+var composeImageLine = regexp.MustCompile(`^(\s*image:\s*["']?)([^"'\s#]+)(["']?\s*(?:#.*)?)$`)
+
+// pinText rewrites unpinned Dockerfile FROM and Compose image references to
+// name:tag@sha256:digest. Untagged references follow "latest". Other bytes
+// are unchanged.
+func pinText(file, text string, resolve func(imageRef) (string, error)) (string, []any, error) {
+	base := strings.ToLower(path.Base(file))
+	isDockerfile := dockerfileNames[path.Base(file)] || strings.HasSuffix(base, ".dockerfile")
+	isCompose := composeNames[path.Base(file)]
+	if !isDockerfile && !isCompose {
+		return text, nil, nil
+	}
+	changes := []any{}
+	cache := map[string]string{}
+	pin := func(ref string) (string, error) {
+		r, ok := parseImageRef(ref)
+		if !ok || r.Digest != "" {
+			return ref, nil
+		}
+		if pinned, ok := cache[ref]; ok {
+			return pinned, nil
+		}
+		tagged := ref
+		if r.Tag == "" {
+			r.Tag, tagged = "latest", ref+":latest"
+		}
+		digest, err := resolve(r)
+		if err != nil {
+			return "", Public("Could not resolve " + ref + ": " + publicError(err))
+		}
+		pinned := tagged + "@" + digest
+		cache[ref] = pinned
+		changes = append(changes, M{"file": file, "from": ref, "to": pinned})
+		return pinned, nil
+	}
+	stages := map[string]bool{}
+	lines := strings.SplitAfter(text, "\n")
+	for i, line := range lines {
+		body := strings.TrimRight(line, "\r\n")
+		ending := line[len(body):]
+		if isDockerfile {
+			fields := strings.Fields(body)
+			if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
+				continue
+			}
+			args := fields[1:]
+			for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+				args = args[1:]
+			}
+			if len(args) == 0 {
+				continue
+			}
+			ref := args[0]
+			stage := ""
+			if len(args) >= 3 && strings.EqualFold(args[1], "AS") {
+				stage = strings.ToLower(args[2])
+			}
+			if !strings.EqualFold(ref, "scratch") && !(stages[strings.ToLower(ref)] && !strings.ContainsAny(ref, ":/@")) {
+				pinned, err := pin(ref)
+				if err != nil {
+					return "", nil, err
+				}
+				if pinned != ref {
+					idx := strings.Index(body, ref)
+					lines[i] = body[:idx] + pinned + body[idx+len(ref):] + ending
+				}
+			}
+			if stage != "" {
+				stages[stage] = true
+			}
+			continue
+		}
+		if m := composeImageLine.FindStringSubmatch(body); m != nil {
+			pinned, err := pin(m[2])
+			if err != nil {
+				return "", nil, err
+			}
+			if pinned != m[2] {
+				lines[i] = m[1] + pinned + m[3] + ending
+			}
+		}
+	}
+	return strings.Join(lines, ""), changes, nil
+}
+
+// pinSources pins every pasted file, returning the rewritten texts.
+func pinSources(filesArg any) (M, error) {
+	files := list(filesArg)
+	if len(files) == 0 || len(files) > 64 {
+		return nil, Public("Paste 1–64 files to pin")
+	}
+	out := []any{}
+	changes := []any{}
+	for _, raw := range files {
+		f := obj(raw)
+		name, text := str(f["path"]), str(f["text"])
+		if name == "" || len(text) > 1024*1024 {
+			return nil, Public("Invalid file to pin")
+		}
+		pinned, c, err := pinText(name, text, registryDigest)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, c...)
+		out = append(out, M{"path": name, "text": pinned})
+	}
+	return M{"files": out, "changes": changes}, nil
+}

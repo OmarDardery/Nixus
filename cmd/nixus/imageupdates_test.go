@@ -144,3 +144,29 @@ func TestFetchBaseImagesEnforcesQuotaAndPresence(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPinTextPinsOnlyUnpinnedExternalImages(t *testing.T) {
+	resolve := func(r imageRef) (string, error) {
+		if r.Tag == "" {
+			t.Fatal("untagged reference not defaulted to latest")
+		}
+		return digestB, nil
+	}
+	docker := "FROM node:20 AS build\nRUN make\nFROM build AS test\nFROM scratch\nFROM ghcr.io/o/app@" + digestA + "\nFROM debian\n"
+	got, changes, err := pinText("Dockerfile", docker, resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "FROM node:20@" + digestB + " AS build\nRUN make\nFROM build AS test\nFROM scratch\nFROM ghcr.io/o/app@" + digestA + "\nFROM debian:latest@" + digestB + "\n"
+	if got != want || len(changes) != 2 {
+		t.Fatalf("got\n%s\nchanges %v", got, changes)
+	}
+	compose := "services:\n  db:\n    image: \"postgres:16\" # main db\n  web:\n    build: .\n"
+	got, changes, err = pinText("compose.yaml", compose, resolve)
+	if err != nil || got != "services:\n  db:\n    image: \"postgres:16@"+digestB+"\" # main db\n  web:\n    build: .\n" || len(changes) != 1 {
+		t.Fatalf("got\n%s %v %v", got, changes, err)
+	}
+	if out, c, _ := pinText("README.md", "FROM x\n", resolve); out != "FROM x\n" || len(c) != 0 {
+		t.Fatal("rewrote a non-source file")
+	}
+}

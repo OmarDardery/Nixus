@@ -39,6 +39,10 @@ in {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = "daily"; Persistent = true; RandomizedDelaySec = "1h"; };
     };
+    systemd.timers.nixus-secrets-deliver = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = { OnBootSec = "2min"; OnUnitActiveSec = "10min"; };
+    };
     systemd.timers.nixus-project-backup = {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = "*:0/15"; Persistent = true; RandomizedDelaySec = "2min"; };
@@ -101,6 +105,13 @@ in {
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         serviceConfig = { Type = "oneshot"; ExecStart = [ "${admin}/bin/nixus-admin image-updates check" "${admin}/bin/nixus-admin image-updates auto" ]; TimeoutStartSec = "6h"; UMask = "0077"; };
+      };
+      # Containers lose /run on restart; re-deliver app secrets after boot and periodically.
+      nixus-secrets-deliver = {
+        description = "Deliver each app's decrypted secrets into its running instances";
+        restartIfChanged = false;
+        after = [ "incus.service" ];
+        serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin apps deliver-secrets"; TimeoutStartSec = "10min"; UMask = "0077"; };
       };
       nixus-project-backup = {
         description = "Run the reviewed declarative project backup policy when due";

@@ -122,6 +122,10 @@ in pkgs.testers.runNixOSTest {
         digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
 
+    with subtest("pin: unpinned references resolve to the registry's digest"):
+        pinned = broker("/image-updates/pin", {"files": [{"path": "Dockerfile", "text": "FROM localhost:5000/nixus/base:1\nCOPY a /a\n"}]})
+        assert pinned["files"][0]["text"] == "FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY a /a\n", pinned
+
     with subtest("stage, review and publish the original source bytes"):
         files = {
             "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
@@ -201,6 +205,38 @@ in pkgs.testers.runNixOSTest {
         served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
 
+    with subtest("secrets: an app secret is encrypted, published and delivered to /run/secrets"):
+        broker("/project-secrets/enroll", {"mode": "generate", "acknowledge": True})
+        sreview = broker("/project-secrets/review", {"project": "testapp", "key": "API_TOKEN", "action": "set",
+                                                     "value": "s3cret-value", "expectedRevision": None})
+        spub = broker("/project-secrets/publish", {"reviewId": sreview["reviewId"], "acknowledge": True})
+        assert spub["delivery"].get("files") == 1, spub
+        app = json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"]
+        delivered = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN")
+        assert delivered == "s3cret-value", delivered
+        machine.fail("grep -r s3cret-value /srv/nixus /var/lib/nixus-admin /run/nixus-secret-delivery")
+        # A container restart clears /run; the delivery command restores it.
+        machine.succeed("incus restart " + app + " --project testapp")
+        machine.succeed("nixus-admin apps deliver-secrets >&2")
+        assert machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
+
+    with subtest("environment variables: Portainer-style list becomes real container environment"):
+        current = broker("/apps/env-read", {"project": "testapp"})
+        assert current["vars"] == {"API_TOKEN": "s3cret-value"}, current
+        saved = broker("/apps/env", {"project": "testapp", "vars": {"API_TOKEN": "s3cret-value", "MODE": "prod"},
+                                     "revision": current["revision"]})
+        assert "error" not in saved["delivery"], saved
+        assert broker("/apps/env?project=testapp")["keys"] == ["API_TOKEN", "MODE"]
+        app = json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"]
+        environ = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /proc/1/environ").split("\0")
+        assert "MODE=prod" in environ and "API_TOKEN=s3cret-value" in environ, environ
+        machine.fail("ps -eo args | grep -F s3cret-value | grep -v grep")
+        # Removing a variable removes it from the container too.
+        current = broker("/apps/env-read", {"project": "testapp"})
+        broker("/apps/env", {"project": "testapp", "vars": {"API_TOKEN": "s3cret-value"}, "revision": current["revision"]})
+        environ = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /proc/1/environ").split("\0")
+        assert not any(e.startswith("MODE=") for e in environ), environ
+
     with subtest("project backup: config, Incus data, encrypted off-host copy and full verification"):
         machine.succeed("install -d -m 0700 /var/lib/nixus-secrets && head -c 32 /dev/urandom | base64 > /var/lib/nixus-secrets/project-restic-password && chmod 0600 /var/lib/nixus-secrets/project-restic-password")
         policy = ('{ ... }: { nixus.backups = { enable = true; schedule = "daily"; verification = "full";\n'
@@ -209,7 +245,7 @@ in pkgs.testers.runNixOSTest {
         broker("/project/publish", {"id": breview["id"], "planHash": breview["planHash"]})
         status = json.loads(machine.succeed("nixus-admin project-backup run"))
         phases = {k: v["state"] for k, v in status["phases"].items()}
-        assert phases == {"config": "complete", "data": "complete", "offHost": "complete",
+        assert phases == {"config": "complete", "keys": "complete", "data": "complete", "offHost": "complete",
                           "verification": "complete", "github": "skipped"}, status["phases"]
         assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
 
@@ -241,8 +277,20 @@ in pkgs.testers.runNixOSTest {
         fresh.succeed("tar -C /var/lib -xzf /tmp/restic-repo.tgz && mv /var/lib/nixus-restic-drill /var/lib/nixus-restic-in")
         fresh.succeed("install -d -m 0700 /var/lib/nixus-secrets && install -m 0600 /dev/stdin /var/lib/nixus-secrets/restore-password <<'EOF'\n" + password + "EOF")
         fresh.fail("test -e /srv/nixus/projects")
-        report = json.loads(fresh.succeed("nixus-admin project-backup restore --repository /var/lib/nixus-restic-in "
-                                          "--password-file /var/lib/nixus-secrets/restore-password"))
+        def fbroker(path, body=None):
+            if body is None:
+                return json.loads(fresh.succeed("curl -sf --unix-socket /run/nixus-admin/backend.sock http://localhost" + path))
+            body = dict(body, _actor="admin")
+            return json.loads(fresh.succeed("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                                            "--data @- http://localhost" + path + " <<'EOF'\n" + json.dumps(body) + "\nEOF"))
+        fbroker("/backups/restore", {"kind": "local", "path": "/var/lib/nixus-restic-in", "password": password.strip()})
+        deadline = time.time() + 900
+        while fbroker("/backups/restore-status").get("status") in ("starting", "restoring", None):
+            assert time.time() < deadline, fbroker("/backups/restore-status")
+            time.sleep(3)
+        report = fbroker("/backups/restore-status")
+        if report.get("status") != "restored":
+            fresh.succeed("journalctl -b --no-pager | grep -E 'nixus: ' | tail -n 40 >&2")
         assert report["status"] == "restored", report
         assert report["sources"] == {"testapp": revision}, report["sources"]
         assert "testapp/" + json.loads(machine.succeed("incus list --project testapp --format=json"))[0]["name"] in report["incus"]["started"], report["incus"]
@@ -252,6 +300,8 @@ in pkgs.testers.runNixOSTest {
         assert fresh.succeed("cat " + restored_src).encode() == files["Dockerfile"]
         restored = json.loads(fresh.succeed("incus list --project testapp --format=json"))
         assert len(restored) == 1 and restored[0]["status"] == "Running", restored
+        assert report["keys"]["projectsIdentity"] == "restored", report["keys"]
+        assert fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
         served = fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
         # A second restore onto the now-populated host is refused before any change.
@@ -357,6 +407,16 @@ in pkgs.testers.runNixOSTest {
         code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
                                     "--data '{\"_actor\": \"admin\"}' http://localhost/image-updates/apply-all")
         assert code != 0 and "up to date" in out, out
+        machine.succeed("mkdir -p /tmp/imp/sub && echo imported-ok > /tmp/imp/sub/hello.txt && tar -C /tmp/imp -cf /tmp/imp.tar sub")
+        tarball = machine.succeed("base64 -w0 /tmp/imp.tar").strip()
+        raw = base64.b64decode(tarball)
+        imp = broker("/apps/import-data/start", {"project": "notes", "instance": running[0]["name"], "path": "/srv/imported",
+                                                 "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
+        broker("/apps/import-data/chunk", {"id": imp["id"], "offset": 0, "data": tarball})
+        assert broker("/apps/import-data/finish", {"id": imp["id"]})["files"] == 1
+        assert machine.succeed("incus exec " + running[0]["name"] + " --project notes -- /bin/cat /srv/imported/sub/hello.txt") == "imported-ok\n"
+        setup = broker("/apps/backup-setup", {"kind": "local", "path": "/var/lib/nixus-restic-drill", "schedule": "weekly", "verification": "metadata"})
+        assert setup["repository"] == "/var/lib/nixus-restic-drill" and "password" not in setup, setup
         saved = broker("/apps/backup-policy", {"policy": policy.replace("\"daily\"", "\"weekly\"")})
         assert saved["saved"], saved
 

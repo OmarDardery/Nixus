@@ -1428,11 +1428,6 @@ func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M,
 		if err := recheckSources(obj(job["sourceRefs"]), inventory); err != nil {
 			return nil, err
 		}
-		for _, p := range obj(inventory["projects"]) {
-			if isTrue(obj(p)["enable"]) && jget(obj(p), "secrets", "file") != nil {
-				return nil, Public("Scoped SOPS runtime delivery requires the approved #134 adapter")
-			}
-		}
 		for name := range obj(job["sourceRefs"]) {
 			if str(jget(inventory, "projects", name, "backend")) != "incus-compose" {
 				return nil, Public("Only Compose projects deploy uploaded Dockerfile/Compose source")
@@ -1559,6 +1554,15 @@ func (t *ProjectTransactions) runDeployment(identity string) (M, error) {
 			}
 			return nil
 		}()
+		if err == nil {
+			// Deliver each app's secrets into its running instances.
+			for _, name := range keys(obj(inventory["projects"])) {
+				if _, derr := deliverProjectSecrets(name, obj(obj(inventory["projects"])[name])); derr != nil {
+					err = derr
+					break
+				}
+			}
+		}
 		if err != nil {
 			journal["status"], journal["updatedAt"], journal["errorCode"] = "partial", now(), "resource-review-required"
 			journal["errorDetail"] = publicError(err)

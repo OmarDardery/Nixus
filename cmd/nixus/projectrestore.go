@@ -20,7 +20,7 @@ import (
 var restoreRoot = envPath("NIXUS_RESTORE_DIRECTORY", "/var/lib/nixus/restores")
 
 type restoreOptions struct {
-	Repository, PasswordFile, RcloneConfig, Snapshot string
+	Repository, PasswordFile, RcloneConfig, EnvironmentFile, Snapshot string
 }
 
 func restoreEnv(o restoreOptions) ([]string, error) {
@@ -34,6 +34,22 @@ func restoreEnv(o restoreOptions) ([]string, error) {
 			return nil, Public("The rclone configuration file is missing")
 		}
 		env = append(env, "RCLONE_CONFIG="+o.RcloneConfig)
+	}
+	if o.EnvironmentFile != "" {
+		raw, err := os.ReadFile(o.EnvironmentFile)
+		if err != nil || !fullmatch(runtimeFile, o.EnvironmentFile) {
+			return nil, Public("The credentials file is unreadable")
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if k, _, ok := strings.Cut(line, "="); !ok || !ENV_KEYS[k] {
+				return nil, Public("The credentials file has an unsupported variable")
+			}
+			env = append(env, line)
+		}
 	}
 	return env, nil
 }
@@ -310,6 +326,7 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	report := M{"format": 1, "startedAt": now(), "snapshot": snapshot, "repository": o.Repository, "status": "restoring"}
 	writeReport := func() { writeJSONMode(filepath.Join(STATE, "project-restore-report.json"), report, 0o640, "") }
+	writeReport()
 	failWith := func(stage string, err error) (M, error) {
 		report["status"], report["failedStage"], report["error"] = "failed", stage, publicError(err)
 		writeReport()
@@ -346,20 +363,29 @@ func projectRestore(o restoreOptions) (M, error) {
 		return failWith("sources", err)
 	}
 	report["sources"] = sources
+	keysReport, err := restoreKeys(target)
+	if err != nil {
+		return failWith("keys", err)
+	}
+	report["keys"] = keysReport
 	if generation := findOne(target, "/generations/", "inventory.json"); generation != "" {
 		incusReport, err := restoreIncus(updateIncus, generation)
 		if err != nil {
 			return failWith("incus", err)
 		}
 		report["incus"] = incusReport
+		if delivered, err := deliverAllSecrets(); err != nil {
+			report["secretDelivery"] = M{"error": publicError(err)}
+		} else {
+			report["secretDelivery"] = delivered["projects"]
+		}
 	} else {
 		report["incus"] = M{"skipped": "the snapshot holds no Incus data export"}
 	}
 	report["status"], report["completedAt"] = "restored", now()
 	report["next"] = []any{
-		"Restore the host age identity from the recovery kit before deploying projects that use encrypted secrets.",
-		"Rebuild each Compose project's published revision so its images regain build provenance, then deploy it.",
-		"Check application data inside the restored instances; this report covers files, volumes and instances only.",
+		"Redeploy each app from the Apps page so its images are rebuilt on this host.",
+		"Check each app's data.",
 	}
 	writeReport()
 	os.RemoveAll(target)
@@ -373,6 +399,7 @@ func projectRestoreCLI(args []string) error {
 	fs.StringVar(&o.Repository, "repository", "", "restic repository")
 	fs.StringVar(&o.PasswordFile, "password-file", "", "root-only restic password file")
 	fs.StringVar(&o.RcloneConfig, "rclone-config", "", "rclone configuration file for rclone: repositories")
+	fs.StringVar(&o.EnvironmentFile, "environment-file", "", "KEY=VALUE credentials for S3/B2")
 	fs.StringVar(&o.Snapshot, "snapshot", "latest", "restic snapshot ID")
 	if err := fs.Parse(args); err != nil {
 		return Public("usage: nixus-admin project-backup restore --repository REPO --password-file FILE [--rclone-config FILE] [--snapshot ID]")
@@ -382,4 +409,62 @@ func projectRestoreCLI(args []string) error {
 		printJSON(report)
 	}
 	return err
+}
+
+// restoreKeys installs the age identities and backup credentials from the
+// snapshot. Existing keys on this host are never replaced.
+func restoreKeys(target string) (M, error) {
+	report := M{}
+	install := func(name, from, to string) error {
+		data, err := os.ReadFile(from)
+		if err != nil {
+			return nil
+		}
+		if existing, err := os.ReadFile(to); err == nil {
+			if string(existing) == string(data) {
+				report[name] = "already present"
+			} else {
+				report[name] = "kept the existing one on this host"
+			}
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			return err
+		}
+		if err := atomic(to, data, 0o600, ""); err != nil {
+			return err
+		}
+		report[name] = "restored"
+		return nil
+	}
+	// The projects identity goes through the normal enrollment checks.
+	if data, err := os.ReadFile(filepath.Join(target, projectsIdentity)); err == nil {
+		if lexists(projectsIdentity) {
+			existing, _ := os.ReadFile(projectsIdentity)
+			if string(existing) == string(data) {
+				report["projectsIdentity"] = "already present"
+			} else {
+				report["projectsIdentity"] = "kept the existing one on this host"
+			}
+		} else if _, err := NewSecrets("", "", "").enrollIdentity("restore", "restore", strings.TrimSpace(string(data)), true); err != nil {
+			return nil, err
+		} else {
+			report["projectsIdentity"] = "restored"
+		}
+	} else {
+		report["projectsIdentity"] = "not in this backup"
+	}
+	if err := install("hostIdentity", filepath.Join(target, hostKeyFile), hostKeyFile); err != nil {
+		return nil, err
+	}
+	credentials := filepath.Join(target, "/var/lib/nixus-secrets")
+	entries, _ := os.ReadDir(credentials)
+	for _, e := range entries {
+		if e.Type().IsRegular() && fullmatch(re(`[A-Za-z0-9][A-Za-z0-9._-]{0,127}`), e.Name()) {
+			if err := install("credential:"+e.Name(), filepath.Join(credentials, e.Name()), filepath.Join("/var/lib/nixus-secrets", e.Name())); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return report, nil
 }

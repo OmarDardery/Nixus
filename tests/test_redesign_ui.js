@@ -25,8 +25,15 @@ const ids = JSON.parse(vm.runInContext('JSON.stringify(pages.map(([id])=>id))', 
 for (const id of ['overview','projects','guests','network','storage','hardware','integrations','security','accounts','ingress','operations','review','system','files','commands'])
   assert.ok(ids.includes(id), 'Missing redesigned route: ' + id);
 const nav = vm.runInContext('navigationHtml()', context);
-for (const id of ids) assert.ok(nav.includes('data-go="' + id + '"'));
+for (const id of ['overview', 'projects', 'operations', 'network', 'review', 'commands']) assert.ok(nav.includes('data-go="' + id + '"'));
+assert.equal((nav.match(/data-go=/g) || []).length, 6, 'six top-level destinations');
 assert.ok(nav.includes('aria-current="page"'), 'Current page should be announced.');
+const tabs = vm.runInContext("state.page='storage';settingsTabs()", context);
+for (const id of ['network','guests','storage','hardware','integrations','security','accounts','ingress','system','files'])
+  assert.ok(tabs.includes('data-go="' + id + '"'), 'settings tab missing: ' + id);
+assert.ok(vm.runInContext("state.page='storage';navigationHtml()", context).includes('class="active"'), 'Settings stays highlighted');
+assert.equal(vm.runInContext("state.page='overview';settingsTabs()", context), '');
+vm.runInContext("state.page='overview'", context);
 assert.equal(vm.runInContext('stagedCount()', context), 0);
 vm.runInContext("state.draft.management.address='192.0.2.110';state.draft.hostName='sample-host';",context);
 assert.equal(vm.runInContext('stagedCount()',context), 2);
