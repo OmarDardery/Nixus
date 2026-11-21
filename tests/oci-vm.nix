@@ -35,7 +35,7 @@ in pkgs.testers.runNixOSTest {
     imports = [ ../configuration-bootstrap.nix ];
     virtualisation = { memorySize = 4096; diskSize = 8192; cores = 2; };
     boot.kernelModules = lib.mkForce [ ];
-    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo ];
+    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
     services.dockerRegistry = { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
     # The local fixture registry has no TLS; mark only it as insecure.
     environment.etc."containers/registries.conf".text = ''
@@ -183,6 +183,35 @@ in pkgs.testers.runNixOSTest {
         assert running[0]["config"]["volatile.base_image"] == artifact["incusFingerprint"], running[0]["config"]
         served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
+
+    with subtest("project backup: config, Incus data, encrypted off-host copy and full verification"):
+        machine.succeed("install -d -m 0700 /var/lib/nixus-secrets && head -c 32 /dev/urandom | base64 > /var/lib/nixus-secrets/project-restic-password && chmod 0600 /var/lib/nixus-secrets/project-restic-password")
+        policy = ('{ ... }: { nixus.backups = { enable = true; schedule = "daily"; verification = "full";\n'
+                  '  restic = { repository = "/var/lib/nixus-restic-drill"; initialize = true; }; }; }\n')
+        breview = broker("/project/review", {"changes": {"backups.nix": policy}})
+        broker("/project/publish", {"id": breview["id"], "planHash": breview["planHash"]})
+        status = json.loads(machine.succeed("nixus-admin project-backup run"))
+        phases = {k: v["state"] for k, v in status["phases"].items()}
+        assert phases == {"config": "complete", "data": "complete", "offHost": "complete",
+                          "verification": "complete", "github": "skipped"}, status["phases"]
+        assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
+
+    with subtest("restore drill: restic restore, exact bytes, instance import and start"):
+        machine.succeed("RESTIC_PASSWORD_FILE=/var/lib/nixus-secrets/project-restic-password "
+                        "restic -r /var/lib/nixus-restic-drill restore latest --target /tmp/restore >&2")
+        restored_decl = machine.succeed("cat $(find /tmp/restore -path '*/workspace/testapp/default.nix' | head -n1)")
+        assert restored_decl == decl, restored_decl
+        restored_df = machine.succeed("cat $(find /tmp/restore -path '*/sources/testapp/Dockerfile' | head -n1)")
+        assert restored_df.encode() == files["Dockerfile"], restored_df
+        archive = machine.succeed("find /tmp/restore -name 'instance-*.tar.gz' | head -n1").strip()
+        assert archive, "no instance export in the restored snapshot"
+        machine.succeed("incus project create drill -c features.images=false -c features.profiles=false -c features.storage.volumes=false")
+        machine.succeed("incus import " + archive + " restored --project drill")
+        machine.succeed("incus start restored --project drill")
+        served = machine.succeed("incus exec restored --project drill -- /bin/cat /payload.txt")
+        assert served == "guarded-oci-build\n", served
+        running = json.loads(machine.succeed("incus list --project testapp --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"
