@@ -207,9 +207,10 @@ function nativeProjectPage() {
       (nativeWorkspaceInit.error ? '<p role="alert" class="error">' + esc(nativeWorkspaceInit.error) + '</p>' : '')
     : '';
   const txPanel =
-    '<p>Review a full Nix module as an independent project revision. Source changes never rebuild NixOS. Deployment only supports already-owned native Incus guest CPU/memory limits until full reconciliation is implemented.</p>' +
+    '<p>Review a full Nix module as an independent project revision. Source changes never rebuild NixOS. Deployment creates or reconciles the declared Incus project, volumes and instances, and brings up linked Compose sources; removed declarations are kept, never deleted.</p>' +
     '<label class="field"><span>Relative workspace Nix file (for example: alpha/default.nix)</span><input id="native-nix-path" type="text" spellcheck="false" value="' +
     esc(nativeProjectTx.path) + '" placeholder="alpha/default.nix"></label>' +
+    '<button type="button" id="native-nix-load" class="small">Load current file</button>' +
     '<label class="field"><span>Complete Nix file content</span><textarea id="native-nix-editor" rows="9" spellcheck="false">' +
     esc(nativeProjectTx.source) + '</textarea></label>' +
     '<label class="field"><span>Linked published source project (optional)</span><input id="native-nix-linked-source" type="text" placeholder="app-name" value="' +
@@ -236,6 +237,7 @@ function nativeProjectPage() {
         '<button type="button" data-native-nix-action="resume">Resume interrupted deployment</button>' : '') +
       '</section>' : '<p>No active reviewed project revision.</p>');
   return title("INCUS WORKSPACE", "Projects", "Manage project source and reviewed native Incus revisions.") +
+    (typeof projectConsoleCards === "function" ? projectConsoleCards() : "") +
     card("Observed Incus projects",
       '<button type="button" id="native-project-refresh">Refresh inventory</button>' +
       message + (rows ? '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Guests</th><th>Observed state</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
@@ -263,7 +265,7 @@ function nativeProjectPage() {
     card("OCI build and Compose compatibility preview", planPanel) +
     card("Review and build offline OCI artifact", buildPanel) +
     card("OCI / Compose deployment",
-      '<p>Original Dockerfile/Compose source publication is not application deployment. OCI building, scoped secrets, new Incus resource creation and data restore require #133/#139/#134 and verified recovery tests.</p>' +
+      '<p>Publishing source does not deploy it. To run a Compose app: publish its source, build and import its images, then link that exact source revision in a reviewed project revision and deploy it. Data restore still requires a verified recovery drill.</p>' +
       '<p><a href="/docs/incus-native-plan.md">Implementation phases</a></p>');
 }
 async function nativePreviewFiles(files, archive = false) {
@@ -643,6 +645,7 @@ async function nativeProjectTransaction(action) {
 }
 
 function bindNativeProjects() {
+  if (typeof bindProjectConsole === "function") bindProjectConsole();
   if (typeof bindNativeSecrets === "function") bindNativeSecrets();
   document.querySelector("#native-workspace-init")?.addEventListener("click", () => void nativeInitializeWorkspace());
   if (!nativeProjectTx.loaded && !nativeProjectTx.loading) void nativeRefreshProjectTransaction();
