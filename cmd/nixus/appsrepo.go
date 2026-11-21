@@ -51,7 +51,14 @@ func parseRepoURL(u string) (string, string, error) {
 	return m[6], "22", nil
 }
 
-func appsRepoConfig() M { return readObj(appsRepoConfigPath) }
+// appsRepoConfig is nil until a repository is connected.
+func appsRepoConfig() M {
+	cfg := readObj(appsRepoConfigPath)
+	if str(cfg["url"]) == "" {
+		return nil
+	}
+	return cfg
+}
 
 func appsRepoStatusPath() string { return filepath.Join(appsRepoRoot(), "status.json") }
 func appsRepoClone() string      { return filepath.Join(appsRepoRoot(), "clone") }

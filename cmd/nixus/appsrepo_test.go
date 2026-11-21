@@ -160,3 +160,16 @@ func TestReadRepoAppSplitsNixSourceAndSecrets(t *testing.T) {
 		t.Fatal("followed a symlink")
 	}
 }
+
+func TestAppsRepoUnconfiguredIsNil(t *testing.T) {
+	useState(t)
+	old := appsRepoConfigPath
+	defer func() { appsRepoConfigPath = old }()
+	appsRepoConfigPath = filepath.Join(t.TempDir(), "missing.json")
+	if appsRepoConfig() != nil || appsRepoView()["configured"] != false {
+		t.Fatal("a missing config must read as not connected")
+	}
+	if _, err := checkAppsRepo(); err == nil {
+		t.Fatal("check without a repository must fail")
+	}
+}

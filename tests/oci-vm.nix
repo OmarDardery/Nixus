@@ -493,7 +493,9 @@ in pkgs.testers.runNixOSTest {
         assert code == 0 and json.loads(out)["fingerprints"], out
         view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
         assert view["configured"] and "error" not in view["status"], view
-        git = "${pkgs.git}/bin/git -c safe.directory=* -c user.name=t -c user.email=t@t "
+        # The repo belongs to the git user; let root's local clone and push use it.
+        machine.succeed("HOME=/root ${pkgs.git}/bin/git config --global --add safe.directory '*'")
+        git = "HOME=/root ${pkgs.git}/bin/git -c user.name=t -c user.email=t@t "
         machine.succeed("rm -rf /tmp/apps && " + git + "clone -q /srv/git/apps.git /tmp/apps")
         for f in ["notes/Dockerfile", "notes/default.nix", "web/compose.yaml", "README.md"]:
             machine.succeed("test -f /tmp/apps/" + f)
