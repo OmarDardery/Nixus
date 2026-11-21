@@ -257,6 +257,8 @@
       checks.x86_64-linux = {
         # Builds the Go runtime and runs its unit tests (go test) in the sandbox.
         nixus = self.packages.x86_64-linux.nixus;
+        # Boots the Go broker and portal in a NixOS VM (needs KVM).
+        portal = import ./tests/portal-vm.nix { inherit pkgs; };
         admin = self.packages.x86_64-linux.admin;
         installer = self.packages.x86_64-linux.installer;
         host = self.nixosConfigurations.validation-host.config.system.build.toplevel;
