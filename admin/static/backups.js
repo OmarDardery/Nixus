@@ -103,6 +103,7 @@ function restoreCard() {
 function backupsCards() {
   if (!backupView.status && !backupView.loading) void refreshBackups();
   return backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard() +
+    (typeof repositoryCards === "function" ? repositoryCards() : "") +
     (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
 

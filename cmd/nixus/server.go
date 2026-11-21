@@ -254,6 +254,8 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return recoveryStart(body["token"], body["address"], body["origin"])
 	case "/recovery-complete":
 		return recoveryComplete(body["token"], body["csrf"], body["address"], body["origin"], body["password"])
+	case "/auth/linux":
+		return linuxLogin(body["username"], body["password"])
 	case "/enrollment":
 		return enrollmentClaim(body["code"], body["password"])
 	case "/oci/review":
@@ -580,8 +582,9 @@ func NewAuth() *Auth {
 }
 
 func (a *Auth) login(password any, address, username string) (string, string, error) {
+	// Rate-limit per address. The password check runs outside the lock: a
+	// Linux (PAM) check takes a moment and must not stall other sessions.
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	nowT := time.Now()
 	var attempts []time.Time
 	for _, t := range a.failures[address] {
@@ -590,20 +593,33 @@ func (a *Auth) login(password any, address, username string) (string, string, er
 		}
 	}
 	a.failures[address] = attempts
+	// Count this attempt up front so parallel guesses share the limit.
+	a.failures[address] = append(attempts, nowT)
+	a.mu.Unlock()
 	if len(attempts) >= 5 {
 		return "", "", Public("Too many sign-in attempts; wait five minutes")
 	}
-	if !accountMatches(username, password) {
-		a.failures[address] = append(attempts, nowT)
-		return "", "", Public("Invalid administrator password")
+	// Portal-only accounts first; otherwise a Linux sudo account checked by
+	// the root broker through PAM.
+	var role, identity string
+	if item := accountRecord(username); item != nil {
+		if !accountMatches(username, password) {
+			return "", "", Public("Invalid username or password")
+		}
+		role, identity = str(item["role"]), accountFingerprint(item)
+	} else if _, err := linuxVerify(username, password); err != nil {
+		return "", "", Public("Invalid username or password")
+	} else {
+		role, identity = "admin", "linux:"+username
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	delete(a.failures, address)
 	if len(a.sessions) > 128 {
 		a.sessions = map[string]*session{}
 	}
 	token, csrf := tokenURLSafe(32), tokenURLSafe(32)
-	item := accountRecord(username)
-	a.sessions[token] = &session{csrf: csrf, username: username, role: str(item["role"]), identity: accountFingerprint(item),
+	a.sessions[token] = &session{csrf: csrf, username: username, role: role, identity: identity,
 		created: nowT, used: nowT, authenticatedAt: now()}
 	return token, csrf, nil
 }
@@ -617,6 +633,24 @@ func cookieValue(headerValue, name string) []string {
 		}
 	}
 	return values
+}
+
+// linuxVerify asks the broker to check a Linux account's password.
+var linuxVerify = func(username string, password any) (M, error) {
+	pw, ok := password.(string)
+	if !ok || !fullmatch(hostUser, username) {
+		return nil, Public("Invalid username or password")
+	}
+	return brokerRequest("POST", "/auth/linux", M{"username": username, "password": pw})
+}
+
+// passwordOK re-checks the signed-in user's password before sensitive actions.
+func passwordOK(s *session, password any) bool {
+	if strings.HasPrefix(s.identity, "linux:") {
+		_, err := linuxVerify(s.username, password)
+		return err == nil
+	}
+	return accountMatches(s.username, password)
 }
 
 func (a *Auth) get(cookie string) *session {
@@ -637,10 +671,12 @@ func (a *Auth) get(cookie string) *session {
 		delete(a.sessions, token)
 		return nil
 	}
-	current := accountRecord(item.username)
-	if current == nil || accountFingerprint(current) != item.identity {
-		delete(a.sessions, token)
-		return nil
+	if !strings.HasPrefix(item.identity, "linux:") {
+		current := accountRecord(item.username)
+		if current == nil || accountFingerprint(current) != item.identity {
+			delete(a.sessions, token)
+			return nil
+		}
 	}
 	item.used = nowT
 	return item
@@ -1036,7 +1072,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	reauth := func(field, message string) error {
 		current := body[field]
 		delete(body, field)
-		if !accountMatches(s.username, current) {
+		if !passwordOK(s, current) {
 			return Public(message)
 		}
 		return nil
@@ -1122,6 +1158,9 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		reply(w, 200, M{"ok": true}, "", header{"Set-Cookie", "nixus_session=" + sessionCookie + "0"})
 		return nil
 	case "/api/password":
+		if strings.HasPrefix(s.identity, "linux:") {
+			return Public("Change your Linux password with passwd on the server")
+		}
 		if !accountMatches(s.username, body["current"]) {
 			return Public("Current password is incorrect")
 		}
@@ -1142,7 +1181,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		reply(w, 200, result, "")
 		return nil
 	case "/api/migrate-layout":
-		if !accountMatches(s.username, body["current"]) {
+		if !passwordOK(s, body["current"]) {
 			return Public("Reauthenticate to migrate the machine layout")
 		}
 	case "/api/review":
@@ -1152,8 +1191,8 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 			if !ack(body["acknowledgePrivilegedModules"]) {
 				return Public("Explicitly approve the privileged platform revision or Nix modules before building")
 			}
-			if !accountMatches(s.username, password) {
-				return Public("Reauthenticate with your current portal password before building privileged code")
+			if !passwordOK(s, password) {
+				return Public("Reauthenticate with your password before building privileged code")
 			}
 		}
 	case "/api/confirm":

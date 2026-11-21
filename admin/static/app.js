@@ -17,18 +17,18 @@ const app = document.querySelector("#app");
 const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],["repository","Repository"],
+  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["repository","network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
-const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Info"]];
+const settingsPages = ["network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
 function selectedHash() {
-  try { const id = decodeURIComponent(window.location.hash.slice(1)); return validPage(id) ? id : "overview"; }
+  try { const raw = decodeURIComponent(window.location.hash.slice(1)); const id = raw === "repository" ? "operations" : raw; return validPage(id) ? id : "overview"; }
   catch { return "overview"; }
 }
 function navigateTo(id, replace = false) {
@@ -187,8 +187,8 @@ function stagedBanner() {
 }
 function navigationHtml() {
   return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
-    const active = state.page === id || (id === "repository" && settingsPages.includes(state.page));
-    const icon = id === "repository" ? "⚙" : pageIcons[id];
+    const active = state.page === id || (id === "network" && settingsPages.includes(state.page));
+    const icon = id === "network" ? "⚙" : pageIcons[id];
     return `<button type="button" data-go="${id}" class="${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${icon}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
   }).join("")}</nav></div>`;
 }
@@ -300,7 +300,6 @@ function renderPage() {
     files,
     review,
     operations: operationsPage,
-    repository: () => repositoryPage(),
     commands: commandsPage,
   }[state.page]();
 }
@@ -490,7 +489,7 @@ function formatBytes(v) {
 function login(message = "") {
   clearInterval(state.timer);
   state.timer = null;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note"><button type="button" class="link" id="recover-access">Forgot your password? Recover access</button></p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Username</span><input name="username" autocomplete="username" placeholder="Your Linux user, e.g. the one you SSH with" required autofocus></label><label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">Use your Linux account (sudo users are administrators) or a console-only account.</p><p class="note" id="enrollment-offer" hidden><button type="button" class="link" id="enrollment-open">Create a console-only account instead</button></p><p class="note"><button type="button" class="link" id="recover-access">Forgot your password? Recover access</button></p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
   document.querySelector("#recover-access").onclick = () => showRecovery();
   document.querySelector("#login-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -511,7 +510,11 @@ function login(message = "") {
   const form = document.querySelector("#login-form");
   api("enrollment").then(({available, recoveryRequired}) => {
     if (!form.isConnected) return;
-    if (available) showEnrollment();
+    // Linux sign-in works right away; console-only accounts stay optional.
+    if (available) {
+      document.querySelector("#enrollment-offer").hidden = false;
+      document.querySelector("#enrollment-open").onclick = () => showEnrollment();
+    }
     else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixus-admin reset-password from a private host terminal or restore supported account state.";
   }).catch(() => {});
 }

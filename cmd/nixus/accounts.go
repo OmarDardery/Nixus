@@ -219,7 +219,7 @@ func authValid() bool {
 }
 
 func accountValid() bool {
-	if authValid() {
+	if authValid() || isFile(filepath.Join(STATE, linuxLoginMarker)) {
 		return true
 	}
 	p := filepath.Join(STATE, "users.json")
@@ -593,6 +593,20 @@ func hostProofVerify(username, password any) (string, error) {
 	}
 	return name, nil
 }
+
+// linuxLogin checks a Linux account for portal sign-in: the PAM password and
+// sudo rights (the same proof as first-run enrollment). Sudo users are
+// portal administrators; others use portal-only accounts.
+func linuxLogin(username, password any) (M, error) {
+	name, err := hostProofVerify(username, password)
+	if err != nil {
+		return nil, Public("Invalid username or password")
+	}
+	writeJSON(filepath.Join(STATE, linuxLoginMarker), M{"username": name, "at": now()})
+	return M{"username": name, "role": "admin"}, nil
+}
+
+const linuxLoginMarker = "linux-login.json"
 
 func lookPath(name string) string {
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {

@@ -1,6 +1,6 @@
 "use strict";
 
-// Settings → Repository: connect an apps repository, review remote changes
+// Backups → Apps repository: connect an apps repository, review remote changes
 // and deploy them. Console changes are pushed automatically.
 
 const repoView = { data: null, loading: false, fingerprints: null, error: "", message: "", url: "", branch: "main" };
@@ -12,10 +12,10 @@ async function refreshRepo() {
   catch (error) { repoView.error = error.message || "Repository status unavailable."; }
   finally {
     repoView.loading = false;
-    if (state.page === "repository") shell();
+    if (state.page === "operations") shell();
   }
   const job = repoView.data?.status?.deploy;
-  if (job && !["deployed", "failed"].includes(job.status)) setTimeout(() => { if (state.page === "repository") void refreshRepo(); }, 4000);
+  if (job && !["deployed", "failed"].includes(job.status)) setTimeout(() => { if (state.page === "operations") void refreshRepo(); }, 4000);
 }
 
 function repoNotice() {
@@ -31,7 +31,7 @@ function repoConnectCard(d) {
       '</textarea></label><button type="button" class="link" data-copy="' + esc(d.publicKey) + '">Copy</button>'
     : '<button type="button" id="repo-key">Create deploy key</button>';
   const fps = repoView.fingerprints;
-  return card("Connect a repository",
+  return card("Apps repository",
     '<label class="field"><span>SSH URL</span><input id="repo-url" type="text" spellcheck="false" autocomplete="off" placeholder="git@github.com:you/apps.git" value="' + esc(repoView.url) + '"></label>' +
     '<label class="field"><span>Branch</span><input id="repo-branch" type="text" spellcheck="false" value="' + esc(repoView.branch) + '"></label>' +
     key +
@@ -49,17 +49,17 @@ function repoPendingCard(d) {
   const apps = (p.apps || []).map(a => "<li><code>" + esc(a) + "</code></li>").join("");
   const removed = (p.removed || []).length ? "<p>Removed in the repository (not applied; delete them here first): " +
     p.removed.map(a => "<code>" + esc(a) + "</code>").join(", ") + "</p>" : "";
-  return card("Remote changes",
+  return card("Apps repository · remote changes",
     "<ul>" + (p.commits || []).map(c => "<li><code>" + esc(c) + "</code></li>").join("") + "</ul>" +
     (apps ? "<p>Apps to deploy:</p><ul>" + apps + "</ul>" : "<p>No app changes.</p>") + removed +
     '<div class="toolbar"><input id="repo-deploy-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
-    '<button type="button" class="primary" id="repo-deploy" data-head="' + esc(p.head) + '">Deploy</button></div>');
+    '<button type="button" class="primary" id="repo-deploy" data-head="' + esc(p.head) + '">Deploy</button></div>', (p.commits || []).length + " commit(s)", { open: true });
 }
 
 function repoStatusCard(d) {
   const s = d.status || {};
   const job = s.deploy;
-  return card("Repository",
+  return card("Apps repository",
     "<p><code>" + esc(d.url) + "</code> · " + esc(d.branch) + "</p>" +
     "<p>Checked " + esc(repoTime(s.checkedAt)) + " · Pushed " + esc(repoTime(s.pushedAt)) + "</p>" +
     (s.error ? '<p class="error">' + esc(s.error) + "</p>" : "") +
@@ -70,12 +70,13 @@ function repoStatusCard(d) {
     '<button type="button" class="danger" id="repo-disconnect">Disconnect</button></details></div>' + repoNotice());
 }
 
-function repositoryPage() {
+// Shown on the Backups page: the apps repository is the readable,
+// off-server copy of your apps; restic holds data and keys.
+function repositoryCards() {
   if (!repoView.data && !repoView.loading && !repoView.error) void refreshRepo();
   const d = repoView.data;
-  const body = !d ? card("Repository", "<p>Loading…</p>" + repoNotice())
-    : d.configured ? repoPendingCard(d) + repoStatusCard(d) : repoConnectCard(d);
-  return title("", "Repository", "Keep your apps in git. Console changes are pushed; remote changes wait for review.") + body;
+  if (!d) return card("Apps repository", "<p>Loading…</p>" + repoNotice());
+  return d.configured ? repoPendingCard(d) + repoStatusCard(d) : repoConnectCard(d);
 }
 
 async function repoAction(path, body, message) {
@@ -93,7 +94,7 @@ async function repoAction(path, body, message) {
 }
 
 function bindRepository() {
-  if (state.page !== "repository") return;
+  if (state.page !== "operations") return;
   const on = (id, fn) => document.querySelector(id)?.addEventListener("click", fn);
   const keep = () => {
     repoView.url = document.querySelector("#repo-url")?.value.trim() || repoView.url;

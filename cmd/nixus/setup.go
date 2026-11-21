@@ -10,7 +10,7 @@ import (
 const recoveryMarker = "recovery-kit.json"
 
 var setupItems = [][4]string{
-	{"administrator", "Create your administrator account", "Created during sign-in.", "accounts"},
+	{"administrator", "Sign in as an administrator", "Your Linux sudo account, or a console-only account.", "accounts"},
 	{"activation", "Activate the hypervisor", "Build, activate and confirm the first configuration.", "review"},
 	{"incusBrowser", "Enroll this browser for the Incus web UI", "Issue and import a browser certificate.", "security"},
 	{"cockpitPassword", "Set the Cockpit operator password", "Used for Cockpit and SSH.", "integrations"},

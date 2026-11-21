@@ -26,7 +26,7 @@ ignored and kept.
 ## Connect
 
 1. Create an **empty private repository**, or use an existing apps repository.
-2. **Settings → Repository**: enter the SSH URL (`git@github.com:you/apps.git`
+2. **Backups → Apps repository**: enter the SSH URL (`git@github.com:you/apps.git`
    or `ssh://git@host:2222/you/apps.git`) and **Create deploy key**.
 3. Add the shown public key to the repository as a deploy key **with write
    access** (GitHub: Settings → Deploy keys).

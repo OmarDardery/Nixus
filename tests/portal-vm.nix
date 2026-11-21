@@ -83,6 +83,18 @@ in pkgs.testers.runNixOSTest {
         assert login["role"] == "admin" and login["csrf"], login
         for view in ["status", "session", "project-overview", "project-backups", "image-updates", "project-sources", "apps"]:
             machine.succeed(base + "/api/" + view + " -f -o /dev/null")
+        # A Linux sudo account signs in with its own password (checked through PAM).
+        machine.succeed("useradd -m -G wheel -s /run/current-system/sw/bin/bash homelab && echo 'homelab:linux-account-password' | chpasswd")
+        lbase = "curl -sk -c /tmp/ljar -b /tmp/ljar -H 'Origin: https://127.0.0.1:9440' https://127.0.0.1:9440"
+        wrong = machine.succeed(lbase + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"not-the-password\"}'").strip()
+        assert wrong == "400", wrong
+        linux = json.loads(machine.succeed(lbase + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"linux-account-password\"}'"))
+        assert linux["role"] == "admin" and linux["username"] == "homelab", linux
+        machine.succeed(lbase + "/api/status -f -o /dev/null")
+        # A Linux account without sudo is refused.
+        machine.succeed("useradd -m -s /run/current-system/sw/bin/bash guest && echo 'guest:linux-account-password' | chpasswd")
+        nosudo = machine.succeed(lbase + "/api/login -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{\"username\":\"guest\",\"password\":\"linux-account-password\"}'").strip()
+        assert nosudo == "400", nosudo
         # A mutation without the CSRF token, or from another origin, is refused.
         nocsrf = machine.succeed(base + "/api/cancel-backup -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{}'").strip()
         assert nocsrf == "401", nocsrf
