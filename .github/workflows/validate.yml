@@ -89,5 +89,7 @@ jobs:
           result-helpers/bin/nixus-helpers list | jq -e '(.scripts | length > 0) and all(.sources[]; .revision | length == 40)'
       - name: Boot the Go broker and portal in a NixOS VM
         run: nix build .#checks.x86_64-linux.portal --no-link -L
+      - name: OCI build VM test
+        run: nix build .#checks.x86_64-linux.oci --no-link -L
       - name: Build complete Incus-native hypervisor
         run: nix build .#nixosConfigurations.validation-host.config.system.build.toplevel --no-link -L

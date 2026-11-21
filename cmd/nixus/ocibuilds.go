@@ -6,6 +6,7 @@ package main
 // network namespace and no Incus socket.
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -253,13 +254,12 @@ var ociRunSandbox = func(workspace, mode, identity string) error {
 		"--property=WorkingDirectory=" + workspace, "--property=Environment=NIXUS_OCI_JOB=" + identity}, cmd...)
 	res, err := run(sandbox, nil, timeout, nil, "")
 	if err != nil || res.Code != 0 {
-		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
-			tail := string(res.Stderr)
-			if len(tail) > 1400 {
-				tail = tail[len(tail)-1400:]
-			}
-			os.Stderr.WriteString("OCI-VM-SANDBOX-STDERR: " + tail + "\n")
+		// The journal is root-only; keep the builder tail for diagnosis.
+		tail := string(res.Stderr)
+		if len(tail) > 4000 {
+			tail = tail[len(tail)-4000:]
 		}
+		os.Stderr.WriteString("nixus: OCI sandbox " + mode + " failed: " + tail + "\n")
 		return Public("Isolated OCI validation/build failed; source was not deployed")
 	}
 	return nil
@@ -343,7 +343,7 @@ func (b *OCIBuilds) status(identity string) (M, error) {
 	}
 	out := M{}
 	for _, k := range []string{"id", "project", "revision", "status", "planHash", "createdAt", "expires", "intentHash",
-		"services", "artifacts", "errorCode", "importedAt"} {
+		"services", "artifacts", "errorCode", "errorDetail", "importedAt"} {
 		out[k] = record[k]
 	}
 	return out, nil
@@ -460,7 +460,8 @@ func (b *OCIBuilds) queue(identity, planHash any, resume bool) (M, error) {
 				"--property=RuntimeMaxSec=2400", "--setenv=NIXUS_STATE=" + b.state, "--setenv=NIXUS_OCI_ROOT=" + ociRoot,
 				"--setenv=NIXUS_OCI_BWRAP_BIN=" + os.Getenv("NIXUS_OCI_BWRAP_BIN"), "--setenv=NIXUS_OCI_COMPOSE_BIN=" + os.Getenv("NIXUS_OCI_COMPOSE_BIN"),
 				"--setenv=NIXUS_OCI_BUILDAH_BIN=" + os.Getenv("NIXUS_OCI_BUILDAH_BIN"), "--setenv=NIXUS_OCI_PATH=" + os.Getenv("NIXUS_OCI_PATH"),
-				"--setenv=PATH=" + os.Getenv("PATH"), adminLauncher(), "admin", "oci-build-job", id}, nil, 20*time.Second)
+				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
+				adminLauncher(), "admin", "oci-build-job", id}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {
 			record["status"], record["errorCode"] = "interrupted", "builder-launch-failed"
@@ -612,6 +613,8 @@ func (b *OCIBuilds) run(identity string) (M, error) {
 			}()
 			if importErr != nil {
 				record["status"], record["errorCode"] = "failed", "incus-import-failed"
+				record["errorDetail"] = publicError(importErr)
+				fmt.Fprintln(os.Stderr, "nixus: OCI import failed:", importErr)
 				audit("oci-build-import-failed", M{"identity": identity, "project": record["project"]})
 			} else {
 				record["status"], record["importedAt"] = "imported", now()
@@ -621,6 +624,8 @@ func (b *OCIBuilds) run(identity string) (M, error) {
 		}()
 		if err != nil {
 			record["status"], record["errorCode"] = "failed", "build-or-artifact-verification-failed"
+			record["errorDetail"] = publicError(err)
+			fmt.Fprintln(os.Stderr, "nixus: OCI build failed:", err)
 			audit("oci-build-failed", M{"identity": identity, "project": record["project"]})
 		}
 		if scratch != "" {
