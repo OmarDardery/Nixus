@@ -31,7 +31,7 @@ in pkgs.testers.runNixOSTest {
     imports = [ ../configuration-bootstrap.nix ];
     virtualisation = { memorySize = 4096; diskSize = 8192; cores = 2; };
     boot.kernelModules = lib.mkForce [ ];
-    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.squashfsTools ];
+    environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo ];
     services.dockerRegistry = { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
     # The local fixture registry has no TLS; mark only it as insecure.
     environment.etc."containers/registries.conf".text = ''
@@ -44,6 +44,8 @@ in pkgs.testers.runNixOSTest {
       preseed.storage_pools = [ { name = "default"; driver = "dir"; } ];
     };
     networking.nftables.enable = true;
+    # Surface isolated builder diagnostics in the journal.
+    systemd.services.nixus-admin-backend.environment.NIXUS_OCI_VM_TEST = "1";
     systemd.services.nixus-test-fixture = {
       wantedBy = [ "multi-user.target" ];
       after = [ "systemd-tmpfiles-setup.service" ];
@@ -130,7 +132,7 @@ in pkgs.testers.runNixOSTest {
             assert time.time() < deadline, status
             time.sleep(5)
         if status["status"] != "imported":
-            machine.succeed("journalctl -b -u 'nixus-oci-build-*' --no-pager | tail -n 80 >&2")
+            machine.succeed("journalctl -b -u nixus-admin-backend -u 'nixus-oci-*' --no-pager | tail -n 120 >&2")
         assert status["status"] == "imported", status
         artifact = status["artifacts"][0]
         assert artifact["incusFingerprint"], artifact
@@ -140,7 +142,7 @@ in pkgs.testers.runNixOSTest {
     with subtest("the built image contains the base layer and the payload"):
         rootfs = "/var/lib/incus/images/" + artifact["incusFingerprint"] + ".rootfs"
         machine.succeed("test -s " + rootfs)
-        listing = machine.succeed("unsquashfs -l " + rootfs)
+        listing = machine.succeed("tar -tf " + rootfs)
         assert "base-marker" in listing and "payload.txt" in listing, listing
 
     with subtest("published source bytes are unchanged"):
