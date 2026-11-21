@@ -205,6 +205,10 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 		}
 		created = append(created, name)
 	}
+	networks, err := restoreNetworks(incus, inventory)
+	if err != nil {
+		return nil, err
+	}
 	volumes, instances, started := []any{}, []any{}, []any{}
 	for _, raw := range list(inventory["customVolumes"]) {
 		v := obj(raw)
@@ -231,8 +235,53 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 		}
 		started = append(started, str(g["project"])+"/"+str(g["name"]))
 	}
-	return M{"generation": filepath.Base(generation), "projectsCreated": created, "volumes": volumes,
+	return M{"generation": filepath.Base(generation), "projectsCreated": created, "networks": networks, "volumes": volumes,
 		"instances": instances, "started": started}, nil
+}
+
+// restoreNetworks recreates managed bridge networks the exported instances use
+// (incus-compose gives each project its own), in the project that owns them,
+// without the host-specific volatile keys. Existing networks are kept.
+func restoreNetworks(incus incusFunc, inventory M) ([]any, error) {
+	ownNetworks := map[string]bool{}
+	for _, raw := range list(inventory["projects"]) {
+		p := obj(raw)
+		if str(obj(p["config"])["features.networks"]) == "true" {
+			ownNetworks[str(p["name"])] = true
+		}
+	}
+	byProject := obj(inventory["networks"])
+	created := []any{}
+	seen := map[string]bool{}
+	for _, project := range keys(byProject) {
+		owner := "default"
+		if ownNetworks[project] {
+			owner = project
+		}
+		for _, raw := range list(byProject[project]) {
+			n := obj(raw)
+			name := str(n["name"])
+			if !isTrue(n["managed"]) || str(n["type"]) != "bridge" || seen[owner+"/"+name] || !fullmatch(re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,14}`), name) {
+				continue
+			}
+			seen[owner+"/"+name] = true
+			if incusQueryObj(incus, "/1.0/networks/"+name+"?project="+owner) != nil {
+				continue
+			}
+			args := []string{"network", "create", name, "--type", "bridge", "--project", owner}
+			config := obj(n["config"])
+			for _, k := range keys(config) {
+				if !strings.HasPrefix(k, "volatile.") {
+					args = append(args, k+"="+str(config[k]))
+				}
+			}
+			if _, err := incus(0, args...); err != nil {
+				return nil, Public("Could not recreate network " + name)
+			}
+			created = append(created, owner+"/"+name)
+		}
+	}
+	return created, nil
 }
 
 func projectRestore(o restoreOptions) (M, error) {

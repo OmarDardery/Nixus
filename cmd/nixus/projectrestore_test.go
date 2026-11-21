@@ -81,3 +81,35 @@ func TestRestoreIncusRefusesCollisionsBeforeChanging(t *testing.T) {
 		t.Fatalf("accepted a damaged archive: %v", err)
 	}
 }
+
+func TestRestoreNetworksRecreatesMissingManagedBridges(t *testing.T) {
+	inventory := M{
+		"projects": []any{M{"name": "testapp", "config": M{"features.images": "true"}}},
+		"networks": M{"testapp": []any{
+			M{"name": "incusbr0", "type": "bridge", "managed": true, "config": M{}},
+			M{"name": "ic-abc", "type": "bridge", "managed": true, "config": M{"ipv4.address": "10.1.2.1/24", "volatile.bridge.hwaddr": "x"}},
+			M{"name": "eth0", "type": "physical", "managed": false, "config": M{}},
+		}},
+	}
+	var calls []string
+	fake := func(_ time.Duration, args ...string) (string, error) {
+		if args[0] == "query" {
+			if strings.Contains(args[1], "/networks/incusbr0") {
+				return `{"name":"incusbr0"}`, nil
+			}
+			return "", Public("not found")
+		}
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	}
+	created, err := restoreNetworks(fake, inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || created[0] != "default/ic-abc" {
+		t.Fatalf("created %v", created)
+	}
+	if len(calls) != 1 || calls[0] != "network create ic-abc --type bridge --project default ipv4.address=10.1.2.1/24" {
+		t.Fatalf("calls %v", calls)
+	}
+}
