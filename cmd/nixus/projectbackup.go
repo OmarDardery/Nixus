@@ -20,16 +20,12 @@ import (
 
 var projectBackupRoot = envPath("NIXUS_PROJECT_BACKUPS", "/var/lib/nixus/project-backups")
 
-const githubDeployKey = "/var/lib/nixus-secrets/github-deploy-key"
-
 // GitHub's published SSH host keys; pinned so a first push cannot be redirected.
-const githubKnownHosts = "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n"
 
-var backupPhases = []string{"config", "data", "offHost", "verification", "github"}
+var backupPhases = []string{"config", "data", "offHost", "verification"}
 
 var resticRepository = re(`(?:rclone:[A-Za-z0-9_-]+:[A-Za-z0-9._/-]+|sftp:[A-Za-z0-9._@:/-]+|s3:[A-Za-z0-9._:/-]+|b2:[A-Za-z0-9._:/-]+|rest:https://[A-Za-z0-9._:/-]+|/[A-Za-z0-9._/-]+)`)
 var runtimeFile = re(`/(?:var/lib|run|etc)/[A-Za-z0-9._/-]+`)
-var githubRepository = re(`git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git`)
 var gitBranch = re(`[A-Za-z0-9._/-]{1,100}`)
 
 const maxGithubFile = 50 << 20
@@ -40,7 +36,7 @@ func validateBackupPolicy(raw any) (M, error) {
 	}
 	fail := Public("Invalid project backup policy")
 	p := obj(raw)
-	if !exactKeys(p, "enable", "includeProjects", "schedule", "data", "retention", "verification", "restic", "github") {
+	if !exactKeys(p, "enable", "includeProjects", "schedule", "data", "retention", "verification", "restic") {
 		return nil, fail
 	}
 	for _, k := range []string{"enable", "data"} {
@@ -93,13 +89,6 @@ func validateBackupPolicy(raw any) (M, error) {
 	}
 	if _, ok := restic["initialize"].(bool); !ok {
 		return nil, fail
-	}
-	if gh := p["github"]; gh != nil {
-		g := obj(gh)
-		if !exactKeys(g, "repository", "branch") || !fullmatch(githubRepository, str(g["repository"])) || !fullmatch(gitBranch, str(g["branch"])) ||
-			strings.Contains(str(g["branch"]), "..") {
-			return nil, fail
-		}
 	}
 	return p, nil
 }
@@ -342,92 +331,11 @@ func verifyOffHost(policy M) error {
 var gitRun = func(dir string, env []string, args ...string) (string, error) {
 	res, err := run(append([]string{"git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-C", dir}, args...), nil, 10*time.Minute, env, "")
 	if err != nil || res.Code != 0 {
-		return "", Public("git " + args[0] + " failed for the configuration mirror")
+		return "", Public("git " + args[0] + " failed")
 	}
 	return string(res.Stdout), nil
 }
 
-// githubSync mirrors the configuration snapshot into a dedicated repository.
-func githubSync(policy M, snapshot string) (string, error) {
-	gh := obj(policy["github"])
-	if !isFile(githubDeployKey) {
-		return "", Public("No GitHub deploy key; run sudo nixus-admin project-backup github-key and add it to the repository")
-	}
-	knownHosts := filepath.Join(projectBackupRoot, "github_known_hosts")
-	if err := atomicString(knownHosts, githubKnownHosts, 0o600); err != nil {
-		return "", err
-	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=/var/empty", "GIT_TERMINAL_PROMPT=0",
-		"GIT_SSH_COMMAND=ssh -i " + githubDeployKey + " -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=" + knownHosts,
-		"GIT_AUTHOR_NAME=Nixus backup", "GIT_AUTHOR_EMAIL=backup@nixus.invalid", "GIT_COMMITTER_NAME=Nixus backup", "GIT_COMMITTER_EMAIL=backup@nixus.invalid"}
-	repo := filepath.Join(projectBackupRoot, "github")
-	branch := str(gh["branch"])
-	if !isDir(filepath.Join(repo, ".git")) {
-		os.RemoveAll(repo)
-		os.MkdirAll(repo, 0o700)
-		if _, err := gitRun(repo, env, "init", "-q", "-b", branch); err != nil {
-			return "", err
-		}
-		if _, err := gitRun(repo, env, "remote", "add", "origin", str(gh["repository"])); err != nil {
-			return "", err
-		}
-	}
-	if _, err := gitRun(repo, env, "remote", "set-url", "origin", str(gh["repository"])); err != nil {
-		return "", err
-	}
-	if _, err := gitRun(repo, env, "fetch", "-q", "origin"); err != nil {
-		return "", err
-	}
-	if out, _ := gitRun(repo, env, "ls-remote", "--heads", "origin", branch); strings.TrimSpace(out) != "" {
-		if _, err := gitRun(repo, env, "checkout", "-q", "-B", branch, "origin/"+branch); err != nil {
-			return "", err
-		}
-	}
-	entries, _ := os.ReadDir(repo)
-	for _, e := range entries {
-		if e.Name() != ".git" {
-			os.RemoveAll(filepath.Join(repo, e.Name()))
-		}
-	}
-	err := filepath.WalkDir(snapshot, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(snapshot, p)
-		if info.Size() > maxGithubFile {
-			return Public("Source file " + rel + " exceeds GitHub's 50 MiB limit; it remains in the encrypted restic snapshot only")
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		return atomic(filepath.Join(repo, rel), data, 0o644, "")
-	})
-	if err != nil {
-		return "", err
-	}
-	if _, err := gitRun(repo, env, "add", "-A"); err != nil {
-		return "", err
-	}
-	if out, _ := gitRun(repo, env, "status", "--porcelain"); strings.TrimSpace(out) != "" {
-		manifest := readObj(filepath.Join(snapshot, "MANIFEST.json"))
-		message := "Nixus project configuration " + str(manifest["workspaceSourceHash"])
-		if _, err := gitRun(repo, env, "commit", "-q", "-m", message); err != nil {
-			return "", err
-		}
-	}
-	if _, err := gitRun(repo, env, "push", "-q", "origin", "HEAD:refs/heads/"+branch); err != nil {
-		return "", err
-	}
-	head, _ := gitRun(repo, env, "rev-parse", "HEAD")
-	return strings.TrimSpace(head), nil
-}
-
-// pruneSnapshots keeps the newest local configuration generations.
 func pruneSnapshots(keep int) {
 	dir := filepath.Join(projectBackupRoot, "config")
 	entries, _ := os.ReadDir(dir)
@@ -519,16 +427,6 @@ func runProjectBackup(force bool) (M, error) {
 			setPhase(status, "verification", "complete", str(policy["verification"])+" check passed; not an application restore test")
 		}
 	}
-	if policy["github"] != nil {
-		if head, err := githubSync(policy, snapshot); err != nil {
-			ok = false
-			setPhase(status, "github", "failed", publicError(err))
-		} else {
-			setPhase(status, "github", "complete", "configuration mirrored at "+head)
-		}
-	} else {
-		setPhase(status, "github", "skipped", "no GitHub configuration mirror configured")
-	}
 	pruneSnapshots(2)
 	status["restoreTest"] = "not performed; run an isolated restore drill to qualify recovery"
 	if ok {
@@ -543,27 +441,9 @@ func runProjectBackup(force bool) (M, error) {
 	return status, nil
 }
 
-func githubKeyCommand() error {
-	if !isFile(githubDeployKey) {
-		os.MkdirAll(filepath.Dir(githubDeployKey), 0o700)
-		if _, err := check([]string{"ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "nixus-config-backup", "-f", githubDeployKey}, nil, 30*time.Second); err != nil {
-			return Public("Could not create the GitHub deploy key")
-		}
-		os.Chmod(githubDeployKey, 0o600)
-	}
-	public, err := os.ReadFile(githubDeployKey + ".pub")
-	if err != nil {
-		return Public("The GitHub deploy public key is missing")
-	}
-	fmt.Println("Add this PUBLIC key to your private configuration repository as a deploy key with write access:")
-	fmt.Print(string(public))
-	fmt.Println("The private key stays in " + githubDeployKey + " and is never printed or uploaded.")
-	return nil
-}
-
 func projectBackupCLI(args []string) error {
 	if len(args) == 0 {
-		return Public("usage: nixus-admin project-backup {tick|run|status|github-key|check-destination|restore}")
+		return Public("usage: nixus-admin project-backup {tick|run|status|check-destination|restore}")
 	}
 	switch args[0] {
 	case "tick", "run":
@@ -577,8 +457,6 @@ func projectBackupCLI(args []string) error {
 		return nil
 	case "restore":
 		return projectRestoreCLI(args[1:])
-	case "github-key":
-		return githubKeyCommand()
 	case "check-destination":
 		policy, _, err := publishedProjectPolicy(NewProjectTransactions("", ""))
 		if err != nil {

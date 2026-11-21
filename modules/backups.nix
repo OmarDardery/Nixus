@@ -43,6 +43,10 @@ in {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnBootSec = "2min"; OnUnitActiveSec = "10min"; };
     };
+    systemd.timers.nixus-apps-repo-check = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = { OnBootSec = "3min"; OnUnitActiveSec = "10min"; RandomizedDelaySec = "1min"; };
+    };
     systemd.timers.nixus-project-backup = {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = "*:0/15"; Persistent = true; RandomizedDelaySec = "2min"; };
@@ -112,6 +116,15 @@ in {
         restartIfChanged = false;
         after = [ "incus.service" ];
         serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin apps deliver-secrets"; TimeoutStartSec = "10min"; UMask = "0077"; };
+      };
+      # Fetch the apps repository: list remote changes for review, push console changes.
+      nixus-apps-repo-check = {
+        description = "Check the apps repository for changes";
+        restartIfChanged = false;
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        unitConfig.ConditionPathExists = "/var/lib/nixus-secrets/apps-repo.json";
+        serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin apps-repo check"; TimeoutStartSec = "30min"; UMask = "0077"; };
       };
       nixus-project-backup = {
         description = "Run the reviewed declarative project backup policy when due";

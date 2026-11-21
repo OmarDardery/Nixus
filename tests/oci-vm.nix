@@ -44,6 +44,10 @@ let
       boot.kernelModules = lib.mkForce [ ];
       environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
       # An emulated FTDI USB serial adapter for the passthrough subtest.
+      # A local git-over-SSH server for the apps repository subtest.
+      services.openssh = lib.mkIf withRegistry { enable = true; openFirewall = false; };
+      users.users.git = lib.mkIf withRegistry { isSystemUser = true; group = "git"; home = "/srv/git"; createHome = true; shell = "${pkgs.git}/bin/git-shell"; };
+      users.groups.git = lib.mkIf withRegistry { };
       virtualisation.qemu.options = lib.mkIf withRegistry [ "-device qemu-xhci,id=xhci" "-chardev null,id=ser0" "-device usb-serial,bus=xhci.0,chardev=ser0" ];
       services.dockerRegistry = lib.mkIf withRegistry { enable = true; listenAddress = "127.0.0.1"; port = 5000; };
       # The local fixture registry has no TLS; mark only it as insecure.
@@ -248,7 +252,7 @@ in pkgs.testers.runNixOSTest {
         status = json.loads(machine.succeed("nixus-admin project-backup run"))
         phases = {k: v["state"] for k, v in status["phases"].items()}
         assert phases == {"config": "complete", "keys": "complete", "data": "complete", "offHost": "complete",
-                          "verification": "complete", "github": "skipped"}, status["phases"]
+                          "verification": "complete"}, status["phases"]
         assert status["coverage"]["testapp"]["sourceRevision"] == revision, status["coverage"]
 
     with subtest("restore drill: restic restore, exact bytes, instance import and start"):
@@ -464,6 +468,46 @@ in pkgs.testers.runNixOSTest {
             assert time.time() < deadline, broker("/apps")
             time.sleep(3)
         assert broker("/apps")["badhw"]["status"] == "failed", broker("/apps")["badhw"]
+
+    with subtest("apps repository: connect over SSH, push the server's apps, review and deploy a pushed app"):
+        machine.succeed("${pkgs.git}/bin/git init -q --bare -b main /srv/git/apps.git && chown -R git:git /srv/git")
+        key = broker("/apps-repo/key", {})["publicKey"]
+        machine.succeed("install -d -o git -g git -m 700 /srv/git/.ssh && echo '" + key + "' > /srv/git/.ssh/authorized_keys && "
+                        "chown git:git /srv/git/.ssh/authorized_keys && chmod 600 /srv/git/.ssh/authorized_keys")
+        machine.wait_for_unit("sshd.service")
+        url = "ssh://git@localhost:22/srv/git/apps.git"
+        assert broker("/apps-repo/scan", {"url": url})["fingerprints"]
+        view = broker("/apps-repo/connect", {"url": url, "branch": "main"})
+        assert view["configured"] and "error" not in view["status"], view
+        git = "${pkgs.git}/bin/git -c user.name=t -c user.email=t@t "
+        machine.succeed("rm -rf /tmp/apps && " + git + "clone -q /srv/git/apps.git /tmp/apps")
+        for f in ["notes/Dockerfile", "notes/default.nix", "web/compose.yaml", "README.md"]:
+            machine.succeed("test -f /tmp/apps/" + f)
+        # The age key and deploy key never reach the repository.
+        machine.fail("grep -rqE 'AGE-SECRET-KEY|PRIVATE KEY' /tmp/apps --exclude-dir=.git")
+        hello_dockerfile = "FROM localhost:5000/nixus/webbase:1@" + dbase + "\nCMD [\"/bin/sleep\", \"86400\"]\n"
+        machine.succeed("mkdir -p /tmp/apps/hello && cat > /tmp/apps/hello/compose.yaml <<'EOF'\nservices:\n  hello:\n    build: .\nEOF\n"
+                        "cat > /tmp/apps/hello/Dockerfile <<'EOF'\n" + hello_dockerfile + "EOF")
+        machine.succeed("cd /tmp/apps && " + git + "add -A && " + git + "commit -qm 'add hello' && " + git + "push -q origin main")
+        view = broker("/apps-repo/check", {})
+        pending = view["status"]["pending"]
+        assert pending["apps"] == ["hello"] and len(pending["commits"]) == 1, pending
+        broker("/apps-repo/deploy", {"head": pending["head"]})
+        deadline = time.time() + 900
+        while broker("/apps-repo")["status"].get("deploy", {}).get("status") not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps-repo")
+            time.sleep(3)
+        job = broker("/apps-repo")["status"]["deploy"]
+        if job["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
+        assert job["status"] == "deployed", job
+        running = json.loads(machine.succeed("incus list --project hello --format=json"))
+        assert len(running) == 1 and running[0]["status"] == "Running", running
+        # A console change (an env var) is committed and pushed back.
+        broker("/apps/env", {"project": "hello", "vars": {"GREETING": "hi"}, "revision": None})
+        machine.wait_until_succeeds("cd /tmp/apps && " + git + "pull -q && test -f hello/secrets.enc.yaml && test -f hello/default.nix", timeout=120)
+        machine.fail("grep -q 'GREETING: hi' /tmp/apps/hello/secrets.enc.yaml")
+        assert "pending" not in broker("/apps-repo/check", {})["status"]
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"

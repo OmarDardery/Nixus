@@ -12,8 +12,7 @@ func backupPolicyFixture() M {
 	return M{"enable": true, "includeProjects": "all", "schedule": "daily", "data": false,
 		"retention": M{"daily": float64(7), "weekly": float64(4), "monthly": float64(6)}, "verification": "metadata",
 		"restic": M{"repository": "rclone:gdrive:nixus-backups", "passwordFile": "/var/lib/nixus-secrets/project-restic-password",
-			"environmentFile": nil, "rcloneConfigFile": "/var/lib/nixus-secrets/rclone.conf", "initialize": false},
-		"github": M{"repository": "git@github.com:example/nixus-config.git", "branch": "main"}}
+			"environmentFile": nil, "rcloneConfigFile": "/var/lib/nixus-secrets/rclone.conf", "initialize": false}}
 }
 
 func TestBackupPolicyValidation(t *testing.T) {
@@ -27,8 +26,7 @@ func TestBackupPolicyValidation(t *testing.T) {
 		func(p M) { obj(p["restic"])["repository"] = "https://user:token@example.com/repo" },
 		func(p M) { obj(p["restic"])["passwordFile"] = "/nix/store/x-password" },
 		func(p M) { obj(p["restic"])["rcloneConfigFile"] = nil },
-		func(p M) { p["github"] = M{"repository": "https://github.com/a/b.git", "branch": "main"} },
-		func(p M) { obj(p["github"])["branch"] = "../x" },
+		func(p M) { p["github"] = M{"repository": "git@github.com:a/b.git", "branch": "main"} },
 		func(p M) { p["schedule"] = "minutely" },
 		func(p M) { p["extra"] = true },
 	} {

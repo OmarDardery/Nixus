@@ -234,16 +234,6 @@ let
         rcloneConfigFile = mkOption { type = types.nullOr runtimePath; default = null; };
         initialize = mkOption { type = types.bool; default = false; };
       };
-      github = mkOption {
-        type = types.nullOr (types.submodule {
-          options = {
-            repository = mkOption { type = types.strMatching "git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git"; };
-            branch = mkOption { type = types.strMatching "[A-Za-z0-9._/-]{1,100}"; default = "main"; };
-          };
-        });
-        default = null;
-        description = "Private repository that receives non-secret project configuration and SOPS ciphertext.";
-      };
     };
   };
   backups = if (rootEntries."backups.nix" or null) == "regular"

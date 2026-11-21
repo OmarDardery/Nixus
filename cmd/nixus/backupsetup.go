@@ -80,7 +80,7 @@ func backupDestination(body M) (repository string, env []string, rcloneConf stri
 	return repository, env, rcloneConf, nil
 }
 
-func backupPolicyText(repository, schedule, verification string, data bool, rclone, envFile, github string) string {
+func backupPolicyText(repository, schedule, verification string, data bool, rclone, envFile string) string {
 	var b strings.Builder
 	b.WriteString("{ ... }: {\n  nixus.backups = {\n    enable = true;\n    includeProjects = \"all\";\n")
 	fmt.Fprintf(&b, "    schedule = %q;\n    data = %t;\n    verification = %q;\n    restic = {\n      repository = %q;\n", schedule, data, verification, repository)
@@ -91,9 +91,6 @@ func backupPolicyText(repository, schedule, verification string, data bool, rclo
 		fmt.Fprintf(&b, "      environmentFile = %q;\n", envFile)
 	}
 	b.WriteString("      initialize = true;\n    };\n")
-	if github != "" {
-		fmt.Fprintf(&b, "    github.repository = %q;\n", github)
-	}
 	b.WriteString("  };\n}\n")
 	return b.String()
 }
@@ -111,10 +108,6 @@ func setupBackups(actor string, body M) (M, error) {
 	}
 	if verification != "none" && verification != "full" {
 		verification = "metadata"
-	}
-	github := strings.TrimSpace(str(body["github"]))
-	if github != "" && !fullmatch(githubRepository, github) {
-		return nil, Public("GitHub mirror: git@github.com:owner/repo.git")
 	}
 	result := M{"repository": repository}
 	if !isFile(backupPasswordPth) {
@@ -148,7 +141,7 @@ func setupBackups(actor string, body M) (M, error) {
 			return nil, Public("Could not create " + repository)
 		}
 	}
-	policy := backupPolicyText(repository, schedule, verification, body["data"] != false, rcloneFile, envFile, github)
+	policy := backupPolicyText(repository, schedule, verification, body["data"] != false, rcloneFile, envFile)
 	if _, err := saveBackupPolicy(actor, policy); err != nil && !strings.Contains(publicError(err), "no changes") {
 		return nil, err
 	}

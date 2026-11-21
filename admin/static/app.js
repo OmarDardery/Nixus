@@ -17,13 +17,13 @@ const app = document.querySelector("#app");
 const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],
+  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],["repository","Repository"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Help"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
-const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Help"]];
-const pageIcons = {setup:"✓",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
+const settingsPages = ["repository","network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Help"]];
+const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
@@ -145,8 +145,8 @@ function stagedBanner() {
 }
 function navigationHtml() {
   return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
-    const active = state.page === id || (id === "network" && settingsPages.includes(state.page));
-    const icon = id === "network" ? "⚙" : pageIcons[id];
+    const active = state.page === id || (id === "repository" && settingsPages.includes(state.page));
+    const icon = id === "repository" ? "⚙" : pageIcons[id];
     return `<button type="button" data-go="${id}" class="${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${icon}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
   }).join("")}</nav></div>`;
 }
@@ -229,6 +229,7 @@ function shell() {
   bindOperations();
   bindApps();
   if (typeof bindBackups === "function") bindBackups();
+  if (typeof bindRepository === "function") bindRepository();
   if (typeof bindQuickActions === "function") bindQuickActions();
   bindFoundation();
   bindCommands();
@@ -254,6 +255,7 @@ function renderPage() {
     files,
     review,
     operations: operationsPage,
+    repository: () => repositoryPage(),
     commands: commandsPage,
   }[state.page]();
 }
