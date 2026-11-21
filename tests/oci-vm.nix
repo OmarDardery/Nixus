@@ -93,7 +93,7 @@ in pkgs.testers.runNixOSTest {
 
     with subtest("stage, review and publish the original source bytes"):
         files = {
-            "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\n").encode(),
+            "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY payload.txt /payload.txt\nCMD [\"/payload-app\"]\n").encode(),
             "payload.txt": b"guarded-oci-build\n",
         }
         entries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in files.items()]
