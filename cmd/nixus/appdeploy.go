@@ -259,3 +259,43 @@ func startProjectBackup(actor string) (M, error) {
 	audit("project-backup-requested", M{"principal": actor})
 	return M{"started": true}, nil
 }
+
+// appPower starts, stops or restarts every instance of an app.
+func appPower(actor string, body M) (M, error) {
+	project, action := str(body["project"]), str(body["action"])
+	if !fullmatch(projectName, project) || (action != "start" && action != "stop" && action != "restart") {
+		return nil, Public("Choose an app and start, stop or restart")
+	}
+	inventory, _ := liveInventory()
+	p := obj(obj(inventory["projects"])[project])
+	if p == nil {
+		return nil, Public("Unknown app")
+	}
+	incusProject := str(p["incusProject"])
+	instances := appInstances(updateIncus, incusProject)
+	if len(instances) == 0 {
+		return nil, Public("The app has no instances")
+	}
+	for _, inst := range instances {
+		running := str(inst["status"]) == "Running"
+		if (action == "start" && running) || (action == "stop" && !running) {
+			continue
+		}
+		verb := action
+		if action == "restart" && !running {
+			verb = "start"
+		}
+		args := []string{verb, str(inst["name"]), "--project", incusProject}
+		if verb != "start" {
+			args = append(args, "--timeout", "60")
+		}
+		if _, err := updateIncus(3*time.Minute, args...); err != nil {
+			return nil, Public("Could not " + action + " " + str(inst["name"]))
+		}
+	}
+	if action != "stop" {
+		deliverPublishedSecrets(project) // /run/secrets is cleared on restart
+	}
+	audit("app-power", M{"principal": actor, "project": project, "action": action})
+	return M{"done": true}, nil
+}

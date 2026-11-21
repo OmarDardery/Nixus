@@ -18,11 +18,11 @@ const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
   ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],["repository","Repository"],
-  ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Help"],
+  ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
 const settingsPages = ["repository","network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
-const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Help"]];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
@@ -101,9 +101,9 @@ function toggle(label, path, hint = "") {
 function secret(label, key, hint = "", textarea = false) {
   return `<label class="field full"><span>${esc(label)} ${state.host?.secretPresent?.[key] ? '<span class="tag">Already provisioned</span>' : ""}</span>${textarea ? `<textarea data-secret="${key}" spellcheck="false" placeholder="Leave empty to keep the current value">${esc(state.secrets[key] || "")}</textarea>` : `<input data-secret="${key}" type="password" autocomplete="new-password" value="${esc(state.secrets[key] || "")}" placeholder="${state.host?.secretPresent?.[key] ? "Leave empty to keep current" : "Enter an initial password"}">`}${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
 }
-const pageGuides = {overview:"start.md",guests:"networking.md",network:"networking.md",storage:"hardware.md",hardware:"hardware.md",integrations:"homelab.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"setup.md",files:"file-modules.md",review:"setup.md",operations:"recovery.md",commands:"helpers.md"};
+const pageGuides = {overview:"install.md",guests:"networking.md",network:"networking.md",storage:"apps.md",hardware:"apps.md",integrations:"apps.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"install.md",files:"administration.md",review:"install.md",operations:"backups.md",commands:"administration.md"};
 const title = (eyebrow, heading, text) =>
-  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "setup.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
+  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
 const card = (heading, body, caption = "") =>
   `<section class="card"><div class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</div>${body}</section>`;
 function ownershipBanner() {
@@ -277,7 +277,7 @@ function publicApplications() {
   return apps ? card("Public applications", apps, "Configured hostnames") : "";
 }
 function homepageResources() {
-  return referenceCatalog() + publicApplications();
+  return publicApplications();
 }
 
 function flatDisks(devices) {

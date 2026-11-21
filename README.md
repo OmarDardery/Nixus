@@ -1,48 +1,46 @@
 # Nixus
 
-A declarative, Incus-native NixOS hypervisor for homelabs: Incus projects, OCI
-containers, system containers and VMs, reviewed host transactions, encrypted
-secrets, backups and restores, all managed from one Web UI. There is no Docker
-daemon, Portainer or Arcane.
+A NixOS homelab server you manage from the browser. Run Compose apps,
+containers and VMs on Incus, keep their env vars encrypted, back everything up
+(secrets included), and keep your apps in git. No Docker daemon.
 
-> **Pre-release.** Nixus is not yet qualified for installation. Do not deploy it
-> to a production host. See [what is tested](docs/validation.md) and the
-> [migration plan](docs/migration-plan.md).
+```sh
+sudo nix --extra-experimental-features 'nix-command flakes' \
+  run github:OmarDardery/Nixus#install
+```
 
-## Origin
+> **Beta.** CI runs every feature end to end in VMs. Physical-hardware
+> qualification (#44) is still open.
 
-Nixus is a fresh rewrite of [NixLab](https://github.com/OmarDardery/nixlab),
-built from NixLab's `incus-native` rebuild (`0242743`) without its git history.
-The Docker/Arcane applications VM was removed rather than migrated, and the
-project was renamed throughout (`nixus.*` options, `nixus-admin`, `/srv/nixus`).
-Open NixLab issues were copied here with links back to the originals.
+## Guides
 
-## Documentation
+| Guide | |
+|---|---|
+| [Install & update](docs/install.md) | Install, first sign-in, daily use |
+| [Apps](docs/apps.md) | Compose apps, VMs, containers, USB/serial devices, updates |
+| [Apps repository](docs/apps-repo.md) | Keep apps in git, layout and best practices |
+| [Env vars & secrets](docs/secrets.md) | Encrypted env vars, the age key |
+| [Backups & restore](docs/backups.md) | Destinations, what's backed up, restoring a server |
+| [Networking](docs/networking.md) | Host and guest addressing, ingress |
+| [Troubleshooting](docs/troubleshooting.md) | When something doesn't work |
+| [CLI](docs/administration.md) | Host commands |
+| [Credits](docs/credits.md) | The projects Nixus is built on |
 
-- [Migration plan and status](docs/migration-plan.md)
-- [Architecture contract](docs/incus-native-architecture.md)
-- [Repository and host layout](docs/incus-native-structure.md)
-- [Rebuild execution plan](docs/incus-native-plan.md)
-- [OCI source uploads and build safety](docs/oci-source-intake.md)
-- [Declarative secrets UI](docs/incus-native-secrets-ui.md)
-- [Go runtime](docs/go-runtime.md)
+Design notes, plans and qualification records are in [docs/dev](docs/dev).
 
-## Development checks
+## Development
 
-The runtime is one Go program (`cmd/nixus`); see [Go runtime](docs/go-runtime.md).
+The runtime is one Go program (`cmd/nixus`); the console is plain JavaScript in
+`admin/static`.
 
 ```sh
 nix develop -c go test ./...
+for t in tests/*.js; do node "$t"; done
 nix build .#nixus
-nix eval .#nixusFoundationChecks --json
 ```
 
-`nixosConfigurations.hypervisor` and `bootstrap` intentionally fail evaluation
-until `site.nix` is filled from real hardware; use the `validation-*` fixtures.
+CI ([`validate.yml`](.github/workflows/validate.yml)) also runs the NixOS VM
+tests: install, OCI build and Compose deploy, secrets, device passthrough, the
+apps repository, backup and cold restore.
 
-CI runs the full set in [`.github/workflows/validate.yml`](.github/workflows/validate.yml).
-VM, nested-KVM and physical-host qualification are tracked separately.
-Passing unit tests do not prove that backups restore or that USB passthrough works.
-
-Existing Incus guests, disks and volumes are never destroyed because Git
-branches or configuration modules change.
+Nixus started as a rewrite of [NixLab](https://github.com/OmarDardery/nixlab).

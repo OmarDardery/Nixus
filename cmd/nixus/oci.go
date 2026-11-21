@@ -480,7 +480,7 @@ func composeEnvironments(v any) error {
 			return Public("Invalid environment variable name")
 		}
 		if sensitiveEnv.MatchString(k) {
-			return Public("Secret-like environment variable requires scoped #134 SOPS delivery")
+			return Public("Move " + k + " to the app's Env tab; secret-like variables are not allowed in compose.yaml")
 		}
 		switch value.(type) {
 		case nil, string, float64, bool, json.Number:

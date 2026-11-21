@@ -508,6 +508,12 @@ in pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("cd /tmp/apps && " + git + "pull -q && test -f hello/secrets.enc.yaml && test -f hello/default.nix", timeout=120)
         machine.fail("grep -q 'GREETING: hi' /tmp/apps/hello/secrets.enc.yaml")
         assert "pending" not in broker("/apps-repo/check", {})["status"]
+        # Stop/start from the app page; secrets come back after the restart.
+        broker("/apps/power", {"project": "hello", "action": "stop"})
+        assert json.loads(machine.succeed("incus list --project hello --format=json"))[0]["status"] == "Stopped"
+        broker("/apps/power", {"project": "hello", "action": "start"})
+        name = json.loads(machine.succeed("incus list --project hello --format=json"))[0]["name"]
+        assert machine.succeed("incus exec " + name + " --project hello -- /bin/cat /run/secrets/GREETING") == "hi"
 
     with subtest("published source bytes are unchanged"):
         src = "/srv/nixus/project-sources/testapp/revisions/" + revision + "/source/Dockerfile"

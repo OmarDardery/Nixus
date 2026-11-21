@@ -73,3 +73,11 @@ func TestHostDevicesListsUSBWithoutRootHubs(t *testing.T) {
 		t.Fatalf("%v", usb)
 	}
 }
+
+func TestPublishedPorts(t *testing.T) {
+	ports := publishedPorts(M{"eth0": M{"type": "nic"}, "web": M{"type": "proxy", "listen": "tcp:0.0.0.0:3000", "connect": "tcp:127.0.0.1:3000"},
+		"dns": M{"type": "proxy", "listen": "udp:0.0.0.0:53"}, "bad": M{"type": "proxy", "listen": "tcp:0.0.0.0:x"}})
+	if len(ports) != 1 || ports[0] != 3000 {
+		t.Fatalf("%v", ports)
+	}
+}

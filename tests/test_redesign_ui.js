@@ -56,7 +56,7 @@ const confirmed = vm.runInContext("state.status.job.status='confirmed';deploymen
 assert.ok(confirmed.includes('Deploy guests') && confirmed.includes('complete'));
 const ops = vm.runInContext("state.page='operations';operationView.users=[];operationsPage()",context);
 assert.ok(!ops.includes('Portal accounts'), 'Accounts are not part of backup recovery.');
-assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/setup.md"'));
+assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/install.md"'));
 assert.ok(source.includes('sudo nixus-admin reset-password') && !source.includes('setup password printed by the installer'));
 console.log('Redesigned console checks passed: routing, drafts, safe delegation, permissions and deployment stages.');
 
