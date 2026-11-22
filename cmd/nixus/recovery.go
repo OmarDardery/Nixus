@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -23,7 +24,25 @@ func effectiveSettingsFile() M {
 	return readObj(machinePath(ROOT, "settings"))
 }
 
+var healthCache = struct {
+	sync.Mutex
+	at    time.Time
+	value M
+}{}
+
+// health is cached briefly: the portal polls it and each call spawns
+// systemctl and openssl.
 func health() M {
+	healthCache.Lock()
+	defer healthCache.Unlock()
+	if healthCache.value != nil && time.Since(healthCache.at) < 30*time.Second {
+		return cloneM(healthCache.value)
+	}
+	healthCache.value, healthCache.at = collectHealth(), time.Now()
+	return cloneM(healthCache.value)
+}
+
+func collectHealth() M {
 	result := M{"checkedAt": int(now()), "release": upgradeMetadata(ROOT), "lastBackupSuccess": nil, "clock": clockStatus(now())}
 	services := []any{}
 	for _, unit := range healthUnits {

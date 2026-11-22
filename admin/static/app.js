@@ -477,8 +477,7 @@ function login(message = "") {
 
 
 async function load() {
-  state.status = await api("status");
-  state.host = await api("inventory");
+  [state.status, state.host] = await Promise.all([api("status"), api("inventory")]);
   await refreshOverview();
   state.draft = copy(state.status.settings);
   await refreshSetupProgress();

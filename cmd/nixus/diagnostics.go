@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -317,8 +318,54 @@ func systemctlShow(unit, properties string) M {
 	return data
 }
 
-// readSettings evaluates the selected source's pure site.nix entrypoint.
+// settingsInputs are every file site.nix can read; their stat fingerprint
+// keys the settings cache.
+var settingsInputs = []string{"site.nix", "site-defaults.nix", "lib/machine.nix", "lib/settings-migrations.nix",
+	"machine/format.json", "machine/settings.json", "local/settings.json"}
+
+var settingsCache = struct {
+	sync.Mutex
+	entries map[string]settingsEntry
+}{entries: map[string]settingsEntry{}}
+
+type settingsEntry struct {
+	key   string
+	value M
+}
+
+func settingsFingerprint(root string) string {
+	var b strings.Builder
+	for _, rel := range settingsInputs {
+		if info, err := os.Stat(filepath.Join(root, rel)); err == nil {
+			fmt.Fprintf(&b, "%s:%d:%d;", rel, info.Size(), info.ModTime().UnixNano())
+		} else {
+			fmt.Fprintf(&b, "%s:-;", rel)
+		}
+	}
+	return b.String()
+}
+
+// readSettings evaluates the selected source's pure site.nix entrypoint. The
+// result is cached until one of its input files changes.
 func readSettings(root string) (M, error) {
+	key := settingsFingerprint(root)
+	settingsCache.Lock()
+	entry, ok := settingsCache.entries[root]
+	settingsCache.Unlock()
+	if ok && entry.key == key {
+		return cloneM(entry.value), nil
+	}
+	m, err := evalSettings(root)
+	if err != nil {
+		return nil, err
+	}
+	settingsCache.Lock()
+	settingsCache.entries[root] = settingsEntry{key, cloneM(m)}
+	settingsCache.Unlock()
+	return m, nil
+}
+
+func evalSettings(root string) (M, error) {
 	res, err := run([]string{"nix-instantiate", "--eval", "--strict", "--json", filepath.Join(root, "site.nix")}, nil, 10*time.Second, nil, "")
 	if err != nil {
 		return nil, Public("Nix settings evaluation is unavailable; inspect the host console")
