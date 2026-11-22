@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,5 +67,67 @@ func TestInjectEnvRestartsOnlyRunningContainersOnChange(t *testing.T) {
 	injectEnv("p", "app-1", M{"TOKEN": "t"})
 	if restarts != 1 {
 		t.Fatal("restarted a VM for an environment change")
+	}
+}
+
+func TestDeployEnvValidation(t *testing.T) {
+	if m, err := deployEnv(nil); m != nil || err != nil {
+		t.Fatalf("no env: %v %v", m, err)
+	}
+	if m, err := deployEnv(M{}); m != nil || err != nil {
+		t.Fatalf("empty env: %v %v", m, err)
+	}
+	if m, err := deployEnv(M{"API_KEY": "x", "PORT": "80"}); err != nil || len(m) != 2 {
+		t.Fatalf("valid env: %v %v", m, err)
+	}
+	for _, bad := range []any{M{"bad-name": "x"}, M{"OK": 5}, "KEY=value", M{"NUL": "a\x00b"}} {
+		if _, err := deployEnv(bad); err == nil {
+			t.Fatalf("accepted %v", bad)
+		}
+	}
+	many := M{}
+	for i := 0; i < 65; i++ {
+		many[fmt.Sprintf("K%d", i)] = "v"
+	}
+	if _, err := deployEnv(many); err == nil {
+		t.Fatal("accepted 65 variables")
+	}
+}
+
+func TestDeployWithEnvNeedsEncryptionKey(t *testing.T) {
+	useState(t)
+	_, err := startAppDeploy("admin", M{"project": "web", "kind": "nix", "declaration": "{ ... }: { }", "env": M{"API_KEY": "x"}})
+	if err == nil || !strings.Contains(publicError(err), "encryption key") {
+		t.Fatalf("expected a clear key error, got %v", err)
+	}
+	if isFile(appEnvPath("web")) || isFile(appJobPath("web")) {
+		t.Fatal("nothing may be queued without a key")
+	}
+}
+
+func TestDeployEnvIsSealedAtRest(t *testing.T) {
+	if _, err := exec.LookPath("age-keygen"); err != nil {
+		t.Skip("age not installed")
+	}
+	useState(t)
+	dir := t.TempDir()
+	os.Chmod(dir, 0o700)
+	key := filepath.Join(dir, "projects.agekey")
+	if out, err := exec.Command("age-keygen", "-o", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	old := projectsIdentity
+	projectsIdentity = key
+	defer func() { projectsIdentity = old }()
+	if err := sealDeployEnv("web", M{"API_KEY": "sk-plain-value"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(appEnvPath("web"))
+	if strings.Contains(string(raw), "sk-plain-value") || strings.Contains(string(raw), "API_KEY") {
+		t.Fatal("pending variables must not be stored in plaintext")
+	}
+	vars, err := openDeployEnv("web")
+	if err != nil || vars["API_KEY"] != "sk-plain-value" {
+		t.Fatalf("%v %v", vars, err)
 	}
 }

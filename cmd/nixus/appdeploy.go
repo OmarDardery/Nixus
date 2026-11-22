@@ -17,6 +17,89 @@ const defaultComposeDeclaration = "{ ... }: {\n  nixus.project.backend = \"incus
 
 func appJobPath(project string) string { return filepath.Join(STATE, "app-deploy-"+project+".json") }
 
+// appEnvPath holds variables entered with a deploy until the app exists and
+// they can join its secrets. The file is age ciphertext to the projects key;
+// plaintext never touches disk. Removed after use.
+func appEnvPath(project string) string {
+	return filepath.Join(STATE, "app-deploy-"+project+".env.age")
+}
+
+func sealDeployEnv(project string, vars M) error {
+	recipient, err := NewSecrets("", "", "").recipient()
+	if err != nil {
+		return Public("Create the secrets encryption key first: Backups → Encryption key & recovery kit")
+	}
+	sealed, err := secretRun([]string{"age", "-r", recipient}, jsonFile(vars), "")
+	if err != nil {
+		return err
+	}
+	return atomic(appEnvPath(project), sealed, 0o600, "")
+}
+
+func openDeployEnv(project string) (M, error) {
+	sealed, err := os.ReadFile(appEnvPath(project))
+	if err != nil {
+		return nil, err
+	}
+	plain, err := secretRun([]string{"age", "-d", "-i", NewSecrets("", "", "").identity}, sealed, "")
+	if err != nil {
+		return nil, err
+	}
+	return parseObject(plain)
+}
+
+// deployEnv validates variables sent with a deploy, with the same rules as
+// the Environment Variables tab. Nil means none were sent.
+func deployEnv(raw any) (M, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	m, ok := raw.(M)
+	if !ok || len(m) > 64 {
+		return nil, Public("Keep up to 64 variables")
+	}
+	total := 0
+	for name, text := range m {
+		if !fullmatch(secretKey, name) || !validSecretText(text) {
+			return nil, Public("Variable names use letters, digits and _; values are text up to 8 KiB")
+		}
+		total += len(text.(string))
+	}
+	if total > maxPlaintext {
+		return nil, Public("Variables exceed 64 KiB in total")
+	}
+	if len(m) == 0 {
+		return nil, nil
+	}
+	return m, nil
+}
+
+// applyDeployEnv adds the variables to the app's encrypted secrets and
+// delivers them into its instances, keeping variables it already had.
+func applyDeployEnv(actor, project string, vars M) error {
+	s := NewSecrets("", "", "")
+	_, err := lockedValue(true, func() (M, error) {
+		dir, err := s.project(project)
+		if err != nil {
+			return nil, err
+		}
+		existing, err := s.cipher(dir)
+		if err != nil {
+			return nil, err
+		}
+		review, err := s.review(actor, project, nil, "import", vars, hashOrNil(existing))
+		if err != nil {
+			return nil, err
+		}
+		return s.publish(actor, review["reviewId"], true)
+	})
+	if err != nil {
+		return err
+	}
+	deliverPublishedSecrets(project)
+	return nil
+}
+
 func appJobs() M {
 	out := M{}
 	matches, _ := filepath.Glob(filepath.Join(STATE, "app-deploy-*.json"))
@@ -71,7 +154,19 @@ func startAppDeploy(actor string, body M) (M, error) {
 	if strings.TrimSpace(declaration) != "" {
 		job["declaration"] = declaration
 	}
+	vars, err := deployEnv(body["env"])
+	if err != nil {
+		return nil, err
+	}
+	os.Remove(appEnvPath(project))
+	if vars != nil {
+		if err := sealDeployEnv(project, vars); err != nil {
+			return nil, err
+		}
+		job["envKeys"] = strings2any(keys(vars))
+	}
 	if err := writeJSONMode(appJobPath(project), job, 0o600, ""); err != nil {
+		os.Remove(appEnvPath(project))
 		return nil, err
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-app-deploy-" + project,
@@ -80,6 +175,7 @@ func startAppDeploy(actor string, body M) (M, error) {
 		adminLauncher(), "admin", "apps", "deploy", project}, nil, 20*time.Second); err != nil {
 		job["status"], job["error"] = "failed", "Could not start the deployment worker"
 		writeJSONMode(appJobPath(project), job, 0o600, "")
+		os.Remove(appEnvPath(project))
 		return nil, Public("Could not start the deployment worker")
 	}
 	audit("app-deploy-requested", M{"principal": actor, "project": project, "kind": job["kind"]})
@@ -147,6 +243,7 @@ func runAppDeploy(project string) error {
 		return Public("No queued deployment for this app")
 	}
 	actor := str(job["actor"])
+	defer os.Remove(appEnvPath(project))
 	save := func(status string, extra M) {
 		job["status"], job["updatedAt"] = status, now()
 		for k, v := range extra {
@@ -195,6 +292,17 @@ func runAppDeploy(project string) error {
 	deploymentID = id
 	if err != nil {
 		return fail(err)
+	}
+	if isFile(appEnvPath(project)) {
+		save("configuring", nil)
+		vars, err := openDeployEnv(project)
+		os.Remove(appEnvPath(project))
+		if err == nil {
+			err = applyDeployEnv(actor, project, vars)
+		}
+		if err != nil {
+			return fail(Public("Deployed, but the environment variables were not saved: " + publicError(err)))
+		}
 	}
 	delete(job, "declaration")
 	save("deployed", M{"completedAt": now(), "error": nil})

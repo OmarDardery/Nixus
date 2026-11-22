@@ -138,6 +138,9 @@ func saveEnv(actor string, project, vars, revision any) (M, error) {
 	if !ok {
 		return nil, Public("Invalid variables")
 	}
+	if _, err := NewSecrets("", "", "").recipient(); err != nil {
+		return nil, Public("Create the secrets encryption key first: Backups → Encryption key & recovery kit")
+	}
 	result, err := lockedValue(false, func() (M, error) {
 		s := NewSecrets("", "", "")
 		review, err := s.review(actor, project, nil, "replace", m, revision)

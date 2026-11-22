@@ -3,6 +3,11 @@
 **Apps → app → Env**: paste `KEY=value` lines (a `.env` file works) or edit
 them one per row, then save with your password.
 
+You can also add them before the first deploy: **New app → Environment
+variables**. They are encrypted right away and set on the app as soon as it
+exists. Either way, create the encryption key first (**Backups → Encryption key
+& recovery kit**).
+
 What happens:
 
 1. Values are encrypted with [SOPS](https://github.com/getsops/sops) to the
