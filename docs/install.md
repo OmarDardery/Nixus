@@ -31,11 +31,10 @@ Useful options (after `--`):
 
 ## First sign-in
 
-1. Open `http://SERVER_IP/`. It redirects to `https://SERVER_IP:9440/`.
-   Compare the certificate fingerprint with the one the installer printed.
-2. The page shows a one-time code. On the server run
-   `sudo nixus-admin approve-enrollment` and paste it.
-3. Choose your administrator name and password.
+Open `http://SERVER_IP/`. It redirects to `https://SERVER_IP:9440/`; compare
+the certificate fingerprint with the one the installer printed. Sign in with
+your Linux account (the one you installed with; it needs sudo). There are no
+separate console accounts.
 
 The **Next step** card on Overview walks through the rest: activate the
 hypervisor, enroll the browser for the Incus UI, create the secrets key and
@@ -60,6 +59,5 @@ From a terminal: `nix run --refresh github:OmarDardery/Nixus#update`.
 
 ## Forgotten password
 
-On the sign-in page choose **Recover access**, then on the server run
-`sudo nixus-admin recovery approve CODE`. If the console itself is down:
-`sudo nixus-admin reset-password`.
+It is your Linux password: reset it with `passwd` (or `sudo passwd USER`) at
+the server's console or over SSH.

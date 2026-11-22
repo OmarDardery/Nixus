@@ -17,18 +17,18 @@ const app = document.querySelector("#app");
 const pages = [
   ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
   ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["accounts","Accounts"],["ingress","Public ingress"],["operations","Backups"],["repository","Repository"],
+  ["ingress","Public ingress"],["operations","Backups"],
   ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
 ];
 // Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["repository","network","guests","storage","hardware","integrations","security","accounts","ingress","system","files"];
-const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["repository","Settings"],["review","Changes"],["commands","Info"]];
+const settingsPages = ["network","guests","storage","hardware","integrations","security","ingress","system","files"];
+const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
 function selectedHash() {
-  try { const id = decodeURIComponent(window.location.hash.slice(1)); return validPage(id) ? id : "overview"; }
+  try { const raw = decodeURIComponent(window.location.hash.slice(1)); const id = raw === "repository" ? "operations" : raw; return validPage(id) ? id : "overview"; }
   catch { return "overview"; }
 }
 function navigateTo(id, replace = false) {
@@ -64,11 +64,18 @@ function displayedSetting(path) {
   const owned = (state.status?.codeOverrides || []).some(c => c.setting === path || path.startsWith(c.setting + "."));
   return at(owned && state.status?.effectiveSettings ? state.status.effectiveSettings : state.draft, path);
 }
-function toast(message) {
+// One notification at a time. Errors stay until tapped; others fade after 4 s.
+let toastTimer = 0;
+function toast(message, kind = "") {
   const el = document.querySelector("#toast");
-  el.textContent = message;
+  if (!el) return;
+  const error = kind === "error" || (kind !== "info" && /fail|error|could not|cannot|invalid|unexpected|denied|refused|required|must |enter /i.test(String(message)));
+  clearTimeout(toastTimer);
+  el.textContent = String(message || "");
+  el.classList.toggle("error", error);
   el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 7000);
+  el.onclick = () => el.classList.remove("show");
+  if (!error) toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
 }
 function field(
   label,
@@ -103,9 +110,27 @@ function secret(label, key, hint = "", textarea = false) {
 }
 const pageGuides = {overview:"install.md",guests:"networking.md",network:"networking.md",storage:"apps.md",hardware:"apps.md",integrations:"apps.md",security:"administration.md",accounts:"administration.md",ingress:"networking.md",system:"install.md",files:"administration.md",review:"install.md",operations:"backups.md",commands:"administration.md"};
 const title = (eyebrow, heading, text) =>
-  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div>${stagedCount() && state.page !== "review" ? `<button class="primary" data-go="review">Review ${stagedCount()} change${stagedCount() === 1 ? "" : "s"} →</button>` : ""}</div>`;
-const card = (heading, body, caption = "") =>
-  `<section class="card"><div class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</div>${body}</section>`;
+  `<div class="page-title"><div><h1>${heading}</h1><p>${text}</p><a class="page-guide" href="/docs/${pageGuides[state.page] || "install.md"}" target="_blank" rel="noopener noreferrer">Guide</a></div></div>`;
+// Every section is a collapsible panel. Only the page's first panel starts
+// open (pages listed in panelsClosed start fully collapsed); a viewer's
+// choices are remembered per page and survive rerenders.
+const panelsClosed = new Set(["overview", "review"]);
+const panelState = (() => { try { return JSON.parse(localStorage.getItem("nixus-panels") || "{}"); } catch { return {}; } })();
+let panelIndex = 0;
+function panelKey(heading) { return state.page + ":" + String(heading).replace(/<[^>]*>/g, "").trim().toLowerCase(); }
+function savePanel(key, open) {
+  panelState[key] = open;
+  try { localStorage.setItem("nixus-panels", JSON.stringify(panelState)); } catch {}
+}
+function card(heading, body, caption = "", opts = {}) {
+  const key = panelKey(heading);
+  const first = panelIndex++ === 0 && !panelsClosed.has(state.page);
+  const open = opts.open ?? panelState[key] ?? first;
+  return `<details class="card panel" data-panel="${esc(key)}"${open ? " open" : ""}><summary class="card-header"><h2>${heading}</h2>${caption ? `<span class="caption">${caption}</span>` : ""}</summary><div class="panel-body">${body}</div></details>`;
+}
+function bindPanels() {
+  for (const el of document.querySelectorAll("details.panel[data-panel]")) el.addEventListener("toggle", () => savePanel(el.dataset.panel, el.open));
+}
 function ownershipBanner() {
   const changes = state.status?.codeOverrides || [];
   return changes.length
@@ -138,15 +163,32 @@ function draftChanges() {
 function platformUpdateSelected() { return !!state.platformRevision && state.platformRevision !== state.status.release?.revision; }
 function reviewScope() { return JSON.stringify([state.principal?.username, state.platformRevision, state.modules]); }
 let renderedReviewScope = null;
-function stagedCount() { return draftChanges().length + Object.keys(state.modules).length + Object.values(state.secrets).filter(Boolean).length + (state.updateInputs ? 1 : 0) + (platformUpdateSelected() ? 1 : 0); }
+// Everything staged in this browser, each with a way to undo it.
+function stagedItems() {
+  const items = draftChanges().map(path => ({ label: "Setting " + path, undo: () => {
+    const parts = path.split("."), last = parts.pop();
+    const target = parts.reduce((o, k) => o?.[k], state.draft), source = parts.reduce((o, k) => o?.[k], state.status.settings);
+    if (!target) return;
+    if (source && last in source) target[last] = copy(source[last]); else delete target[last];
+  } }));
+  for (const name of Object.keys(state.modules)) items.push({ label: "Module " + name, undo: () => { delete state.modules[name]; } });
+  for (const [key, value] of Object.entries(state.secrets)) if (value) items.push({ label: "Secret " + key, undo: () => { delete state.secrets[key]; } });
+  if (state.updateInputs) items.push({ label: "Refresh pinned packages", undo: () => { state.updateInputs = false; } });
+  if (platformUpdateSelected()) items.push({ label: "Update Nixus to " + state.platformRevision.slice(0, 12), undo: () => { state.platformRevision = ""; } });
+  return items;
+}
+function stagedCount() { return stagedItems().length; }
 function stagedBanner() {
-  const n = stagedCount();
-  return n ? `<div class="draft-bar" role="status"><div><strong>${n} staged change${n === 1 ? "" : "s"}</strong><span>Not applied to your host</span></div><div class="draft-actions"><button class="small" data-ui-discard>Discard drafts</button><button class="primary" data-go="review">Review changes</button></div></div>` : "";
+  const items = stagedItems();
+  if (!items.length) return "";
+  const n = items.length;
+  return `<div class="draft-bar" role="status"><details class="draft-list"><summary><strong>${n} staged change${n === 1 ? "" : "s"}</strong><span>Not applied · show</span></summary><ul>${items.map((item, i) =>
+    `<li><span>${esc(item.label)}</span><button type="button" class="small" data-undo-staged="${i}">Undo</button></li>`).join("")}</ul></details><div class="draft-actions"><button class="small" data-ui-discard>Discard all</button>${state.page === "review" ? "" : '<button class="primary" data-go="review">Review</button>'}</div></div>`;
 }
 function navigationHtml() {
   return `<div class="nav-group"><nav class="nav" aria-label="main">${navigationItems.map(([id, label]) => {
-    const active = state.page === id || (id === "repository" && settingsPages.includes(state.page));
-    const icon = id === "repository" ? "⚙" : pageIcons[id];
+    const active = state.page === id || (id === "network" && settingsPages.includes(state.page));
+    const icon = id === "network" ? "⚙" : pageIcons[id];
     return `<button type="button" data-go="${id}" class="${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">${icon}</span><span>${label}</span>${id === "review" && stagedCount() ? `<span class="nav-count">${stagedCount()}</span>` : ""}</button>`;
   }).join("")}</nav></div>`;
 }
@@ -211,6 +253,7 @@ function shell() {
   const knownHealth = observedHealth && units.length > 0;
   const live = knownHealth && requiredUnits.every(id => units.some(u => u.Id === id && u.ActiveState === "active"));
   const hostStatus = !knownHealth ? "Unknown" : live ? "Active" : "Needs attention";
+  panelIndex = 0;
   app.innerHTML = `<div class="layout top-layout">
   <header class="topbar"><div class="topbar-left">${brandLogo()}<span class="crumb-sep" aria-hidden="true">/</span><span class="host-crumb"><span class="status-dot ${live ? "active" : knownHealth ? "warning" : "unknown"}" title="${esc(hostStatus)}" aria-hidden="true"></span><b>${esc(settings.hostName)}</b><span class="muted host-address">${esc(address)}</span></span></div>
     <div class="top-actions">${quickManagementLinks(settings)}<button type="button" class="search-trigger" id="ui-search-open" aria-label="Search pages">⌕ <kbd>Ctrl K</kbd></button>
@@ -226,6 +269,8 @@ function shell() {
     document.querySelector("#platform-ack").checked = authorization.approved;
   }
   bind();
+  bindPanels();
+  for (const el of document.querySelectorAll("[data-undo-staged]")) el.addEventListener("click", () => { stagedItems()[Number(el.dataset.undoStaged)]?.undo(); shell(); });
   bindOperations();
   bindApps();
   if (typeof bindBackups === "function") bindBackups();
@@ -250,12 +295,10 @@ function renderPage() {
     apps: integrations,
     security,
     ingress: ingressPage,
-    accounts: () => title("", "Accounts", "Who can sign in to this console.") + (administrator() ? accountCard() : card("Account permissions", "<p>Only administrators can manage portal accounts.</p>")),
     system: () => system() + card("Host health", healthSummary()),
     files,
     review,
     operations: operationsPage,
-    repository: () => repositoryPage(),
     commands: commandsPage,
   }[state.page]();
 }
@@ -360,7 +403,7 @@ function system() {
       "HOST PREFERENCES",
       "Maintenance", "Host name, time zone, packages, radios and monitoring.",
     ) +
-    `<div class="grid">${card("Identity & maintenance", `<div class="fields">${field("Host name", "hostName")}${field("Time zone", "maintenance.timeZone", { placeholder: "Region/City" })}${field("Setup HTTPS port", "setup.port", { type: "number" })}${field("Confirmation window, seconds", "setup.confirmationSeconds", { type: "number", hint: "300–1800 seconds after activation completes." })}</div><div class="separator"></div>${toggle("Enable scheduled filesystem TRIM", "maintenance.trim")}${toggle("Deduplicate the Nix store weekly", "maintenance.optimiseStore")}${toggle("Laptop server: keep running with lid closed", "maintenance.laptopMode")}<button data-action="export-settings">Export desired settings JSON</button>`)}${card("Wi-Fi & Bluetooth", `${toggle("Enable Wi-Fi", "radios.wifi.enable")}<div class="fields">${field("Wi-Fi interface", "radios.wifi.interface", { options: wifiChoices, full: true })}</div>${toggle("Declare a Wi-Fi connection profile", "radios.wifi.manageProfile")}<div class="fields">${field("Network name / SSID", "radios.wifi.ssid", { full: true })}${secret("WPA password", "wifiPassword", "WPA personal networks are supported. Existing NetworkManager profiles can be retained without entering a new password.")}</div><div class="separator"></div>${toggle("Enable Bluetooth and power it on at boot", "radios.bluetooth.enable")}`)}${card("Change portal password", '<form id="password-form"><div class="fields"><label class="field full"><span>Current password</span><input name="current" type="password" autocomplete="current-password" required></label><label class="field full"><span>New password</span><input name="password" type="password" autocomplete="new-password" minlength="16" required></label></div><div class="actions"><button>Update password & sign out</button></div></form>')}${card("Monitoring history", `${toggle("Collect host metrics for external monitoring", "monitoring.collection")}${toggle("Enable local Prometheus history and alert rules", "monitoring.history")}<div class="fields">${field("Retention, days", "monitoring.retentionDays", { type: "number", hint: "1–90 days; default 14." })}${field("Metrics interval, seconds", "monitoring.scrapeSeconds", { type: "number", hint: "15–300 seconds; default 60." })}</div>`)}${card("Package maintenance", `<label class="toggle"><input type="checkbox" id="update-inputs" ${state.updateInputs ? "checked" : ""}> Refresh pinned Nixpkgs for the next review</label><button data-go="review">Build a maintenance review →</button>`)}</div>`
+    `<div class="grid">${card("Identity & maintenance", `<div class="fields">${field("Host name", "hostName")}${field("Time zone", "maintenance.timeZone", { placeholder: "Region/City" })}${field("Setup HTTPS port", "setup.port", { type: "number" })}${field("Confirmation window, seconds", "setup.confirmationSeconds", { type: "number", hint: "300–1800 seconds after activation completes." })}</div><div class="separator"></div>${toggle("Enable scheduled filesystem TRIM", "maintenance.trim")}${toggle("Deduplicate the Nix store weekly", "maintenance.optimiseStore")}${toggle("Laptop server: keep running with lid closed", "maintenance.laptopMode")}<button data-action="export-settings">Export desired settings JSON</button>`)}${card("Wi-Fi & Bluetooth", `${toggle("Enable Wi-Fi", "radios.wifi.enable")}<div class="fields">${field("Wi-Fi interface", "radios.wifi.interface", { options: wifiChoices, full: true })}</div>${toggle("Declare a Wi-Fi connection profile", "radios.wifi.manageProfile")}<div class="fields">${field("Network name / SSID", "radios.wifi.ssid", { full: true })}${secret("WPA password", "wifiPassword", "WPA personal networks are supported. Existing NetworkManager profiles can be retained without entering a new password.")}</div><div class="separator"></div>${toggle("Enable Bluetooth and power it on at boot", "radios.bluetooth.enable")}`)}${card("Monitoring history", `${toggle("Collect host metrics for external monitoring", "monitoring.collection")}${toggle("Enable local Prometheus history and alert rules", "monitoring.history")}<div class="fields">${field("Retention, days", "monitoring.retentionDays", { type: "number", hint: "1–90 days; default 14." })}${field("Metrics interval, seconds", "monitoring.scrapeSeconds", { type: "number", hint: "15–300 seconds; default 60." })}</div>`)}${card("Package maintenance", `<label class="toggle"><input type="checkbox" id="update-inputs" ${state.updateInputs ? "checked" : ""}> Refresh pinned Nixpkgs for the next review</label><button data-go="review">Build a maintenance review →</button>`)}</div>`
   );
 }
 function files() {
@@ -405,38 +448,36 @@ function deploymentTimeline() {
     ["Confirm access", "Reconnect from a fresh session before rollback expires."],
     ["Deploy guests", "Optional reviewed guest closures, after host confirmation."],
   ];
-  return `<section class="card lifecycle-card" aria-label="Guarded activation workflow">
-    <div class="card-header"><h2>Deployment workflow</h2><span class="caption">${job ? esc(job.status.replaceAll("-", " ")) : "No candidate yet"}</span></div>
-    <ol class="lifecycle">${steps.map(([label, detail], i) => {
+  return card("Deployment workflow", `<ol class="lifecycle">${steps.map(([label, detail], i) => {
       const complete = i < phase || (i === 4 && phase === 4 && deployed);
       const active = i === phase && !complete;
       return `<li class="${complete ? "complete" : active ? "current" : ""}" ${active ? 'aria-current="step"' : ""}>
         <span class="step-num" aria-hidden="true">${complete ? "✓" : i + 1}</span>
         <div><strong>${esc(label)}</strong><p>${esc(detail)}</p></div>
       </li>`;
-    }).join("")}</ol>
-    
-  </section>`;
+    }).join("")}</ol>`, job ? esc(job.status.replaceAll("-", " ")) : "No candidate yet");
 }
 
 function review() {
   const job = state.status.job;
   const building =
     job && ["building", "applying", "rolling-back"].includes(job.status);
+  // The current state and its one next action come first; details fold away.
   return (
     title(
-      "REPRODUCIBLE DEPLOYMENT",
+      "",
       "Changes",
       "Build, activate and confirm staged host changes.",
     ) +
+    `<section class="card"><div class="card-header"><div class="status-line"><span class="progress-dot"></span><h2>${job ? esc(job.status.replaceAll("-", " ")) : "Ready to prepare your first generation"}</h2></div>${job ? `<span class="caption mono">${esc(job.id.slice(0, 10))}</span>` : ""}</div><div class="actions"><button class="primary" data-action="build" ${building || state.status.pending ? "disabled" : ""}>${job ? "Build a new review" : "Build & review configuration"}</button>${job?.status === "ready" ? `<button class="primary" data-action="apply" ${!job.impactPlan || job.impactPlan.blocked ? "disabled" : ""}>Activate reviewed generation</button>` : ""}${job && ["building", "ready", "failed"].includes(job.status) ? '<button data-action="cancel">Discard candidate</button>' : ""}${state.status.lastConfirmed && state.status.lastConfirmed.id !== job?.id ? '<button data-action="rollback-confirmed">Roll back last confirmed change</button>' : ""}${job?.status === "awaiting-confirmation" ? '<button class="primary" data-action="confirm">Confirm access</button>' : ""}${job?.previousSystem && ["confirmed", "awaiting-confirmation", "failed"].includes(job.status) ? '<button data-action="rollback">Roll back this change</button>' : ""}</div>${state.updateInputs ? '<p class="note">This review includes a Nixpkgs package refresh.</p>' : ""}${job?.error ? `<p class="error">${esc(job.error)}</p>` : ""}</section>` +
     deploymentTimeline() +
+    `${job ? card("Settings in this candidate", `${job.changes.map((d) => `<div class="diff"><code>${esc(d.setting)}</code><span class="before">${esc(JSON.stringify(d.before))}</span><span class="after">${esc(JSON.stringify(d.after))}</span></div>`).join("") || "<p>No settings changed; the build can still include package updates.</p>"}${job.secretChanges.length ? `<p class="note">Runtime secrets updated: ${esc(job.secretChanges.join(", "))}.</p>` : ""}<div class="separator"></div><p>Management address after activation: <a href="https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}">https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}</a></p>`, job.changes.length + " change(s)") + card("Build & activation output", `<pre class="log" id="build-log">${esc(job.log || "Waiting for the build worker…")}</pre>`, "Last 64 KiB", {open: ["building", "applying"].includes(job.status)}) : ""}` +
+    platformReview() +
     moduleReview() +
     settingsMigrationReview() +
     candidateOverridesReview() +
-    platformReview() +
     impactReview() +
-    guestDeploymentReview() +
-    `<section class="card"><div class="card-header"><div class="status-line"><span class="progress-dot"></span><h2>${job ? esc(job.status.replaceAll("-", " ")) : "Ready to prepare your first generation"}</h2></div>${job ? `<span class="caption mono">${esc(job.id.slice(0, 10))}</span>` : ""}</div><div class="actions"><button class="primary" data-action="build" ${building || state.status.pending ? "disabled" : ""}>${job ? "Build a new review" : "Build & review configuration"}</button>${job?.status === "ready" ? `<button class="primary" data-action="apply" ${!job.impactPlan || job.impactPlan.blocked ? "disabled" : ""}>Activate reviewed generation</button>` : ""}${job && ["building", "ready", "failed"].includes(job.status) ? '<button data-action="cancel">Discard candidate</button>' : ""}${state.status.lastConfirmed && state.status.lastConfirmed.id !== job?.id ? '<button data-action="rollback-confirmed">Roll back last confirmed change</button>' : ""}${job?.status === "awaiting-confirmation" ? '<button class="primary" data-action="confirm">Confirm access</button>' : ""}${job?.previousSystem && ["confirmed", "awaiting-confirmation", "failed"].includes(job.status) ? '<button data-action="rollback">Roll back this change</button>' : ""}</div>${state.updateInputs ? '<p class="note">This review includes a Nixpkgs package refresh.</p>' : ""}${job?.error ? `<p class="error">${esc(job.error)}</p>` : ""}</section>${job ? `<section class="card section"><div class="card-header"><h2>Settings in this candidate</h2><span class="caption">${job.changes.length} change(s)</span></div>${job.changes.map((d) => `<div class="diff"><code>${esc(d.setting)}</code><span class="before">${esc(JSON.stringify(d.before))}</span><span class="after">${esc(JSON.stringify(d.after))}</span></div>`).join("") || "<p>No settings changed; the build can still include package updates.</p>"}${job.secretChanges.length ? `<p class="note">Runtime secrets updated: ${esc(job.secretChanges.join(", "))}.</p>` : ""}<div class="separator"></div><p>Management address after activation: <a href="https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}">https://${esc((job.effectiveSettings || job.settings).management.address)}:${esc((job.effectiveSettings || job.settings).setup.port)}</a></p></section><section class="card section"><div class="card-header"><h2>Build & activation output</h2><span class="caption">Last 64 KiB</span></div><pre class="log" id="build-log">${esc(job.log || "Waiting for the build worker…")}</pre></section>` : ""}`
+    guestDeploymentReview()
   );
 }
 function formatBytes(v) {
@@ -447,8 +488,7 @@ function formatBytes(v) {
 function login(message = "") {
   clearInterval(state.timer);
   state.timer = null;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Account</span><input name="username" value="admin" autocomplete="username" required></label><label class="field"><span>Portal password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note"><button type="button" class="link" id="recover-access">Forgot your password? Recover access</button></p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
-  document.querySelector("#recover-access").onclick = () => showRecovery();
+  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Sign in to your host.</h1><form id="login-form"><label class="field"><span>Username</span><input name="username" autocomplete="username" placeholder="Your Linux user, e.g. the one you SSH with" required autofocus></label><label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error">${esc(message)}</p><button class="primary">Sign in →</button></form><p class="note">Sign in with your Linux account (one with sudo). Forgot the password? Reset it with <code>passwd</code> at the server's console.</p><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
   document.querySelector("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const button = e.target.querySelector("button");
@@ -465,101 +505,9 @@ function login(message = "") {
       button.disabled = false;
     }
   };
-  const form = document.querySelector("#login-form");
-  api("enrollment").then(({available, recoveryRequired}) => {
-    if (!form.isConnected) return;
-    if (available) showEnrollment();
-    else if (recoveryRequired) document.querySelector("#login-error").textContent = "First-admin enrollment is locked. Use sudo nixus-admin reset-password from a private host terminal or restore supported account state.";
-  }).catch(() => {});
 }
-
 // Recovery: this browser holds a private request cookie; the host approves its ID.
-async function showRecovery() {
-  let request;
-  try { request = await api("recovery"); }
-  catch (err) { document.querySelector("#login-error").textContent = err.message; return; }
-  state.csrf = request.csrf;
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Recover access</h1>
-    <p>On the host, open Cockpit's terminal, SSH or the physical console and run:</p>
-    <pre class="command"><code id="recovery-command">sudo nixus-admin recovery approve ${esc(request.requestId)}</code></pre>
-    <p class="note" id="recovery-status">Waiting for approval. This request expires in five minutes and only works in this browser.</p>
-    <form id="recovery-form" hidden><label class="field"><span>New portal password</span><input name="password" type="password" minlength="16" autocomplete="new-password" required></label>
-    <p class="error" id="recovery-error"></p><button class="primary">Set password and sign in →</button></form>
-    <p class="note"><button type="button" class="link" id="recovery-cancel">Back to sign in</button></p></section></main>`;
-  const form = document.querySelector("#recovery-form");
-  const update = (current) => {
-    if (!form.isConnected) return;
-    if (current.approved) {
-      form.hidden = false;
-      document.querySelector("#recovery-status").textContent = `Approved for ${current.username}. Choose a new password (16–256 characters).`;
-    }
-  };
-  update(request);
-  const timer = setInterval(async () => {
-    if (!form.isConnected || !form.hidden) return clearInterval(timer);
-    try { update(await api("recovery")); }
-    catch { clearInterval(timer); document.querySelector("#recovery-status").textContent = "This request expired. Start again from the sign-in page."; }
-  }, 3000);
-  document.querySelector("#recovery-cancel").onclick = () => { clearInterval(timer); login(); };
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const button = e.target.querySelector("button");
-    button.disabled = true;
-    try {
-      state.principal = await api("recovery/complete", Object.fromEntries(new FormData(e.target)), state.csrf);
-      state.csrf = state.principal.csrf;
-      clearInterval(timer);
-      await load();
-    } catch (err) {
-      document.querySelector("#recovery-error").textContent = err.message;
-      button.disabled = false;
-    }
-  };
-}
 
-async function showEnrollment() {
-  let bootstrap;
-  try { bootstrap = await api("bootstrap"); }
-  catch { return login("Enrollment is unavailable. Refresh or use authorized console recovery."); }
-  app.innerHTML = `<main id="main" class="login"><section class="login-card">${brandLogo()}<h1>Verify this machine</h1><p>Sign in with a local Linux administrator that has sudo.</p><form id="host-proof-form"><label class="field"><span>Linux administrator account</span><input name="hostUsername" autocomplete="username" required maxlength="32"></label><label class="field"><span>Linux administrator password</span><input name="hostPassword" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">Verify host administrator</button></form><details><summary>Use SSH keys or local console approval instead</summary><p>On the host run <code>sudo nixus-admin approve-enrollment</code> and enter this browser's code at the private prompt.</p><label class="field"><span>Browser approval code</span><input id="bootstrap-code" readonly autocomplete="off"></label></details><p id="bootstrap-status" role="status"></p><form id="enrollment-form"><label class="field"><span>New Nixus administrator username</span><input name="username" autocomplete="username" pattern="[a-z][a-z0-9_-]{0,31}" maxlength="32" required></label><label class="field"><span>New Nixus password</span><input name="password" type="password" autocomplete="new-password" minlength="16" maxlength="256" required></label><p id="enrollment-error" class="error" aria-live="polite"></p><button class="primary" disabled>Create administrator</button></form><p><a href="/ca.crt">Download the management CA</a></p></section></main>`;
-  const form = document.querySelector("#enrollment-form");
-  const proof = document.querySelector("#host-proof-form");
-  let submitting = false;
-  const update = () => {
-    document.querySelector("#bootstrap-code").value = bootstrap.approvalCode;
-    document.querySelector("#bootstrap-status").textContent = bootstrap.approved
-      ? "This browser is approved. Choose your independent Nixus account."
-      : "Host approval required. Verification expires after ten minutes and cannot be transferred to another browser.";
-    form.querySelector("button").disabled = submitting || !bootstrap.approved;
-  };
-  update();
-  proof.onsubmit = async event => {
-    event.preventDefault();
-    const button = proof.querySelector("button"); button.disabled = true;
-    const password = proof.elements.hostPassword;
-    try {
-      await api("bootstrap/verify", {hostUsername: proof.elements.hostUsername.value, hostPassword: password.value}, bootstrap.csrf);
-      bootstrap = await api("bootstrap");
-      if (form.isConnected) update();
-    } catch { if (form.isConnected) document.querySelector("#enrollment-error").textContent = "Host verification failed. Check the local sudo administrator password or use console approval; repeated attempts are limited."; }
-    finally { password.value = ""; button.disabled = false; }
-  };
-  form.onsubmit = async event => {
-    event.preventDefault(); submitting = true; const button = form.querySelector("button"); button.disabled = true;
-    try {
-      state.principal = await api("bootstrap/claim", {username: form.elements.username.value, password: form.elements.password.value}, bootstrap.csrf);
-      state.csrf = state.principal.csrf; form.elements.password.value = "";
-      await load();
-    } catch { submitting = false; if (form.isConnected) { document.querySelector("#enrollment-error").textContent = "Enrollment did not complete. Refresh to check account state; if it committed, sign in with your chosen account."; button.disabled = false; } }
-  };
-  const timer = setInterval(async () => {
-    if (!form.isConnected) return clearInterval(timer);
-    try {
-      const current = await api("bootstrap");
-      if (form.isConnected) { bootstrap = current; update(); }
-    } catch { if (form.isConnected) document.querySelector("#bootstrap-status").textContent = "Approval unavailable or enrollment completed. Refresh and sign in, or request fresh host approval."; }
-  }, 3000);
-}
 
 async function load() {
   state.status = await api("status");

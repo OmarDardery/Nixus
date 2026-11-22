@@ -71,7 +71,7 @@ function backupDestinationCard() {
     (backupView.password ? '<p role="status"><b>Repository password — save it in your password manager now; it is shown once:</b> <code>' +
       esc(backupView.password) + "</code></p>" : "") +
     (backupView.error ? '<p class="error" role="alert">' + esc(backupView.error) + "</p>" : "") +
-    (backupView.message ? '<p role="status">' + esc(backupView.message) + "</p>" : ""));
+    (backupView.message ? '<p role="status">' + esc(backupView.message) + "</p>" : ""), "", { open: configured ? undefined : true });
 }
 
 function snapshotsCard() {
@@ -103,6 +103,7 @@ function restoreCard() {
 function backupsCards() {
   if (!backupView.status && !backupView.loading) void refreshBackups();
   return backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard() +
+    (typeof repositoryCards === "function" ? repositoryCards() : "") +
     (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
 

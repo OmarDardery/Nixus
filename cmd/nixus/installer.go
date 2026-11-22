@@ -1066,13 +1066,7 @@ func installSummary(settings, record M) {
 		fmt.Println("Preserving current addressing: " + address + ". DHCP is retained; no static address was assigned.")
 	}
 	fmt.Printf("Nixus: https://%s:%v\n", address, jget(settings, "setup", "port"))
-	if !accountValid() {
-		fmt.Println("Next: open the portal in your browser, then approve the code it shows from this host:")
-		fmt.Println("  sudo nixus-admin approve-enrollment")
-		fmt.Println("Then choose your administrator name and password in that browser and finish setup there.")
-	} else {
-		fmt.Println("Use your existing portal account. Choose a replacement password from an authorized host terminal: sudo nixus-admin reset-password.")
-	}
+	fmt.Println("Next: open that address and sign in with your Linux account (one with sudo), then finish setup there.")
 	if isTrue(settings["ready"]) {
 		fmt.Println("Incus: https://" + address + ":8443 (create/import a browser certificate from the Nixus portal)")
 		if isTrue(jget(settings, "cockpit", "enable")) {
@@ -1258,15 +1252,12 @@ func installRun(a installArgs) error {
 				if err := publishEtc(); err != nil {
 					return err
 				}
-				if _, err := ensureWebEnrollment(); err != nil {
-					return err
-				}
 				installSummary(settings, resumed)
 				return nil
 			}
 		}
 		if !switchMode && (isTrue(status["setupComplete"]) || isTrue(jget(status, "effectiveSettings", "ready"))) {
-			return usageError("--wizard is for initial onboarding only; this host is already configured. Use the existing portal or #update. For account recovery use sudo nixus-admin reset-password.")
+			return usageError("--wizard is for initial onboarding only; this host is already configured. Use the console or #update. Forgot your password? Reset it with passwd at the console.")
 		}
 	}
 	iface, address, prefix, gateway, err := chooseNetwork(a.iface, a.address)
@@ -1591,9 +1582,6 @@ func installRun(a installArgs) error {
 		if switchMode {
 			writeJSON(machinePath(stage, "settings"), candidate)
 		}
-	}
-	if _, err := ensureWebEnrollment(); err != nil {
-		return err
 	}
 	if pin := filepath.Join(STATE, "original-system"); !lexists(pin) && str(installation["originalSystem"]) != "" {
 		if _, err := hostRun("nix-store", "--add-root", pin, "--indirect", "--realise", str(installation["originalSystem"])); err != nil {

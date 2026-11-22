@@ -99,17 +99,6 @@ function bind() {
       .forEach((el) => (el.disabled = true));
   const update = document.querySelector("#update-inputs");
   if (update) update.onchange = () => (state.updateInputs = update.checked);
-  const password = document.querySelector("#password-form");
-  if (password)
-    password.onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        await api("password", Object.fromEntries(new FormData(password)));
-        login("Password changed. Sign in with your new password.");
-      } catch (err) {
-        toast(err.message);
-      }
-    };
 }
 async function action(name, el) {
   el.disabled = true;
@@ -187,6 +176,7 @@ async function action(name, el) {
       return;
     }
     if (name === "build") {
+      const reviewing = state.platformRevision;
       await api("review", {
         settings: state.draft,
         secrets: state.secrets,
@@ -197,6 +187,10 @@ async function action(name, el) {
           document.querySelector("#platform-password")?.value,
         acknowledgePrivilegedModules:
           document.querySelector("#platform-ack")?.checked,
+      }).catch(error => {
+        // A failed platform review must not leave the update staged forever.
+        if (reviewing) state.platformRevision = "";
+        throw error;
       });
       // The user may have navigated while the review request was in flight.
       document.querySelectorAll("#platform-password").forEach(input => { input.value = ""; });
@@ -287,7 +281,8 @@ async function action(name, el) {
       // The broker may have refreshed a stale runtime plan while rejecting apply.
       try { state.status = await api("status"); shell(); } catch (_) {}
     }
-    toast(err.message);
+    if (name === "build" && !state.platformRevision) shell(); // drop a failed platform update from the staged bar
+    toast(err.message, "error");
   } finally {
     if (el.isConnected) el.disabled = false;
   }

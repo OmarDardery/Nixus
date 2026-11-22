@@ -19,31 +19,16 @@ by project. Incus helpers, Cockpit plugins and Compose examples are labeled sepa
 references are under the expanded resources list. Community compatibility and
 Nixus qualification remain separate.
 
-## Credential delivery during installation and recovery
+## Signing in
 
-Installer summaries show URLs, public fingerprints, status and recovery steps.
-Passwords never appear in argv, public output, operation records or the Nix store.
+The console is single-user. Sign in with a Linux account that has sudo; the
+root broker checks the password through PAM (`nixus-enrollment` service) and
+the sudo rights. There are no console-only accounts, roles or enrollment codes.
+A forgotten password is a Linux password: reset it with `passwd`.
 
-Every fresh installation opens console-approved browser enrollment; no portal
-password is generated.
-A forgotten portal password is normally recovered from the sign-in page:
-**Recover access** creates a browser-bound request whose ID an administrator
-approves with `sudo nixus-admin recovery approve ID [--user NAME]`, then that
-browser sets a new password once within five minutes (see
-[plain NixOS installation](install.md#forgotten-password)).
-The direct fallback is `sudo nixus-admin reset-password` from an authorized private host terminal. It
-refuses non-terminal/echoing input, accepts a supplied password and removes the
-old setup plaintext only after committing its replacement verifier. Existing
-sessions fail their next identity check; no UI restart is necessary. Do not put
-passwords in command arguments, transcripts or support bundles.
-
-For a persistent managed Linux operator password, use **Host → Services** and
-review/activate the supplied password through the existing guarded transaction.
-For unmanaged local accounts, use `sudo passwd operator` from a trusted privileged
-terminal. Manual changes do not update a managed hash file and may be overwritten
-by later activation. Ensure a working Linux login before ending installation. Service runtime files and existing verifiers remain
-available until the corresponding enrollment/recovery release gates are qualified.
-
+Passwords never appear in argv, public output, operation records or the Nix
+store. Five failed sign-ins from one address lock that address out for five
+minutes. Privileged builds and secret changes ask for the password again.
 
 ## Management HTTPS transport and hostile-client limits
 
@@ -315,32 +300,3 @@ switches. Do not expose management ports through Cloudflare tunnels.
 
 
 
-### First-administrator claim state and interrupted enrollment
-
-The root broker owns version 1 of `/var/lib/nixus-admin/bootstrap-state.json` (mode 0600). The portal cannot read or edit it. `auth.json` and named account verifiers keep their existing formats; account state lives outside configuration snapshots and transaction rollback does not replace it.
-
-- `unclaimed`: enrollment was explicitly enabled by the root installer; no browser can claim without a separate host approval.
-- `host-verified`: a SHA-256 digest of the approved browser code, boot identity and ten-minute monotonic deadline permit one claim. A broker/web restart preserves the deadline; reboot or expiry invalidates approval.
-- `committing`: durable claim intent exists. The broker removes legacy enrollment markers before atomically publishing the verifier. If publication is interrupted before a valid verifier exists, the portal stays closed and needs a new `sudo nixus-admin approve-enrollment` approval. If the verifier committed, the broker completes the receipt on retry/restart. A repeated completed request returns `alreadyComplete` and cannot replace the password.
-- `account-committed`: first claim is closed permanently. Missing or corrupt account files require authorized recovery, never another anonymous claim.
-- `legacy-provisioning` / `migrated`: private legacy installer provisioning and existing accounts retain their working verifier. Authenticated password replacement commits the new verifier before retiring `setup-password`; the account fingerprint rejects old sessions.
-- `recovery-authorized`: the local-root, terminal-only `sudo nixus-admin reset-password` command has authorized a supplied replacement. It returns to `migrated` after publication; it never opens first-claim enrollment.
-
-A preexisting opt-in `web-enrollment` marker without the new authority needs fresh console approval; an old approval file alone is insufficient. Existing valid accounts remain usable. Unknown future versions, malformed authority, and symlinks fail closed. Preserve the files and restore a supported version from the encrypted recovery kit rather than deleting account state to force enrollment. Unsupported authority also blocks automatic password/state rewrites; a compatible runtime or deliberate operator repair is required.
-
-The encrypted secrets recovery kit includes the claim authority with account verifiers. It excludes reusable browser approval material; any in-flight proof within the authority remains bound to its original boot and expiry. The PAM/bootstrap experience remains tracked in OmarDardery/nixlab#63 and browser recovery approval in #28; this state authority does not enable opt-in web enrollment by default.
-
-
-### Verify this machine before first-admin creation
-
-On a genuinely unclaimed freshly installed host, the HTTPS portal offers **Verify this machine**. Verify the management CA first. Enter an existing local Linux administrator's username and password. The root broker runs the dedicated `nixus-enrollment` PAM service for password and account checks, then asks sudo's policy whether that identity may run an argument-free root Bash shell. Wheel membership or permission for an unrelated limited command alone is insufficient. Locked, expired, missing, noninteractive or nonadministrator accounts and missing PAM support are denied. No Linux user or password is changed. The service uses NixOS PAM rule generation, with root and null-password shortcuts disabled. Additional authentication policy can be configured through that PAM service; challenges that cannot complete through its bounded password input fail closed and require console approval.
-
-The host password exists only in the HTTPS request and a protected helper stdin pipe; it is never passed in argv, stored, or returned. The helper's output is discarded. Verification is bounded by helper deadlines, a two-helper concurrency limit, five attempts per source address and twenty globally in five minutes. Bootstrap session creation is also bounded. Rate records and hashed browser session metadata survive a broker/web restart.
-
-Approval belongs to one `__Host-nixus_bootstrap` Secure/HttpOnly/SameSite=Strict cookie, its source address and HTTPS origin, with a separate CSRF token and a fixed ten-minute monotonic lifetime. Reload can resume that browser's approval. A broker/web restart does not extend it; reboot invalidates it. Copying the displayed console approval code cannot claim from a different browser, and the legacy unbound HTTPS claim route no longer works.
-
-For SSH-key-only administrators, open a private host terminal and run `sudo nixus-admin approve-enrollment`. Enter the displayed browser code at the non-echoing prompt; the command refuses non-root/non-terminal/echo-fallback input and prints no token or password. This approves that same bounded browser, not a reusable password. If PAM verification is unavailable, use this fallback rather than weakening PAM or sudo policy.
-
-After approval, choose a unique lower-case Nixus username and a new 16–256 character portal password. The existing single-claim authority commits one verifier and invalidates every bootstrap browser. The winning browser receives an ordinary Nixus session; host proof is not ordinary portal authentication. Named first administrators use the existing `users.json` format; selecting `admin` uses the existing reserved `auth.json` format. Previously installed accounts retain their login and no new first-claim path opens for them. Local `reset-password` still resets the reserved recovery administrator `admin`, preserving other named accounts.
-
-This adds no password synchronization with Linux, Cockpit or Incus. Default installer enrollment remains release-gated; do not remove a working legacy path or switch an established host without fresh-install/upgrade qualification. Browser bootstrap session metadata (`bootstrap-sessions.json`, root-only mode 0600) is bounded and contains hashes, scope, deadlines and rate counters, not reusable cookie values or host credentials. It is intentionally excluded from recovery kits; portable account verifiers and the existing claim authority remain included.

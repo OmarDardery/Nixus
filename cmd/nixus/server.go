@@ -113,8 +113,6 @@ func ack(v any) bool { return v == true }
 func brokerGet(p string, query url.Values) (any, error) {
 	m := NewManager("", "")
 	switch {
-	case p == "/enrollment":
-		return enrollmentStatus()
 	case p == "/status":
 		return m.status()
 	case p == "/setup-progress":
@@ -196,8 +194,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return projectLog(query.Get("project"), query.Get("instance"))
 	case p == "/project-backups":
 		return projectBackupStatus(), nil
-	case p == "/users":
-		return M{"users": listUsers()}, nil
 	case p == "/browser-certificates":
 		return browserInventory(STATE)
 	case p == "/health":
@@ -244,18 +240,8 @@ var errMissing = errors.New("missing")
 func brokerPost(p string, body M, actor string) (any, error) {
 	m := NewManager("", "")
 	switch p {
-	case "/bootstrap-start":
-		return bootstrapStart(body["token"], body["address"], body["origin"])
-	case "/bootstrap-verify":
-		return bootstrapVerify(body["token"], body["csrf"], body["address"], body["origin"], body["hostUsername"], body["hostPassword"])
-	case "/bootstrap-claim":
-		return bootstrapClaim(body["token"], body["csrf"], body["address"], body["origin"], body["username"], body["password"])
-	case "/recovery-start":
-		return recoveryStart(body["token"], body["address"], body["origin"])
-	case "/recovery-complete":
-		return recoveryComplete(body["token"], body["csrf"], body["address"], body["origin"], body["password"])
-	case "/enrollment":
-		return enrollmentClaim(body["code"], body["password"])
+	case "/auth/linux":
+		return linuxLogin(body["username"], body["password"])
 	case "/oci/review":
 		return NewOCIBuilds("", nil).review(body["project"], body["revision"], actor)
 	case "/oci/build":
@@ -333,17 +319,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return m.confirm(id)
 		}
 		return m.rollback(id)
-	case "/password":
-		if _, ok := body["password"]; !ok {
-			return nil, errMissing
-		}
-		username := str(body["username"])
-		if username == "" {
-			username = "admin"
-		}
-		return changePassword(username, body["password"])
-	case "/users":
-		return accountUpdate(str(body["username"]), body["role"], body["password"], ack(body["delete"]))
 	case "/migrate-layout":
 		return lockedValue(false, func() (M, error) { return migrateLayout(m.root) })
 	case "/operation":
@@ -580,8 +555,9 @@ func NewAuth() *Auth {
 }
 
 func (a *Auth) login(password any, address, username string) (string, string, error) {
+	// Rate-limit per address. The password check runs outside the lock: a
+	// Linux (PAM) check takes a moment and must not stall other sessions.
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	nowT := time.Now()
 	var attempts []time.Time
 	for _, t := range a.failures[address] {
@@ -590,20 +566,26 @@ func (a *Auth) login(password any, address, username string) (string, string, er
 		}
 	}
 	a.failures[address] = attempts
+	// Count this attempt up front so parallel guesses share the limit.
+	a.failures[address] = append(attempts, nowT)
+	a.mu.Unlock()
 	if len(attempts) >= 5 {
 		return "", "", Public("Too many sign-in attempts; wait five minutes")
 	}
-	if !accountMatches(username, password) {
-		a.failures[address] = append(attempts, nowT)
-		return "", "", Public("Invalid administrator password")
+	// Single-user console: a Linux account with sudo, checked by the root
+	// broker through PAM.
+	if _, err := linuxVerify(username, password); err != nil {
+		return "", "", Public("Invalid username or password")
 	}
+	role, identity := "admin", "linux:"+username
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	delete(a.failures, address)
 	if len(a.sessions) > 128 {
 		a.sessions = map[string]*session{}
 	}
 	token, csrf := tokenURLSafe(32), tokenURLSafe(32)
-	item := accountRecord(username)
-	a.sessions[token] = &session{csrf: csrf, username: username, role: str(item["role"]), identity: accountFingerprint(item),
+	a.sessions[token] = &session{csrf: csrf, username: username, role: role, identity: identity,
 		created: nowT, used: nowT, authenticatedAt: now()}
 	return token, csrf, nil
 }
@@ -617,6 +599,21 @@ func cookieValue(headerValue, name string) []string {
 		}
 	}
 	return values
+}
+
+// linuxVerify asks the broker to check a Linux account's password.
+var linuxVerify = func(username string, password any) (M, error) {
+	pw, ok := password.(string)
+	if !ok || !fullmatch(hostUser, username) {
+		return nil, Public("Invalid username or password")
+	}
+	return brokerRequest("POST", "/auth/linux", M{"username": username, "password": pw})
+}
+
+// passwordOK re-checks the signed-in user's Linux password before sensitive actions.
+func passwordOK(s *session, password any) bool {
+	_, err := linuxVerify(s.username, password)
+	return err == nil
 }
 
 func (a *Auth) get(cookie string) *session {
@@ -634,11 +631,6 @@ func (a *Auth) get(cookie string) *session {
 	}
 	item := a.sessions[token]
 	if item == nil || nowT.Sub(item.used) > 30*time.Minute || nowT.Sub(item.created) > 8*time.Hour {
-		delete(a.sessions, token)
-		return nil
-	}
-	current := accountRecord(item.username)
-	if current == nil || accountFingerprint(current) != item.identity {
 		delete(a.sessions, token)
 		return nil
 	}
@@ -826,7 +818,7 @@ func renderGuide(name string) ([]byte, int) {
 const sessionCookie = "; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age="
 
 func (p *portal) get(w http.ResponseWriter, r *http.Request) error {
-	host, err := p.access(r)
+	_, err := p.access(r)
 	if err != nil {
 		return err
 	}
@@ -847,30 +839,6 @@ func (p *portal) get(w http.ResponseWriter, r *http.Request) error {
 		}
 		reply(w, 200, []byte(str(ca["certificate"])), "application/x-x509-ca-cert", header{"Content-Disposition", "attachment; filename=nixus-ca.crt"})
 		return nil
-	case "/api/enrollment":
-		result, err := brokerRequest("GET", "/enrollment", nil)
-		if err != nil {
-			return err
-		}
-		reply(w, 200, result, "")
-		return nil
-	case "/api/bootstrap", "/api/recovery":
-		name, route, age := "__Host-nixus_bootstrap", "/bootstrap-start", "600"
-		if path == "/api/recovery" {
-			name, route, age = "__Host-nixus_recovery", "/recovery-start", "300"
-		}
-		var token any
-		if v := cookieValue(r.Header.Get("Cookie"), name); len(v) == 1 {
-			token = v[0]
-		}
-		result, err := brokerRequest("POST", route, M{"token": token, "address": clientIP(r), "origin": "https://" + host})
-		if err != nil {
-			return err
-		}
-		issued := str(result["token"])
-		delete(result, "token")
-		reply(w, 200, result, "", header{"Set-Cookie", name + "=" + issued + sessionCookie + age})
-		return nil
 	}
 	s, err := p.session(r, false)
 	if err != nil {
@@ -890,7 +858,7 @@ func (p *portal) get(w http.ResponseWriter, r *http.Request) error {
 	case path == "/api/session":
 		reply(w, 200, M{"csrf": s.csrf, "username": s.username, "role": s.role}, "")
 		return nil
-	case path == "/api/users" || path == "/api/browser-certificates" || adminGets[path]:
+	case path == "/api/browser-certificates" || adminGets[path]:
 		if s.role != "admin" {
 			return &AuthorizationError{"Administrator account required"}
 		}
@@ -937,23 +905,6 @@ func requireFreshWebConfirmation(s *session, job M, address string) error {
 	return nil
 }
 
-func (p *portal) loginReply(w http.ResponseWriter, r *http.Request, username, password any, clearCookie string) error {
-	p.auth.mu.Lock()
-	delete(p.auth.failures, clientIP(r))
-	p.auth.mu.Unlock()
-	token, csrf, err := p.auth.login(password, clientIP(r), str(username))
-	if err != nil {
-		return err
-	}
-	principal := p.auth.get("nixus_session=" + token)
-	extra := []header{{"Set-Cookie", "nixus_session=" + token + sessionCookie + "28800"}}
-	if clearCookie != "" {
-		extra = append(extra, header{"Set-Cookie", clearCookie + "=" + sessionCookie + "0"})
-	}
-	reply(w, 200, M{"csrf": csrf, "username": username, "role": principal.role}, "", extra...)
-	return nil
-}
-
 func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	host, err := p.access(r)
 	if err != nil {
@@ -964,47 +915,6 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	}
 	path := r.URL.Path
 	switch path {
-	case "/api/enrollment", "/api/bootstrap/verify", "/api/bootstrap/claim":
-		body, err := jsonBody(r)
-		if err != nil {
-			return err
-		}
-		tokens := cookieValue(r.Header.Get("Cookie"), "__Host-nixus_bootstrap")
-		csrf := r.Header.Get("X-Nixus-CSRF")
-		if len(tokens) != 1 || csrf == "" {
-			return &PermissionError{"Bootstrap browser session and request token required"}
-		}
-		payload := M{"token": tokens[0], "csrf": csrf, "address": clientIP(r), "origin": "https://" + host}
-		if path == "/api/bootstrap/verify" {
-			payload["hostUsername"], payload["hostPassword"] = body["hostUsername"], body["hostPassword"]
-			result, err := brokerRequest("POST", "/bootstrap-verify", payload)
-			if err != nil {
-				return err
-			}
-			reply(w, 200, result, "")
-			return nil
-		}
-		payload["username"], payload["password"] = body["username"], body["password"]
-		if _, err := brokerRequest("POST", "/bootstrap-claim", payload); err != nil {
-			return err
-		}
-		return p.loginReply(w, r, body["username"], body["password"], "__Host-nixus_bootstrap")
-	case "/api/recovery/complete":
-		body, err := jsonBody(r)
-		if err != nil {
-			return err
-		}
-		tokens := cookieValue(r.Header.Get("Cookie"), "__Host-nixus_recovery")
-		csrf := r.Header.Get("X-Nixus-CSRF")
-		if len(tokens) != 1 || csrf == "" {
-			return &PermissionError{"Recovery browser session and request token required"}
-		}
-		result, err := brokerRequest("POST", "/recovery-complete", M{"token": tokens[0], "csrf": csrf, "address": clientIP(r),
-			"origin": "https://" + host, "password": body["password"]})
-		if err != nil {
-			return err
-		}
-		return p.loginReply(w, r, result["username"], body["password"], "__Host-nixus_recovery")
 	case "/api/login":
 		body, err := jsonBody(r)
 		if err != nil {
@@ -1036,7 +946,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	reauth := func(field, message string) error {
 		current := body[field]
 		delete(body, field)
-		if !accountMatches(s.username, current) {
+		if !passwordOK(s, current) {
 			return Public(message)
 		}
 		return nil
@@ -1121,28 +1031,8 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		p.auth.mu.Unlock()
 		reply(w, 200, M{"ok": true}, "", header{"Set-Cookie", "nixus_session=" + sessionCookie + "0"})
 		return nil
-	case "/api/password":
-		if !accountMatches(s.username, body["current"]) {
-			return Public("Current password is incorrect")
-		}
-		if _, ok := body["password"]; !ok {
-			return Public("A required request field or configuration value is missing")
-		}
-		result, err := brokerRequest("POST", "/password", M{"username": s.username, "password": body["password"], "_actor": s.username})
-		if err != nil {
-			return err
-		}
-		p.auth.mu.Lock()
-		for k, item := range p.auth.sessions {
-			if item.username == s.username {
-				delete(p.auth.sessions, k)
-			}
-		}
-		p.auth.mu.Unlock()
-		reply(w, 200, result, "")
-		return nil
 	case "/api/migrate-layout":
-		if !accountMatches(s.username, body["current"]) {
+		if !passwordOK(s, body["current"]) {
 			return Public("Reauthenticate to migrate the machine layout")
 		}
 	case "/api/review":
@@ -1152,8 +1042,8 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 			if !ack(body["acknowledgePrivilegedModules"]) {
 				return Public("Explicitly approve the privileged platform revision or Nix modules before building")
 			}
-			if !accountMatches(s.username, password) {
-				return Public("Reauthenticate with your current portal password before building privileged code")
+			if !passwordOK(s, password) {
+				return Public("Reauthenticate with your password before building privileged code")
 			}
 		}
 	case "/api/confirm":

@@ -76,7 +76,9 @@ function operationsPage() {
   return (
     title("", "Backups", "Apps, their data and their secrets, backed up off this server.") +
     (administrator() && typeof backupsCards === "function" ? backupsCards() : "") +
-    '<h2 class="section-title">Full-server export</h2>' +
+    // Whole-host export tooling is advanced; fold it into one panel.
+    '<details class="card panel advanced-block" data-panel="operations:advanced"' + (panelState["operations:advanced"] ? " open" : "") +
+      '><summary class="card-header"><h2>Advanced · full-server export</h2><span class="caption">' + esc(phase) + '</span></summary><div class="panel-body">' +
     card(
       "Backup status",
       `<p>Current phase: <b>${esc(phase)}</b> ${status.group ? `· group ${esc(status.group)} of ${esc(status.groups)}` : ""}</p><p>${esc((status.members || []).join(", "))}</p>${status.excluded?.length ? `<p class="error">Excluded from coverage: ${esc(status.excluded.join(", "))}</p>` : ""}<p>Last full-host success: ${operationView.health?.lastBackupSuccess ? esc(new Date(operationView.health.lastBackupSuccess * 1000).toLocaleString()) : "Not recorded"}</p><p>Guests awaiting restart recovery: ${esc(operationView.health?.guestsAwaitingRestart ?? "Unknown")}</p>${operationView.error ? `<p class="error">${esc(operationView.error)}</p>` : ""}${repositoryVerification()}<button data-ops-refresh>Refresh</button> <button data-run-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Run scheduled backup</button> <button data-check-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Check restic repository</button> <button data-cancel-backup ${!administrator() || !backupRunning ? "disabled" : ""}>Cancel scheduled backup</button>`,
@@ -111,16 +113,10 @@ function operationsPage() {
           "Portable recovery kit",
           `<div class="fields"><label class="field full"><span>age public recipient (optional)</span><input id="recovery-recipient" placeholder="age1…"></label><label class="field"><span>Your password</span><input id="recovery-password" type="password" autocomplete="current-password"></label></div><button data-download-recovery>Download recovery kit</button>`,
         )
-      : "")
+      : "") + "</div></details>"
   );
 }
 
-function accountCard() {
-  return card(
-    "Portal accounts",
-    `<ul>${operationView.users.map((u) => `<li>${esc(u.username)} · ${esc(u.role)}</li>`).join("")}</ul><div class="fields"><label class="field"><span>Account name</span><input id="account-name" autocomplete="off"></label><label class="field"><span>Role</span><select id="account-role"><option>viewer</option><option>operator</option><option>admin</option></select></label><label class="field"><span>New account password (blank keeps an existing password)</span><input id="account-password" type="password" autocomplete="new-password"></label><label class="field"><span>Your password</span><input id="account-current" type="password" autocomplete="current-password"></label></div><button data-account-save>Save account</button> <button class="danger" data-account-delete>Delete named account</button>`,
-  );
-}
 
 function platformSelectionText() {
   if (!state.platformRevision) return "No platform update selected.";
@@ -166,7 +162,6 @@ async function refreshOperations(full = true) {
     Object.assign(operationView, operations);
     if (full || changed) {
       operationView.health = await api("health");
-      if (administrator()) operationView.users = (await api("users")).users;
     }
     operationView.error = "";
     operationView.loaded = true;
@@ -177,7 +172,7 @@ async function refreshOperations(full = true) {
   } finally {
     operationView.loading = false;
     if (
-      ["operations", "accounts"].includes(state.page) &&
+      state.page === "operations" &&
       (full || changed) &&
       !document.activeElement?.matches("input,textarea,select")
     )
@@ -196,7 +191,7 @@ function bindOperations() {
     try {
       await fn(el);
     } catch (error) {
-      toast(error.message);
+      toast(error.message, "error");
     } finally {
       if (el.isConnected) el.disabled = false;
     }
@@ -284,26 +279,6 @@ function bindOperations() {
         by("recovery-password").value = "";
       })),
   );
-  for (const [selector, remove] of [
-    ["[data-account-save]", false],
-    ["[data-account-delete]", true],
-  ])
-    document.querySelectorAll(selector).forEach(
-      (el) =>
-        (el.onclick = safe(async () => {
-          if (remove && !window.confirm("Delete this named account?")) return;
-          operationView.users = (
-            await api("users", {
-              username: by("account-name").value.trim(),
-              role: by("account-role").value,
-              password: by("account-password").value,
-              current: by("account-current").value,
-              delete: remove,
-            })
-          ).users;
-          shell();
-        })),
-    );
   document.querySelectorAll("[data-load-main]").forEach(el => {
     el.onclick = safe(async () => {
       const result = await api("main-revision");
@@ -351,7 +326,7 @@ function bindOperations() {
       by("platform-selected").textContent = platformSelectionText();
     };
   if (
-    ["operations", "accounts"].includes(state.page) &&
+    state.page === "operations" &&
     !operationView.loaded &&
     !operationView.loading
   )

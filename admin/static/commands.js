@@ -13,16 +13,16 @@ function referenceCatalog() {
   const row = item => "<tr><td><b>" + esc(item.name) + "</b><br><small>" + esc(item.detail) + "</small></td><td class=\"reference-links\">" +
     [...item.docs, ...item.community].map(([label, url]) => referenceLink(label, url)).join(" · ") + "</td><td>" + (item.source ? referenceLink("Source", item.source) : "") + "</td></tr>";
   const table = items => '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Docs</th><th>Code</th></tr></thead><tbody>' + items.map(row).join("") + "</tbody></table></div>";
-  return '<section class="reference-catalog" id="project-docs"><h2>Built with</h2>' + table(projectReferences.filter(item => !item.optional)) +
-    "<details><summary>Optional integrations</summary>" + table(projectReferences.filter(item => item.optional)) + "</details></section>";
+  return card("Built with", table(projectReferences.filter(item => !item.optional)) +
+    "<details><summary>Optional integrations</summary>" + table(projectReferences.filter(item => item.optional)) + "</details>", projectReferences.length + " projects");
 }
 
 function infoHeader() {
   const release = state.status?.release || {};
   const revision = release.revision ? String(release.revision).slice(0, 12) : "";
-  return card("Nixus", "<p>Version <b>" + esc(release.version || "unknown") + "</b>" + (revision ? " · <code>" + esc(revision) + "</code>" : "") + " · " +
-      referenceLink("Source", projectRepository) + " · " + referenceLink("Issues", projectRepository + "/issues") + "</p>") +
-    card("Guides", '<div class="guide-shortcuts">' + userGuides.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("") + "</div>");
+  return card("Nixus " + esc(release.version || ""), "<p>" + (revision ? "<code>" + esc(revision) + "</code> · " : "") +
+      referenceLink("Source", projectRepository) + " · " + referenceLink("Issues", projectRepository + "/issues") + '</p><div class="guide-shortcuts">' +
+      userGuides.map(([label, slug]) => referenceLink(label, "/docs/" + slug + ".md")).join("") + "</div>", "Guides", { open: true });
 }
 
 function commandGroups() {
@@ -77,7 +77,7 @@ function commandRow(item) {
 
 function commandsPage() {
   return title("", "Info", "Version, guides, the projects Nixus is built on, and handy commands.") + infoHeader() + referenceCatalog()
-    + `<section class="command-library" id="commands"><h2>Commands</h2>${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>${publicApplications()}`;
+    + card("Commands", `<section class="command-library">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>`, commandGroups().reduce((n, g) => n + g.items.length, 0) + " commands") + publicApplications();
 }
 
 function bindCommands() {
