@@ -18,8 +18,7 @@ const hostSecretsRelative = "machine/secrets/host.yaml"
 const hostSecretsPlaceholder = "nixus-host-secrets"
 const hostSecretsUnset = "cockpit-operator-password-unset"
 
-var hostSecretNames = map[string]string{"cockpitPassword": "cockpit-operator-password", "wifiPassword": "wifi-env",
-	"tunnelCredentials": "cloudflared"}
+var hostSecretNames = map[string]string{"cockpitPassword": "cockpit-operator-password", "wifiPassword": "wifi-env"}
 
 var ageRecipient = re(`age1[02-9ac-hj-np-z]{58}`)
 var topKey = re(`([A-Za-z0-9][A-Za-z0-9_-]{0,63}):.*`)

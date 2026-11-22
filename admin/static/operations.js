@@ -3,8 +3,6 @@ let operationView = {
   loaded: false,
   network: null,
   networkError: "",
-  jobs: [],
-  archives: [],
   health: null,
   users: [],
   loading: false,
@@ -56,37 +54,19 @@ function platformReview() {
     (job.rebootRequired ? '<p class="note">The new kernel needs a reboot after confirming activation.</p>' : ""), job.platformRevision ? job.platformRevision.slice(0, 12) : "inputs");
 }
 
-async function refreshOperations(full = true) {
+async function refreshOperations() {
   if (operationView.loading) return;
   operationView.loading = true;
-  let changed = false;
   try {
-    const operations = await api("operations");
-    changed = JSON.stringify(operations.jobs) !== JSON.stringify(operationView.jobs);
-    Object.assign(operationView, operations);
-    if (full || changed) {
-      operationView.health = await api("health");
-    }
+    operationView.health = await api("health");
     operationView.error = "";
-    operationView.loaded = true;
   } catch (error) {
     operationView.error = error.message;
-    operationView.loaded = true;
-    changed = true;
   } finally {
     operationView.loading = false;
-    if (
-      state.page === "operations" &&
-      (full || changed) &&
-      !document.activeElement?.matches("input,textarea,select")
-    )
-      shell();
+    operationView.loaded = true;
+    if (["operations", "system"].includes(state.page) && !document.activeElement?.matches("input,textarea,select")) shell();
   }
-}
-
-async function submitOperation(request) {
-  await api("operation", request);
-  await refreshOperations();
 }
 function bindOperations() {
   const safe = (fn) => async (event) => {
@@ -118,16 +98,12 @@ function bindOperations() {
   document.querySelectorAll("[data-overview-refresh]").forEach(el => {
     el.onclick = safe(async () => { await refreshOverview(); shell(); });
   });
-  if (
-    state.page === "operations" &&
-    !operationView.loaded &&
-    !operationView.loading
-  )
+  if (state.page === "system" && !operationView.loaded && !operationView.loading)
     refreshOperations();
   if (!administrator()) {
     document
       .querySelectorAll(
-        "[data-path],[data-secret],[data-mount],[data-remove-mount],[data-ingress]",
+        "[data-path],[data-secret],[data-mount],[data-remove-mount]",
       )
       .forEach((el) => (el.disabled = true));
     document.querySelectorAll("[data-action]").forEach((el) => {

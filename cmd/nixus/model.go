@@ -7,11 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -283,7 +281,7 @@ func validateBootstrap(settings, host M) error {
 	if isTrue(settings["ready"]) || isTrue(jget(settings, "management", "configure")) || !isTrue(jget(settings, "setup", "enable")) {
 		return Public("Initial onboarding must preserve networking and keep the portal enabled on an unconfigured host")
 	}
-	for _, section := range []string{"cockpit", "tunnel"} {
+	for _, section := range []string{"cockpit"} {
 		if isTrue(jget(settings, section, "enable")) {
 			return Public("Initial onboarding cannot activate optional host services or mounts; use the full guarded installer")
 		}
@@ -576,30 +574,6 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 	} else {
 		backup["stagingDirectory"] = "/var/lib/nixus/exports"
 	}
-	tunnel := obj(candidate["tunnel"])
-	if isTrue(tunnel["enable"]) {
-		ingress := obj(tunnel["ingress"])
-		if !fullmatch(re(`[0-9a-fA-F-]{36}`), str(tunnel["uuid"])) || len(ingress) == 0 {
-			return nil, Public("Provide the existing tunnel UUID and application hostnames")
-		}
-		setupPort, _ := intValue(jget(candidate, "setup", "port"))
-		cockpitPort, _ := intValue(jget(candidate, "cockpit", "port"))
-		blocked := map[int]bool{22: true, 8443: true, 9090: true, 9100: true, 9440: true, 9441: true, 9443: true, setupPort: true, cockpitPort: true}
-		for hostname, raw := range ingress {
-			target, ok := raw.(string)
-			if !fullmatch(re(`[A-Za-z0-9*.-]+`), hostname) || !ok || !(strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")) {
-				return nil, Public("Tunnel ingress must map hostnames to HTTP application endpoints")
-			}
-			origin, err := url.Parse(target)
-			port := -1
-			if err == nil && origin.Port() != "" {
-				port, _ = strconv.Atoi(origin.Port())
-			}
-			if err != nil || origin.User != nil || origin.Hostname() == "" || blocked[port] {
-				return nil, Public("Management endpoints cannot be public tunnel origins")
-			}
-		}
-	}
 	candidate["ready"] = true
 	if err := validateNetwork(candidate); err != nil {
 		return nil, err
@@ -852,27 +826,6 @@ func validateFoundation(site, host M) (map[string]bool, error) {
 				return nil, Public("Private access ports must be between 1 and 65535")
 			}
 		}
-	}
-	aliases, err := foundationRecords(jget(site, "hardware", "serialAliases"), []string{"name", "vendorId", "productId", "serial"}, "serial aliases")
-	if err != nil {
-		return nil, err
-	}
-	identities, aliasNames := map[string]bool{}, map[string]bool{}
-	for _, a := range aliases {
-		for _, v := range a {
-			if !isStr(v) {
-				return nil, Public("Select an exact USB identity and a safe stable alias name")
-			}
-		}
-		if !fullmatch(mountName, str(a["name"])) || !fullmatch(re(`[0-9a-fA-F]{4}`), str(a["vendorId"])) ||
-			!fullmatch(re(`[0-9a-fA-F]{4}`), str(a["productId"])) || !fullmatch(re(`[A-Za-z0-9_.:+-]{1,128}`), str(a["serial"])) {
-			return nil, Public("Select an exact USB identity and a safe stable alias name")
-		}
-		identity := strings.ToLower(str(a["vendorId"])) + "/" + strings.ToLower(str(a["productId"])) + "/" + str(a["serial"])
-		if identities[identity] || aliasNames[str(a["name"])] {
-			return nil, Public("Duplicate serial alias identity/name")
-		}
-		identities[identity], aliasNames[str(a["name"])] = true, true
 	}
 	return names, nil
 }

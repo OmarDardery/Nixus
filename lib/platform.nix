@@ -11,7 +11,6 @@
     ../modules/virtualization.nix
     ../modules/incus.nix
     ../modules/instance-schema.nix
-    ../modules/deployments.nix
     ../modules/storage.nix
     ../modules/file-disks.nix
     ../modules/mount-schema.nix
@@ -27,9 +26,6 @@
     ../modules/installed-base.nix
     ../modules/cockpit.nix
     ../modules/connectivity.nix
-    ../modules/hardware-support.nix
-    ../modules/helpers.nix
-    ../modules/cloudflared.nix
     ../modules/backups.nix
     ../modules/admin-ui.nix
     ../modules/security.nix

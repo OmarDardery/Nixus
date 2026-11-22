@@ -50,9 +50,8 @@ func defaultSource() string {
 }
 
 var SECRET_PATHS = map[string]string{
-	"cockpitPassword":   "/var/lib/nixus-secrets/cockpit-operator-password",
-	"wifiPassword":      "/var/lib/nixus-secrets/wifi.env",
-	"tunnelCredentials": "/var/lib/nixus-secrets/cloudflared.json",
+	"cockpitPassword": "/var/lib/nixus-secrets/cockpit-operator-password",
+	"wifiPassword":    "/var/lib/nixus-secrets/wifi.env",
 }
 
 var ENV_KEYS = map[string]bool{"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true,
@@ -1159,27 +1158,6 @@ func encodeSecrets(values M, settings M) (M, error) {
 			if !strings.HasPrefix(value, "$6$") {
 				return nil, Public("Failed to encode the local account password")
 			}
-		case "tunnelCredentials":
-			data, err := parseObject([]byte(value))
-			valid := err == nil
-			for k := range data {
-				if k != "AccountTag" && k != "TunnelSecret" && k != "TunnelID" {
-					valid = false
-				}
-			}
-			for _, k := range []string{"AccountTag", "TunnelSecret", "TunnelID"} {
-				if !isStr(data[k]) {
-					valid = false
-				}
-			}
-			if !valid {
-				return nil, Public("Use the tunnel-specific Cloudflare credentials JSON")
-			}
-			if str(data["TunnelID"]) != str(jget(settings, "tunnel", "uuid")) {
-				return nil, Public("Tunnel credentials do not match the configured UUID")
-			}
-			raw, _ := json.Marshal(data)
-			value = canonicalSpacedRaw(raw) + "\n"
 		default:
 			if n < 16 || strings.ContainsAny(value, "\n\r") {
 				return nil, Public("Service passwords must contain at least 16 characters and no newline")

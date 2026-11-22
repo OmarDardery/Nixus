@@ -199,9 +199,9 @@ func workerBuild(directory string) error {
 		return err
 	}
 	log.Close()
-	resources := "disks = c.nixus.storage.disks; preseed = c.virtualisation.incus.preseed; instances = c.nixus.incus.desiredInstances; deployments = c.nixus.deployment.manifest;"
+	resources := "disks = c.nixus.storage.disks; preseed = c.virtualisation.incus.preseed; instances = c.nixus.incus.desiredInstances;"
 	if role == "bootstrap" {
-		resources = "disks = {}; preseed = {}; instances = []; deployments = {};"
+		resources = "disks = {}; preseed = {}; instances = [];"
 	}
 	out, err := check(nixCmd("eval", "--json", "path:"+source+"#nixosConfigurations."+role+".config", "--apply",
 		"c: { settings = c.nixus.settings; desiredSettings = c.nixus.desiredSettings or null; "+resources+" }"), nil, 120*time.Second)
@@ -268,9 +268,6 @@ func workerBuild(directory string) error {
 	opaque := len(modules) > 0 || len(list(job["moduleChanges"])) > 0 || str(job["platformRevision"]) != "" ||
 		isTrue(job["sourcePlatformUpdated"]) || isTrue(job["updateInputs"])
 	if err := impactPrepare(directory, obj(before), projection, opaque, transitionError); err != nil {
-		return err
-	}
-	if err := deploymentsPrepare(directory, obj(projection["deployments"])); err != nil {
 		return err
 	}
 	migration := obj(job["settingsMigration"])
@@ -778,7 +775,6 @@ func workerJob(phase, id string) error {
 // guard rolls back expired activations and sweeps protected credentials.
 func guard() error {
 	failed := false
-	defer NewOperations().recoverInterrupted()
 	pendingPath := filepath.Join(STATE, "pending.json")
 	pending := readObj(pendingPath)
 	if deadline, ok := num(pending["deadline"]); ok && now() >= deadline {

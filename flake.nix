@@ -34,7 +34,6 @@
           guestInterfaces = [ "incusbr0" "incus-private" ]; trustedLANAccess = true;
           privateAccess = [ { cidr = "192.0.2.53/32"; protocol = "udp"; ports = [ 53 ]; } ];
         };
-        hardware.serialAliases = [ { name = "example"; vendorId = "1234"; productId = "5678"; serial = "FIXTURE-ONLY"; } ];
       };
     in {
       # Reusable pure evaluator for a separate /srv/nixus/projects flake.
@@ -100,10 +99,7 @@
         validation-minimal = mkHost testSite [ ./tests/hardware.nix ];
         validation-file-disk = mkHost testSite
           ([ ./tests/hardware.nix ] ++ (import ./lib/site-modules.nix ./tests/module-tree));
-        validation-recipes = mkHost testSite
-          ([ ./tests/hardware.nix { nixus.notifications.enable = true; } ] ++ map
-            (path: builtins.toFile "nixus-recipe.nix" (builtins.fromJSON (builtins.readFile path)).module)
-            [ ./admin/recipes/laptop.json ./admin/recipes/disk-health.json ./admin/recipes/private-access.json ]);
+        validation-notifications = mkHost testSite [ ./tests/hardware.nix { nixus.notifications.enable = true; } ];
         validation-host = mkHost testSite [ ./tests/hardware.nix ];
         validation-management = mkHost (testSite // {
           monitoring = testSite.monitoring // { history = true; };
@@ -122,17 +118,11 @@
         }) [ ./tests/hardware.nix { networking.networkmanager.enable = true; } ] { networkManager = true; };
         validation-services = mkHost (testSite // {
           monitoring = testSite.monitoring // { history = true; };
-          backup = testSite.backup // { enable = true; repository = "sftp:backup@example.invalid:/nixus"; };
-          tunnel = testSite.tunnel // { enable = true; uuid = "00000000-0000-4000-8000-000000000001";
-            ingress."app.example.invalid" = "http://10.77.0.10:8080"; };
         }) [ ./tests/hardware.nix ];
         # Fresh-install shape: every host credential is SOPS/age ciphertext.
         validation-sops = mkHost (testSite // {
           secrets = testSite.secrets // { enable = true; hostFile = "tests/fixtures/host-secrets.yaml"; };
           cockpit = testSite.cockpit // { enable = true; managePassword = true; };
-          backup = testSite.backup // { enable = true; repository = "sftp:backup@example.invalid:/nixus"; };
-          tunnel = testSite.tunnel // { enable = true; uuid = "00000000-0000-4000-8000-000000000001";
-            ingress."app.example.invalid" = "http://10.77.0.10:8080"; };
           radios = testSite.radios // { wifi = { enable = true; interface = "wlan0"; ssid = "FIXTURE-ONLY"; manageProfile = true; }; };
         }) [ ./tests/hardware.nix { networking.networkmanager.enable = true; } ];
         validation-bootstrap = nixpkgs.lib.nixosSystem {
@@ -166,7 +156,6 @@
         default = self.packages.x86_64-linux.nixus;
         admin = import ./admin/package.nix { inherit pkgs; };
         homelab = import ./scripts/homelab.nix { inherit pkgs; };
-        helpers = import ./helpers/package.nix { inherit pkgs; };
       };
       apps.x86_64-linux.install = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-install"; };
       apps.x86_64-linux.update = { type = "app"; program = "${self.packages.x86_64-linux.installer}/bin/nixus-update"; };
@@ -180,7 +169,6 @@
         operatorFromSops = c.users.users.operator.hashedPasswordFile == c.sops.secrets.cockpit-operator-password.path
           && c.sops.secrets.cockpit-operator-password.neededForUsers;
         wifiFromSops = c.sops.secrets.wifi-env.path == "/var/lib/nixus-secrets/wifi.env";
-        tunnelFromSops = c.sops.secrets.cloudflared.path == c.nixus.settings.tunnel.credentialsFile;
         disabledDeclaresNothing = plain.sops.secrets == { };
       };
       nixusManagementChecks = let
@@ -259,7 +247,7 @@
         admin = self.packages.x86_64-linux.admin;
         installer = self.packages.x86_64-linux.installer;
         host = self.nixosConfigurations.validation-host.config.system.build.toplevel;
-        helpers = self.packages.x86_64-linux.homelab;
+        homelab = self.packages.x86_64-linux.homelab;
       };
       devShells.x86_64-linux = {
         default = pkgs.mkShell {

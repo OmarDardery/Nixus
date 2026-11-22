@@ -13,8 +13,8 @@ let
       eth0 = { type = "nic"; name = "eth0"; network = site.guests.bridge; };
     };
   };
-  declared = site.instances ++ map (i: lib.filterAttrs (_: value: value != null) i)
-    (builtins.attrValues config.nixus.incus.instances);
+  # Legacy UI inventory only; apps are deployed per project.
+  declared = site.instances;
   instances = declared;
   inventory = pkgs.writeText "inventory.json" (builtins.toJSON (site // { instances = declared; }));
   desired = pkgs.writeText "instances.json" (builtins.toJSON instances);

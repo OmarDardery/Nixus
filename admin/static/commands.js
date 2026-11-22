@@ -37,7 +37,6 @@ function commandGroups() {
       ["quick-log", "Follow Nixus web logs", "Host terminal", "Investigate authentication or startup problems.", "sudo journalctl -u nixus-ui -f"],
       ["quick-incus-projects", "List Incus namespaces", "Host terminal", "Inspect named Incus projects.", "sudo incus project list"],
       ["quick-guest-logs", "Guest service logs", "Host terminal", "Inspect the selected guest without publishing its admin interfaces.", "sudo incus exec GUEST --project lab -- journalctl -b --no-pager -n 50"],
-      ["quick-recovery", "Show pending install checklist", "Host terminal", "See pending guest network, device and backup commissioning steps.", "sudo nixus install-plan"],
       ["quick-config", "Current change status", "Host terminal", "View reviewed configuration transactions.", "sudo nixus-admin config status"],
     ] },
     { id: "updates", title: "Install & update", guide: "install.md", items: [
@@ -61,12 +60,6 @@ function commandGroups() {
       ["guest-info", "Inspect a guest", "Host terminal", "Inspect resources, state and devices.", "sudo incus info GUEST --project PROJECT"],
       ["guest-shell", "Open a guest shell", "Host terminal", "Interactive access explicitly names its project.", "sudo incus exec GUEST --project PROJECT -- sh"],
     ] },
-    { id: "helpers", title: "Community helper commands", guide: "administration.md", items: [
-      ["helper-list", "Browse the packaged helper catalog", "Host terminal", "List script IDs and compatibility metadata from the pinned sources.", "nixus-helpers list"],
-      ["helper-doctor", "Check helper prerequisites", "Host terminal", "Verify Incus, images, networks and storage for the lab project.", "sudo nixus-helpers doctor --project lab"],
-      ["helper-debian", "Example: Debian container wizard", "Host terminal", "Interactive Incus wizard; creates a guest. Helpers must be enabled. Choose its storage and network in the terminal.", "sudo nixus-helpers run debian --project lab"],
-      ["helper-catalog", "Select a community helper", "Host terminal", "Browse application choices; review upstream scripts and prerequisites before use.", "nixus-helpers list"],
-    ] },
   ];
 }
 
@@ -77,7 +70,7 @@ function commandRow(item) {
 
 function commandsPage() {
   return title("", "Info", "Version, guides, the projects Nixus is built on, and handy commands.") + infoHeader() + referenceCatalog()
-    + card("Commands", `<section class="command-library">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>`, commandGroups().reduce((n, g) => n + g.items.length, 0) + " commands") + publicApplications();
+    + card("Commands", `<section class="command-library">${commandGroups().map((group, index) => `<details class="command-group" ${index === 0 ? "open" : ""}><summary><span>${esc(group.title)}</span><span class="group-count">${group.items.length} commands</span></summary><div class="command-group-body"><p class="group-guide">${referenceLink("Read the guide", "/docs/" + group.guide)}</p>${group.items.map(commandRow).join("")}</div></details>`).join("")}</section>`, commandGroups().reduce((n, g) => n + g.items.length, 0) + " commands");
 }
 
 function bindCommands() {

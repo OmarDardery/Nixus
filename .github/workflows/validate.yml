@@ -63,7 +63,7 @@ jobs:
           test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.enable)" = "true"
       - name: Evaluate configuration variants
         run: |
-          for target in validation-minimal validation-file-disk validation-recipes validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup validation-management validation-sops; do
+          for target in validation-minimal validation-file-disk validation-notifications validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup validation-management validation-sops; do
             nix eval ".#nixosConfigurations.$target.config.system.build.toplevel.drvPath"
           done
       - name: Build packages, launchers and service units
@@ -71,12 +71,8 @@ jobs:
           nix build .#packages.x86_64-linux.admin .#packages.x86_64-linux.installer .#packages.x86_64-linux.homelab --no-link
           nix run .#update -- --help
           nix build '.#nixosConfigurations.validation-services.config.systemd.units."nixus-metrics.service".unit' --no-link
-          nix build '.#nixosConfigurations.validation-recipes.config.systemd.units."nixus-notify@.service".unit' --no-link
+          nix build '.#nixosConfigurations.validation-notifications.config.systemd.units."nixus-notify@.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
-      - name: Build pinned upstream helper runner
-        run: |
-          nix build .#packages.x86_64-linux.helpers -o result-helpers
-          result-helpers/bin/nixus-helpers list | jq -e '(.scripts | length > 0) and all(.sources[]; .revision | length == 40)'
       - name: Boot the Go broker and portal in a NixOS VM
         run: nix build .#checks.x86_64-linux.portal --no-link -L
       - name: OCI build VM test

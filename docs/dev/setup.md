@@ -290,7 +290,7 @@ it or install a workload. Backups has schedule/coverage/group controls and
 independent recovery. Overview links to enabled native tools; **Host → Services**
 configures optional tools and a packaged upstream helper wizard. Help supplies
 copyable commands and upstream credits; its links never execute installers. See
-[ownership](ownership.md), [helpers](helpers.md) and [hardware](hardware.md).
+[ownership](ownership.md) and [hardware](hardware.md).
 
 ## Access confirmation after terminal installation
 

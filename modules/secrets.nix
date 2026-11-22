@@ -11,9 +11,6 @@
       cockpit-operator-password.neededForUsers = true;
     }) // (lib.optionalAttrs (site.radios.wifi.enable && site.radios.wifi.manageProfile) {
       wifi-env = { path = "/var/lib/nixus-secrets/wifi.env"; restartUnits = [ "NetworkManager-ensure-profiles.service" ]; };
-    }) // (lib.optionalAttrs site.tunnel.enable {
-      cloudflared = { path = site.tunnel.credentialsFile;
-        restartUnits = [ "cloudflared-tunnel-${site.tunnel.uuid}.service" ]; };
     });
   };
   systemd.tmpfiles.rules = [ "d /var/lib/nixus-secrets 0700 root root -" ];

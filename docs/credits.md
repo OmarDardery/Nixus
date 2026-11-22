@@ -17,8 +17,7 @@ Guest lifecycle, consoles, networking and storage remain native Incus operations
 | sops-nix / age | Optional declarative secrets and recovery encryption | [sops-nix](https://github.com/Mic92/sops-nix), [age](https://age-encryption.org/) | [sops-nix](https://github.com/Mic92/sops-nix), [age](https://github.com/FiloSottile/age) |
 | Nginx / njs | Private HTTPS forwarding and host/guest cookie isolation | [Nginx](https://nginx.org/en/docs/), [njs](https://nginx.org/en/docs/njs/) | [Nginx](https://github.com/nginx/nginx), [njs](https://github.com/nginx/njs) |
 | Prometheus | Optional metrics history and alert rules | [Prometheus manual](https://prometheus.io/docs/introduction/overview/) | [Prometheus](https://github.com/prometheus/prometheus) |
-| cloudflared | Optional public application ingress | [Tunnel manual](https://developers.cloudflare.com/tunnel/) | [cloudflared](https://github.com/cloudflare/cloudflared) |
-| Community Scripts | Optional upstream Incus provisioning helpers | [Compatibility and ownership](dev/helpers.md) | [Incus helpers](https://github.com/community-scripts/Incus) |
+| cloudflared | Public ingress, run as an app | [Tunnel manual](https://developers.cloudflare.com/tunnel/) | [cloudflared](https://github.com/cloudflare/cloudflared) |
 | ble.sh / fzf / Starship | Interactive Bash editing, search and prompt | [ble.sh](https://github.com/akinomyoga/ble.sh#readme), [fzf](https://junegunn.github.io/fzf/), [Starship](https://starship.rs/config/) | [ble.sh](https://github.com/akinomyoga/ble.sh), [fzf](https://github.com/junegunn/fzf), [Starship](https://github.com/starship/starship) |
 | Fastfetch | Local console hardware/resource summary | [Fastfetch configuration](https://github.com/fastfetch-cli/fastfetch/wiki/Configuration) | [Fastfetch](https://github.com/fastfetch-cli/fastfetch) |
 

@@ -959,11 +959,10 @@ const maxKit = 256 * 1024
 var kitFiles = map[string]string{
 	"host-age-identity": "/var/lib/sops-nix/key.txt",
 	"project-restic":    "/var/lib/nixus-secrets/project-restic-password",
-	"remote-access":     "/var/lib/nixus-secrets/cloudflared.json",
 }
 
 // retiredKitFiles may appear in older kits; they are read but not restored.
-var retiredKitFiles = map[string]bool{"restic-password": true, "restic-environment": true}
+var retiredKitFiles = map[string]bool{"restic-password": true, "restic-environment": true, "remote-access": true}
 
 func b64(data []byte) string { return base64.StdEncoding.EncodeToString(data) }
 

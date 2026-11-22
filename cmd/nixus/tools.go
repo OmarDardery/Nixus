@@ -220,11 +220,11 @@ func homelabMain(args []string) int {
 		return fail("Use a guest/project name, or its configured numeric alias")
 	}
 	if len(args) == 0 {
-		return fail("usage: nixus [--remote R] [--project P] {list,doctor,install-plan,commissioning,enroll-key,exec,exec-many,restart,backup,action} ...")
+		return fail("usage: nixus [--remote R] [--project P] {list,doctor,commissioning,enroll-key,exec,exec-many,restart,backup,action} ...")
 	}
 	action, rest := args[0], args[1:]
 	switch action {
-	case "doctor", "enroll-key", "commissioning", "install-plan":
+	case "doctor", "enroll-key", "commissioning":
 		if os.Geteuid() != 0 {
 			return fail("Run this host administration command with sudo")
 		}

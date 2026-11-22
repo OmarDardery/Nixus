@@ -292,10 +292,10 @@ function renderPage() {
     overview: hostOverview,
     projects: appsPage,
     network: hostConnectivity,
-    storage: () => title("", "Storage", "Disks, mounts and USB serial aliases.") + untitled(hostHardware()),
+    storage: () => title("", "Storage", "Disks and mounts.") + untitled(storage()),
     system: () => title("", "Host", "Name, time, access, Cockpit, radios and monitoring.") +
       untitled(system()) + untitled(security()) + untitled(integrations()) + card("Host health", healthSummary()),
-    files: () => files() + untitled(ingressPage()),
+    files: () => files(),
     review,
     operations: operationsPage,
     commands: commandsPage,
@@ -309,17 +309,6 @@ function homepageTools() {
   const tools = managementServices().filter(service => service.url);
   const rows = tools.map(service => linkRow("", service.name, service.detail, service.url, "Open", service.docs[0][1])).join("");
   return card("Manage", (rows || (state.status.setupComplete ? '<p>Management endpoints unavailable. Check host addressing.</p>' : '<p>Native tools become available after the first activation.</p><button data-go="review">Finish setup</button>')) + '<div class="service-shortcuts"><button class="small" data-go="integrations">Service settings</button><button class="small" data-go="security">Incus browser access</button></div>', "Enabled tools");
-}
-
-function publicApplications() {
-  const active = state.status.effectiveSettings || state.status.settings;
-  const apps = active.tunnel.enable ? Object.keys(active.tunnel.ingress)
-    .filter(name => /^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(name) && !name.includes("*"))
-    .map(name => linkRow("↗", name, "Configured public application; availability is not checked", "https://" + name)).join("") : "";
-  return apps ? card("Public applications", apps, "Configured hostnames") : "";
-}
-function homepageResources() {
-  return publicApplications();
 }
 
 function flatDisks(devices) {
@@ -373,19 +362,6 @@ function security() {
     `<div class="grid">${card("SSH administration", `<div class="fields">${toggle("Allow SSH password login for non-root Linux accounts", "access.sshPasswordLogin")}${field("Operator SSH public keys", "adminKeys", { type: "textarea", list: true, full: true, placeholder: "ssh-ed25519 AAAA… your-device", hint: "One public key per line. Private keys never belong here." })}</div><div class="fields"><label class="field"><span>Incus browser device name</span><input id="certificate-device" maxlength="32" autocomplete="off"></label><label class="field"><span>Bundle passphrase (at least 16 characters)</span><input id="certificate-passphrase" type="password" minlength="16" maxlength="256" autocomplete="new-password"></label></div><input id="certificate-renew" type="hidden"><div class="fields"><label class="field"><span>Current Nixus password</span><input id="certificate-current" type="password" autocomplete="current-password"></label><label class="field"><span><input id="certificate-full-admin" type="checkbox"> Grant unrestricted Incus host administration (advanced)</span></label></div><button data-action="certificate" ${!state.status.setupComplete ? "disabled" : ""}>Create an Incus browser identity</button><button data-action="certificate-download">Claim pending download</button><button data-action="certificate-list">Refresh browser identities</button><div id="certificate-result" aria-live="polite"></div><div id="certificate-list"></div>`)}</div>`
   );
 }
-function ingressPage() {
-  return title("", "Public ingress", "Expose apps to the internet through Cloudflare Tunnel.")
-    + `<div class="grid">${card("Cloudflare Tunnel", `
-      ${toggle("Enable a locally managed tunnel", "tunnel.enable")}
-      <div class="fields">${field("Existing tunnel UUID", "tunnel.uuid", {full:true})}
-      <label class="field full"><span>Hostname → internal application URL</span>
-      <textarea data-ingress spellcheck="false" placeholder='{"app.example.com":"http://GUEST_IP:8080"}'>${esc(JSON.stringify(state.draft.tunnel.ingress, null, 2))}</textarea>
-      </label>
-      ${secret("Tunnel-specific credentials JSON", "tunnelCredentials", "Secrets stay outside Git and the Nix store.", true)}</div>
-      
-    `)}</div>` + publicApplications();
-}
-
 function system() {
   const wifiChoices = [
     { value: "", label: "Select Wi-Fi interface" },
@@ -434,17 +410,14 @@ function deploymentTimeline() {
     "awaiting-confirmation":3, confirmed:4,
     failed:2, "rolling-back":3, "rolled-back":0, cancelled:0
   })[job.status] ?? 0;
-  const guestPlan = job?.guestPlan?.targets || [];
-  const deployed = job?.guestDeployment?.status === "complete" || guestPlan.length === 0;
   const steps = [
     ["Stage edits", "Settings are saved only as a local draft."],
     ["Build & review", "Validate Nix configuration and inspect impact."],
     ["Activate host", "Switch the reviewed system generation."],
     ["Confirm access", "Reconnect from a fresh session before rollback expires."],
-    ["Deploy guests", "Optional reviewed guest closures, after host confirmation."],
   ];
   return card("Deployment workflow", `<ol class="lifecycle">${steps.map(([label, detail], i) => {
-      const complete = i < phase || (i === 4 && phase === 4 && deployed);
+      const complete = i < phase;
       const active = i === phase && !complete;
       return `<li class="${complete ? "complete" : active ? "current" : ""}" ${active ? 'aria-current="step"' : ""}>
         <span class="step-num" aria-hidden="true">${complete ? "✓" : i + 1}</span>
@@ -471,8 +444,7 @@ function review() {
     moduleReview() +
     settingsMigrationReview() +
     candidateOverridesReview() +
-    impactReview() +
-    guestDeploymentReview()
+    impactReview()
   );
 }
 function formatBytes(v) {
@@ -531,7 +503,6 @@ async function refreshOverview() {
 }
 async function poll() {
   try {
-    if (state.page === "operations") await refreshOperations(false);
     if (state.page === "setup" || setupIncomplete()) {
       const before = JSON.stringify(setupView.progress);
       await refreshSetupProgress();

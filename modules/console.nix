@@ -36,8 +36,8 @@ let
   completionScript = pkgs.writeText "nixus-completion.bash" ''
     _nixus_words() {
       case "$1" in
-        nixus) echo "list doctor install-plan commissioning enroll-key exec exec-many restart backup action" ;;
-        nixus-admin) echo "doctor identity enroll-key backend web guard renew approve-enrollment reset-password config projects deploy guests recovery commissioning install-plan prune-jobs disk" ;;
+        nixus) echo "list doctor commissioning enroll-key exec exec-many restart backup action" ;;
+        nixus-admin) echo "doctor identity enroll-key backend web guard renew approve-enrollment config projects commissioning prune-jobs project-backup image-updates apps apps-repo disk" ;;
       esac
     }
     _nixus_complete() {
