@@ -7,7 +7,7 @@ Nixus still selects the port, identity generation fails and dependent services,
 including Incus, cannot start. Saved profiles with autoconnect disabled also
 explain a bridge disappearing after reload or reboot.
 
-Use the [console recovery command](dev/operations.md#reviewed-upgrades).
+Use the [console recovery command](install.md).
 It repairs the existing connection and feeds the corrected selection through the
 normal guarded main update. Do not disable the firewall, delete Incus data, assign
 a guessed static address or reboot an unconfirmed test activation to hide this
@@ -150,7 +150,7 @@ you deliberately want to retain the current platform source.
 
 ## An existing Incus database blocks installation
 
-Select the [adoption workflow](dev/plain-nixos.md#adopt-an-existing-incus-host).
+Select the adoption workflow.
 The installer inventories the host and backs up guests and custom volumes before
 using a separate Nixus bridge/pool. Interactive runs ask; unattended runs need
 `--adopt-incus`.

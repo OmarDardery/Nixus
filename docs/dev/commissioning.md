@@ -72,7 +72,7 @@ See the [qualification matrix](qualification.md) for publication and limits.
 ## Installation and reboot
 
 - Start with a plain installed NixOS system. Run the command in the
-  [installation guide](plain-nixos.md); verify preserved boot configuration,
+  installation guide; verify preserved boot configuration,
   accounts, filesystems and NetworkManager/DHCP or static addressing.
 - On a host with existing Incus guests, review the inventory and adoption backups;
   verify guest disks and native configuration survive conversion.
@@ -107,7 +107,7 @@ See the [qualification matrix](qualification.md) for publication and limits.
 - Enable the management stack and enroll the Linux operator password separately
   from portal accounts. Test Cockpit host terminal/sudo and Incus guest consoles.
   Verify private source restrictions, custom ports and TLS renewal. Exercise guarded password rollback
-  with console access available. See [homelab management](homelab.md).
+  with console access available. See homelab management.
 
 - Exercise a module upload, settings-only change, package refresh and exact-SHA source
   upgrade. Review input/file changes and activation output; verify preserved `machine/`.

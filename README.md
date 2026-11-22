@@ -26,7 +26,7 @@ sudo nix --extra-experimental-features 'nix-command flakes' \
 | [CLI](docs/administration.md) | Host commands |
 | [Credits](docs/credits.md) | The projects Nixus is built on |
 
-Design notes, plans and qualification records are in [docs/dev](docs/dev).
+Architecture, validation and qualification notes are in [docs/dev](docs/dev).
 
 ## Development
 
