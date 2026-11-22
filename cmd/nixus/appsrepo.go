@@ -386,9 +386,6 @@ func changedApps(base, head string) ([]string, []string, error) {
 
 // startAppsRepoDeploy deploys the reviewed remote head in a worker.
 func startAppsRepoDeploy(actor string, body M) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	head := str(body["head"])
 	pending := obj(appsRepoStatus()["pending"])
 	if !fullmatch(re(`[0-9a-f]{40}`), head) || str(pending["head"]) != head {

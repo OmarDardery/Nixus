@@ -98,8 +98,6 @@
         inherit bootstrap;
         # Evaluation fixtures, never an installation target.
         validation-minimal = mkHost testSite [ ./tests/hardware.nix ];
-        validation-recovery = mkHost (testSite // { setup = testSite.setup // { enable = true; }; })
-          [ ./tests/hardware.nix { nixus.recovery.enable = true; } ];
         validation-file-disk = mkHost testSite
           ([ ./tests/hardware.nix ] ++ (import ./lib/site-modules.nix ./tests/module-tree));
         validation-recipes = mkHost testSite
@@ -182,8 +180,6 @@
         operatorFromSops = c.users.users.operator.hashedPasswordFile == c.sops.secrets.cockpit-operator-password.path
           && c.sops.secrets.cockpit-operator-password.neededForUsers;
         wifiFromSops = c.sops.secrets.wifi-env.path == "/var/lib/nixus-secrets/wifi.env";
-        resticFromSops = c.sops.secrets.restic-password.path == c.nixus.settings.backup.passwordFile
-          && c.sops.secrets.restic-environment.path == c.nixus.settings.backup.environmentFile;
         tunnelFromSops = c.sops.secrets.cloudflared.path == c.nixus.settings.tunnel.credentialsFile;
         disabledDeclaresNothing = plain.sops.secrets == { };
       };

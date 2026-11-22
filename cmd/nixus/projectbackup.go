@@ -160,6 +160,27 @@ func projectBackupStatus() M {
 	return status
 }
 
+// projectBackupHealth: disabled, never, ok, failed (last run had failed
+// phases) or overdue (no success for two schedule periods).
+func projectBackupHealth() string {
+	status := projectBackupStatus()
+	if !isTrue(status["enabled"]) {
+		return "disabled"
+	}
+	last, _ := num(status["lastSuccess"])
+	attempt, _ := num(status["lastAttempt"])
+	period := scheduleSeconds(str(status["schedule"]))
+	switch {
+	case last == 0:
+		return "never"
+	case attempt > last:
+		return "failed"
+	case now()-last > 2*period:
+		return "overdue"
+	}
+	return "ok"
+}
+
 func setPhase(status M, phase, state, detail string) {
 	obj(status["phases"])[phase] = M{"state": state, "at": now(), "detail": detail}
 	writeJSONMode(projectBackupStatusPath(), status, 0o640, "")
@@ -245,7 +266,11 @@ func configSnapshot(t *ProjectTransactions, policy, inventory M, destination str
 		}
 		projects[name] = entry
 	}
-	manifest := M{"format": 1, "workspaceSourceHash": workspace["sourceHash"], "projects": projects, "files": hashes,
+	hostFiles, err := snapshotHost(ROOT, destination, hashes)
+	if err != nil {
+		return nil, err
+	}
+	manifest := M{"format": 1, "hostFiles": hostFiles, "workspaceSourceHash": workspace["sourceHash"], "projects": projects, "files": hashes,
 		"excludes": "builder caches, OCI layers and the Nix store are not included; age identities and backup credentials are added only inside the encrypted restic snapshot"}
 	if err := writeJSON(filepath.Join(destination, "MANIFEST.json"), manifest); err != nil {
 		return nil, err
@@ -354,9 +379,6 @@ func pruneSnapshots(keep int) {
 
 // runProjectBackup executes every enabled phase; force ignores the schedule.
 func runProjectBackup(force bool) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	t := NewProjectTransactions("", "")
 	policy, inventory, err := publishedProjectPolicy(t)
 	if err != nil {
@@ -374,7 +396,7 @@ func runProjectBackup(force bool) (M, error) {
 	}
 	os.MkdirAll(projectBackupRoot, 0o700)
 	generation := strconv.FormatInt(time.Now().UTC().Unix(), 10)
-	status["enabled"], status["generation"], status["phases"] = true, generation, M{}
+	status["enabled"], status["generation"], status["phases"], status["schedule"] = true, generation, M{}, str(policy["schedule"])
 	snapshot := filepath.Join(projectBackupRoot, "config", generation)
 	ok := true
 	manifest, err := configSnapshot(t, policy, inventory, snapshot)
@@ -397,7 +419,7 @@ func runProjectBackup(force bool) (M, error) {
 				return err
 			}
 			defer release()
-			return runBackup(false)
+			return runBackup()
 		}()
 		if err != nil {
 			ok = false

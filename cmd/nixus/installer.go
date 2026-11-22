@@ -65,7 +65,6 @@ var intentQuestions = [][]string{
 	{"workloads", "Workloads [containers/compose/both]", "containers", "compose", "both"},
 	{"access", "Access [lan/private/public]", "lan", "private", "public"},
 	{"network", "Guest connectivity [nat/lan/vlan]", "nat", "lan", "vlan"},
-	{"backup", "Plan independent off-host backups? [y/N]", "yes", "no"},
 	{"laptop", "Enable always-on laptop lid policy? [y/N]", "yes", "no"},
 	{"monitoring", "Collect basic host metrics? [Y/n]", "yes", "no"},
 }
@@ -306,11 +305,7 @@ func intentPlan(answers, host, settings M, remote bool) (M, error) {
 	case "public":
 		pending = append(pending, "Supply an existing tunnel UUID and root-only Cloudflare credential separately; publish only selected app origins, never SSH/Incus/Cockpit/Nixus")
 	}
-	if isTrue(a["backup"]) {
-		pending = append(pending, "Supply an off-host restic repository, encryption password and schedule through Recovery; no backup destination is invented")
-	} else {
-		pending = append(pending, "Configure an independent off-host restic repository and test an actual isolated restore before trusting guest data")
-	}
+	pending = append(pending, "Set up backups on the Backups page and test a restore before trusting app data")
 	if isTrue(a["monitoring"]) {
 		pending = append(pending, "Host metrics collection is enabled; notification delivery and retention require separate confirmation")
 	}

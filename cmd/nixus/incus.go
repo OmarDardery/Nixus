@@ -311,9 +311,6 @@ func reconcilePlan(current, spec M) (M, error) {
 var incusIdent = re(`[a-zA-Z0-9][a-zA-Z0-9_.-]*`)
 
 func reconcileInstance(spec M) error {
-	if err := requireNormal(); err != nil {
-		return err
-	}
 	if _, err := desiredState(spec); err != nil {
 		return err
 	}

@@ -283,7 +283,7 @@ func validateBootstrap(settings, host M) error {
 	if isTrue(settings["ready"]) || isTrue(jget(settings, "management", "configure")) || !isTrue(jget(settings, "setup", "enable")) {
 		return Public("Initial onboarding must preserve networking and keep the portal enabled on an unconfigured host")
 	}
-	for _, section := range []string{"cockpit", "backup", "tunnel"} {
+	for _, section := range []string{"cockpit", "tunnel"} {
 		if isTrue(jget(settings, section, "enable")) {
 			return Public("Initial onboarding cannot activate optional host services or mounts; use the full guarded installer")
 		}
@@ -575,17 +575,6 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		backup["stagingDirectory"] = str(stages[0]["path"]) + "/exports"
 	} else {
 		backup["stagingDirectory"] = "/var/lib/nixus/exports"
-	}
-	if isTrue(backup["enable"]) {
-		repo := str(backup["repository"])
-		if repo == "" || strings.Contains(repo, "\n") {
-			return nil, Public("Provide an independent restic repository")
-		}
-		if requireDevices {
-			if _, err := command([]string{"systemd-analyze", "calendar", "--iterations=1", str(backup["schedule"])}, 10*time.Second); err != nil {
-				return nil, err
-			}
-		}
 	}
 	tunnel := obj(candidate["tunnel"])
 	if isTrue(tunnel["enable"]) {
@@ -884,37 +873,6 @@ func validateFoundation(site, host M) (map[string]bool, error) {
 			return nil, Public("Duplicate serial alias identity/name")
 		}
 		identities[identity], aliasNames[str(a["name"])] = true, true
-	}
-	backup := obj(site["backup"])
-	for _, g := range list(backup["groups"]) {
-		members, ok := g.([]any)
-		if !ok || len(members) == 0 {
-			return nil, Public("Backup consistency groups must be nonempty lists")
-		}
-		for _, member := range members {
-			if err := guestIdentity(member); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for _, member := range list(backup["exclude"]) {
-		if err := guestIdentity(member); err != nil {
-			return nil, err
-		}
-	}
-	reserve := any(1024)
-	if v, ok := backup["reserveMiB"]; ok {
-		reserve = v
-	}
-	if r, ok := intValue(reserve); !ok || r < 100 || r > 1048576 {
-		return nil, Public("Backup staging reserve must be 100–1048576 MiB")
-	}
-	schedule := any("*-*-* 03:00:00")
-	if v, ok := backup["schedule"]; ok {
-		schedule = v
-	}
-	if s, ok := schedule.(string); !ok || s == "" || len(s) > 128 || strings.ContainsAny(s, "\r\n\x00") {
-		return nil, Public("Use a single-line systemd calendar schedule")
 	}
 	return names, nil
 }

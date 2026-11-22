@@ -37,7 +37,7 @@ secret coverage and application consistency require the documented drills.
 Real-VM trials on the dedicated runner, physical fresh/upgrade/rollback/reboot and
 management-recovery evidence, full off-host replacement recovery and successful
 Pages publication still gate the beta. See [commissioning](commissioning.md) and
-[recovery](recovery.md). Never treat a successful export as a successful restore.
+[backups](../backups.md). Never treat a successful export as a successful restore.
 
 This is not full Proxmox parity. Clustering/HA, universal hardware passthrough,
 automatic external router/DNS changes, arbitrary live backup guarantees and

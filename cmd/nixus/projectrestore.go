@@ -301,9 +301,6 @@ func restoreNetworks(incus incusFunc, inventory M) ([]any, error) {
 }
 
 func projectRestore(o restoreOptions) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	env, err := restoreEnv(o)
 	if err != nil {
 		return nil, err
@@ -368,6 +365,7 @@ func projectRestore(o restoreOptions) (M, error) {
 		return failWith("keys", err)
 	}
 	report["keys"] = keysReport
+	report["host"] = restoreHost(config, files, keysReport)
 	if generation := findOne(target, "/generations/", "inventory.json"); generation != "" {
 		incusReport, err := restoreIncus(updateIncus, generation)
 		if err != nil {

@@ -136,17 +136,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		}
 		return guestNetworkInventory()
 	case p == "/operations":
-		s, err := m.effectiveSettings(nil)
-		if err != nil {
-			return nil, err
-		}
 		ops := NewOperations()
-		enabled := isTrue(jget(s, "backup", "enable"))
-		return M{"jobs": ops.status(0), "archives": ops.archives(),
-			"generations":        backupGenerations(str(jget(s, "backup", "stagingDirectory"))),
-			"backupService":      systemctlShow("restic-backups-nixus.service", "ActiveState,SubState,Result"),
-			"backupStatus":       readObj("/var/lib/nixus/backup-status.json"),
-			"backupVerification": verificationStatus(enabled, "", "", str(jget(s, "backup", "repository")))}, nil
+		return M{"jobs": ops.status(0), "archives": ops.archives()}, nil
 	case p == "/guests":
 		s, err := m.settings()
 		if err != nil {
@@ -347,13 +338,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return d.abandon(id)
 		}
 		return d.submit(id, body["resume"], actor)
-	case "/cancel-backup":
-		if _, err := check([]string{"systemctl", "stop", "--no-block", "restic-backups-nixus.service"}, nil, 10*time.Second); err != nil {
-			return nil, err
-		}
-		return M{"ok": true, "message": "Cancellation requested; restart recovery remains active"}, nil
-	case "/recovery-export":
-		return recoveryDownload(str(body["recipient"]))
 	case "/browser-certificate":
 		fullAdmin := body["fullAdmin"]
 		if fullAdmin == nil {
@@ -684,7 +668,7 @@ var portalActions = map[string]bool{}
 func init() {
 	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish /api/project-import/review
 		/api/project-import/publish /api/project-import/plan /api/oci/review /api/oci/build /api/review /api/apply /api/confirm /api/rollback
-		/api/cancel /api/migrate-layout /api/operation /api/users /api/recovery-export /api/cancel-backup /api/deploy-guests /api/project/initialize
+		/api/cancel /api/migrate-layout /api/operation /api/users /api/deploy-guests /api/project/initialize
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
@@ -1055,8 +1039,8 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		if err := requireFreshWebConfirmation(s, active, clientIP(r)); err != nil {
 			return err
 		}
-	case "/api/recovery-export", "/api/users":
-		if err := reauth("current", "Reauthenticate before exporting recovery material or changing accounts"); err != nil {
+	case "/api/users":
+		if err := reauth("current", "Reauthenticate before changing accounts"); err != nil {
 			return err
 		}
 	}

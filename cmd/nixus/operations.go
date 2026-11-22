@@ -17,7 +17,7 @@ import (
 const lastAppliedKey = "user.nixus.last-applied"
 
 var operationActions = map[string]bool{"start": true, "stop": true, "restart": true, "snapshot": true, "snapshot-copy": true,
-	"export": true, "restore": true, "backup": true, "backup-check": true, "release-restore": true}
+	"export": true, "restore": true, "release-restore": true}
 var localName = re(`[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}`)
 var hwaddrKey = re(`volatile\.[A-Za-z0-9_.-]+\.hwaddr`)
 
@@ -350,9 +350,6 @@ func (o *Operations) submit(request M, principal string) (M, error) {
 		return nil, err
 	}
 	nameArg := request["name"]
-	if (action == "backup" || action == "backup-check") && nameArg == nil {
-		nameArg = "all"
-	}
 	guest, err := opName(nameArg)
 	if err != nil {
 		return nil, err
@@ -361,11 +358,8 @@ func (o *Operations) submit(request M, principal string) (M, error) {
 	if !isTrue(settings["ready"]) {
 		return nil, Public("Complete host setup before managing guests")
 	}
-	if (action == "backup" || action == "backup-check") && !isTrue(jget(settings, "backup", "enable")) {
-		return nil, Public("Configure an independent backup destination first")
-	}
 	switch action {
-	case "stop", "restart", "export", "restore", "snapshot-copy", "release-restore", "backup":
+	case "stop", "restart", "export", "restore", "snapshot-copy", "release-restore":
 		if !isTrue(request["acknowledge"]) {
 			return nil, Public("Acknowledge downtime or isolated restore before running this operation")
 		}
@@ -458,9 +452,6 @@ func devicesOf(current M) M {
 }
 
 func (o *Operations) perform(job M) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	action := str(job["action"])
 	project, err := opName(job["project"])
 	if err != nil {
@@ -469,14 +460,6 @@ func (o *Operations) perform(job M) (M, error) {
 	guest, err := opName(job["name"])
 	if err != nil {
 		return nil, err
-	}
-	if action == "backup" || action == "backup-check" {
-		unit := "restic-backups-nixus.service"
-		if action == "backup-check" {
-			unit = "nixus-backup-check.service"
-		}
-		_, err := check([]string{"systemctl", "start", unit}, nil, 43200*time.Second)
-		return M{}, err
 	}
 	if action == "export" {
 		os.MkdirAll(filepath.Dir(backupPending), 0o755)
@@ -739,10 +722,6 @@ func (o *Operations) run(id string) error {
 		audit("guest-operation-finished", M{"operation": id, "status": job["status"]})
 	}()
 	perform := func() (M, error) {
-		action := str(job["action"])
-		if action == "backup" || action == "backup-check" {
-			return o.perform(job)
-		}
 		return lockedValue(true, func() (M, error) {
 			release, err := lockFile(incusLock, true)
 			if err != nil {

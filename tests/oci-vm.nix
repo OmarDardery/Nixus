@@ -254,6 +254,8 @@ in pkgs.testers.runNixOSTest {
                         "restic -r /var/lib/nixus-restic-drill restore latest --target /tmp/restore >&2")
         restored_decl = machine.succeed("cat $(find /tmp/restore -path '*/workspace/testapp/default.nix' | head -n1)")
         assert restored_decl == decl, restored_decl
+        # Host settings travel with the project backup.
+        machine.succeed("test -s \"$(find /tmp/restore -path '*/host/settings.json' | head -n1)\"")
         restored_df = machine.succeed("cat $(find /tmp/restore -path '*/sources/testapp/Dockerfile' | head -n1)")
         assert restored_df.encode() == files["Dockerfile"], restored_df
         archive = machine.succeed("find /tmp/restore -name 'instance-*.tar.gz' | head -n1").strip()
@@ -301,6 +303,7 @@ in pkgs.testers.runNixOSTest {
         restored = json.loads(fresh.succeed("incus list --project testapp --format=json"))
         assert len(restored) == 1 and restored[0]["status"] == "Running", restored
         assert report["keys"]["projectsIdentity"] == "restored", report["keys"]
+        assert report["host"]["settings"] != "not in this backup", report["host"]
         assert fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
         served = fresh.succeed("incus exec " + restored[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served

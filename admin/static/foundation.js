@@ -213,13 +213,6 @@ function integrations() {
   );
 }
 
-function backupSettings() {
-  return card(
-    "Scheduled off-host backup",
-    `${toggle("Enable independent restic backups", "backup.enable")}<div class="fields">${field("Repository", "backup.repository", { full: true })}${field("Schedule", "backup.schedule", { hint: "systemd calendar, for example daily or *-*-* 03:00:00" })}${field("Free staging reserve, MiB", "backup.reserveMiB", { type: "number" })}${secret("Repository password", "resticPassword")}${secret("Cloud credential environment as JSON", "resticEnvironment", "Runtime credentials stay outside the Nix store.", true)}${field("Maintenance exclusions: project/guest", "backup.exclude", { list: true, type: "textarea", full: true })}<label class="field full"><span>Additional consistency groups</span><textarea id="backup-groups" placeholder="lab/database, lab/frontend">${esc((state.draft.backup.groups || []).map((g) => g.join(", ")).join("\n"))}</textarea><small>One group per line. Shared writable volumes automatically join their consumers.</small></label></div>${toggle("Initialize a new repository", "backup.initialize")}`,
-  );
-}
-
 function bindFoundation() {
   const writable = (path) =>
     administrator() &&
@@ -270,19 +263,5 @@ function bindFoundation() {
       shell();
     };
   });
-  const groups = document.querySelector("#backup-groups");
-  if (groups) {
-    groups.disabled = !writable("backup.groups");
-    groups.onchange = () =>
-      (state.draft.backup.groups = groups.value
-        .split("\n")
-        .map((line) =>
-          line
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean),
-        )
-        .filter((g) => g.length));
-  }
-}
 
+}

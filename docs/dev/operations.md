@@ -1,12 +1,7 @@
 # Operating the single-host release
 
-The Backups page distinguishes export/off-host backup status from repository
-verification. Its repository result includes actual metadata/full-read scope,
-schedule, interrupted/failed/unknown states and clock warnings. Changing the target
-requires new evidence; a previous repository's success does not carry over. See
-[repository verification](recovery.md#scheduled-repository-verification) for the
-existing service, typed Nix policy and recovery limits. A successful integrity
-check is separate from a tested guest/application restore.
+Backups and restore are described in [backups](../backups.md): one encrypted
+restic snapshot holds apps, data, keys and this server's settings.
 
 Install from an existing NixOS system using the [single command](plain-nixos.md).
 The installer configures and verifies Incus and Cockpit, preserves
@@ -60,41 +55,6 @@ history. Active system and Nixus's explicit recovery roots remain protected.
 newest 20; add `--apply` to remove them, or `--keep N` to choose the retained count.
 Active, pending and last-confirmed jobs are protected. Guest-operation history and
 export archives are separate and are not pruned by this command.
-
-## Restore and recover off-host archives
-
-Select a completed export and a **new** instance name, or copy an existing snapshot
-to a new name. Imports never overwrite a live instance. Copies are created stopped,
-with autostart disabled and a restore-review marker. Our start action refuses them
-until an administrator releases the reviewed copy. Fixed-address conflicts and writable data-volume sharing with another instance block
-release. Inspect NICs, guest configuration, shared volumes and credentials in Incus
-before release; custom volumes require their own restore. The full Incus interface
-retains administrator authority, including the ability to override these safeguards.
-
-Recover a full backup with the native restic client into an isolated directory.
-The backup inventory records profiles, networks, projects, pools, server configuration,
-trusted certificate records and archive SHA256 values. Check that inventory and restore
-required profiles/projects/custom volumes before
-starting a guest. Register a recovered Incus instance archive locally:
-
-```sh
-sudo nixus-admin guests register-export --file /root/restored/instance-export.tar.gz --project lab --name original-name
-sudo nixus-admin guests status
-sudo nixus-admin guests restore --name original-name --archive EXPORT_ID --target restore-test --acknowledge
-```
-
-Registration copies and hashes the file into managed staging; it does not import or
-modify the original guest. The original instance may be absent. Restore verifies the
-recorded SHA256 before import. A browser cannot submit an arbitrary host file path.
-Native `incus storage volume import` handles separately recovered custom volumes.
-
-Keep original declarations disabled during disaster recovery: otherwise rebuilding can
-create empty replacement guests. Restore into new names, inspect data, and explicitly
-adopt/rename them before re-enabling their declarations. For the reserved applications
-VM, leave its feature disabled, restore to a temporary name, then use native Incus
-administration to establish the intended `apps` instance before enabling onboarding.
-Check disk size, pool and network mappings before claiming ownership. Never delete
-the only good copy to make a name available.
 
 ## File configuration and recipes
 
@@ -245,46 +205,6 @@ The `operator` SSH account is a full infrastructure administrator. An administra
 Incus browser certificate is separately powerful. Do not give either to a portal-only
 viewer/operator. This is not a multi-tenant isolation or SSO system.
 
-## Portable recovery and diagnostics
-
-Download a configuration kit from Operations & recovery. Supply an age **public**
-recipient to include a separate encrypted secret archive. The browser downloads both
-inside one outer recovery tar to avoid multiple-download blocking; extract that outer
-container first. Reauthentication is required.
-The configuration kit contains source, lock, machine files and a checksum manifest;
-it excludes runtime private keys/password files. Inline secrets manually written in
-Nix source remain source and cannot be automatically sanitized.
-
-```sh
-sudo nixus-admin recovery export /root/nixus-kit --include-secrets --recipient age1YOUR_PUBLIC_RECIPIENT
-sudo nixus-admin recovery inspect /root/nixus-kit/nixus-config.tar.gz
-sudo nixus-admin recovery stage /root/nixus-kit/nixus-config.tar.gz /root/recovery-review
-```
-
-Staging validates member types, paths, limits and hashes before extracting into a new
-root-only directory. It never activates a system or overwrites `/etc/nixos`. Decrypt
-the secret archive separately with your off-host age identity, inspect it, then stage
-it into another new directory. It includes regular runtime service secret files, portal identities,
-local CA/leaf keys, NetworkManager profiles and the configured sops age key when present. Protect external/HSM identities and
-symlink-based secret stores separately; SOPS recovery needs both encrypted source and
-a usable decryption identity.
-
-On replacement hardware, install/bootstrap normally first. Keep its newly generated
-hardware/boot modules. Review recovered settings and module files against the new
-NICs, disk UUIDs and storage before submitting them through the guarded transaction.
-Restore selected runtime credentials with root-only permissions; the portal password
-record needs group `nixus-ui` and mode 0640. Preserve CA identity only when intended.
-Guest/application data comes from its independent backups, not this kit.
-
-Scheduled backups create root-only configuration and secret archives inside each complete generation, then
-restic encrypts them for off-host storage. Those staging archives are **not encrypted
-at rest** unless their filesystem is encrypted. Protect the staging disk accordingly.
-
-The diagnostic download contains release identifiers, fixed service states, certificate
-expiry and backup status. It excludes arbitrary journals, build logs and secret values.
-Guides are packaged and served locally under `/docs/`, so installed documentation does
-not depend on the implementation branch remaining available.
-
 ## Optional failure notifications
 
 Upload a module setting `nixus.notifications.enable = true`. Store an HTTPS webhook
@@ -293,34 +213,6 @@ or select another runtime file through `nixus.notifications.webhookFile`. Failed
 instance, backup and rollback units trigger bounded notification jobs. The payload
 contains service identity and failure state; URLs, responses, journals and secrets
 are withheld. Redirects are refused. No resident notification daemon is added.
-
-## Generation layout and coverage
-
-A run stages exports and recovery kits under `.incomplete/<id>`, then atomically
-publishes `generations/<id>` and updates `latest.json`. Restic excludes incomplete
-data. Two complete local generations are retained; legacy flat files are not
-moved/deleted automatically. The inventory and checksums inside each generation
-are authoritative. Recovery kit failure also prevents publication.
-
-Guest groups stop/export/recover in turn. Shared writable custom volumes join all
-consumers, including projects sharing the default volume namespace. Additional
-`backup.groups` contain lists of `project/guest` names. Host writers/external data
-still need their own consistency procedures.
-
-`backup.exclude` and Incus `user.nixus.backup=manual` protect whole consistency
-groups from automatic shutdown. Explicit exclusion names must match existing
-guests; a typo refuses shutdown. The generation and portal record exclusions and
-selected coverage. Off-host upload can succeed for that selection, but the global
-full-host freshness indicator is not advanced. Investigate missing coverage.
-
-Run an independent repository check from the portal or
-`sudo nixus-admin guests backup-check`. `sudo systemctl stop restic-backups-nixus`
-cancels a scheduled backup; signal handling and the cleanup/recovery unit restore
-original guest running states. Inspect pending restart intent before retrying.
-The portal tracks the actual service through export, off-host transfer and retention,
-keeps cancellation available during transfer, and reports an off-host failure even
-when the local generation completed successfully.
-The default calendar is `*-*-* 03:00:00`; change `backup.schedule` through review.
 
 ## Host clock readiness
 

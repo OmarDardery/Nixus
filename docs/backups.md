@@ -16,7 +16,7 @@ Backups use [restic](https://restic.net/): encrypted, deduplicated, verified.
 
 | Phase | Contents |
 |---|---|
-| Config | Every app's declaration, Compose files, Dockerfiles and `secrets.enc.yaml` |
+| Config | Every app's declaration, Compose files, Dockerfiles and `secrets.enc.yaml`; this server's settings, Nix modules and encrypted host secrets |
 | Secrets | The age key, deploy key and backup credentials (inside the encrypted snapshot only) |
 | Data | Incus exports of every instance and volume |
 | Upload | Sends it to the destination and applies retention |
@@ -31,6 +31,11 @@ On a fresh install with no apps, **Backups → Restore this server from a
 backup** takes the destination and the repository password. It restores the
 keys, apps, data and secrets, then starts what was running. The progress and any
 error show on the same page.
+
+Server settings that move between machines (host name, SSH keys, guest
+network, Cockpit, monitoring, maintenance) and your Nix modules are staged in
+**Changes** for you to review and activate. Network, disks and radios stay as
+installed on the new hardware.
 
 From a terminal:
 

@@ -89,9 +89,9 @@ in pkgs.testers.runNixOSTest {
             code = machine.succeed(gbase + gone + " -o /dev/null -w '%{http_code}'").strip()
             assert code in ("401", "404"), (gone, code)
         # A mutation without the CSRF token, or from another origin, is refused.
-        nocsrf = machine.succeed(base + "/api/cancel-backup -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{}'").strip()
+        nocsrf = machine.succeed(base + "/api/apps/backup-run -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data '{}'").strip()
         assert nocsrf == "401", nocsrf
-        cross = machine.succeed("curl -sk -b /tmp/jar -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' -H 'X-Nixus-CSRF: " + login["csrf"] + "' -H 'Content-Type: application/json' --data '{}' https://127.0.0.1:9440/api/cancel-backup").strip()
+        cross = machine.succeed("curl -sk -b /tmp/jar -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' -H 'X-Nixus-CSRF: " + login["csrf"] + "' -H 'Content-Type: application/json' --data '{}' https://127.0.0.1:9440/api/apps/backup-run").strip()
         assert cross == "401", cross
         # Static assets, including the new console scripts, are served.
         for asset in ["/", "/apps.js", "/quick.js", "/backups.js"]:

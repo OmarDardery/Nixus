@@ -44,9 +44,6 @@ func startAppDeploy(actor string, body M) (M, error) {
 	if !fullmatch(projectName, project) {
 		return nil, Public("Use a lowercase name: letters, digits and dashes")
 	}
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	if appJobActive(project) {
 		return nil, Public("A deployment for this app is already running")
 	}
@@ -248,9 +245,6 @@ func saveBackupPolicy(actor string, text any) (M, error) {
 
 // startProjectBackup runs the published backup policy now in a worker unit.
 func startProjectBackup(actor string) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-backup-now",
 		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"),
 		adminLauncher(), "admin", "project-backup", "run"}, nil, 20*time.Second); err != nil {

@@ -371,7 +371,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	} else if candidate, err = validateSettings(requested, current, host, true); err != nil {
 		return nil, err
 	}
-	for _, pair := range [][2]string{{"backup", "passwordFile"}, {"backup", "environmentFile"}, {"tunnel", "credentialsFile"}} {
+	for _, pair := range [][2]string{{"tunnel", "credentialsFile"}} {
 		if !equalJSON(jget(candidate, pair[0], pair[1]), jget(current, pair[0], pair[1])) {
 			return nil, Public("Secret file paths are source-managed")
 		}
@@ -413,14 +413,6 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	if isTrue(wifi["manageProfile"]) && isTrue(wifi["enable"]) {
 		if _, ok := encoded["wifiPassword"]; !ok && !kept("wifiPassword") {
 			return nil, Public("Provide the WPA password for the managed Wi-Fi profile")
-		}
-	}
-	if isTrue(jget(candidate, "backup", "enable")) {
-		if _, ok := encoded["resticPassword"]; !ok && !kept("resticPassword") {
-			return nil, Public("Provide the restic repository password")
-		}
-		if _, ok := encoded["resticEnvironment"]; !ok && !kept("resticEnvironment") {
-			encoded["resticEnvironment"] = ""
 		}
 	}
 	if isTrue(jget(candidate, "tunnel", "enable")) {

@@ -26,8 +26,6 @@ import (
 var backupRoot = envPath("NIXUS_EXPORT_DIRECTORY", "/var/lib/nixus/exports")
 
 const backupPending = "/var/lib/nixus/restart-pending.json"
-const backupStatusFile = "/var/lib/nixus/backup-status.json"
-const backupSuccessFile = "/var/lib/nixus/last-backup-success"
 
 var generationRe = re(`[0-9]+-[0-9a-f]{32}`)
 var archiveRe = re(`(instance|volume)-[0-9a-f]{64}\.tar\.gz`)
@@ -89,9 +87,6 @@ func verifyIdentity(guest M) error {
 
 // backupRecover restarts guests a backup or export stopped.
 func backupRecover() error {
-	if err := requireNormal(); err != nil {
-		return err
-	}
 	var pending []any
 	if raw, err := os.ReadFile(backupPending); err == nil {
 		json.Unmarshal(raw, &pending)
@@ -425,7 +420,7 @@ func freeBytes(p string) int64 {
 	return int64(st.Bavail) * int64(st.Bsize)
 }
 
-func stagingPlan(guests, volumes []M, reserve int64, withRecovery bool) M {
+func stagingPlan(guests, volumes []M, reserve int64) M {
 	previous := previousSizes()
 	var objects []capacityItem
 	for _, g := range guests {
@@ -457,11 +452,7 @@ func stagingPlan(guests, volumes []M, reserve int64, withRecovery bool) M {
 		}
 		objects = append(objects, capacityItem{str(v["archive"]), usage, prev})
 	}
-	var recovery int64
-	if withRecovery {
-		recovery = 202 << 20
-	}
-	return backupCapacity(objects, freeBytes(backupRoot), reserve, recovery)
+	return backupCapacity(objects, freeBytes(backupRoot), reserve, 0)
 }
 
 func fileSHA256(p string) (string, error) {
@@ -478,10 +469,7 @@ func fileSHA256(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runBackup(withRecovery bool) error {
-	if err := requireNormal(); err != nil {
-		return err
-	}
+func runBackup() error {
 	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
 		return err
 	}
@@ -629,18 +617,11 @@ func runBackup(withRecovery bool) error {
 		}
 	}
 	coverage := backupCoverage(guests, volumes, selectedGuests, selectedVolumes, namespaces)
-	if withRecovery {
-		rc := recoveryCoverage()
-		if v, _ := num(rc["format"]); v != 1 || !isTrue(rc["complete"]) {
-			return Public("Required recovery credentials are missing or unsafe; run nixus-admin recovery coverage before backup")
-		}
-		coverage["recovery"] = rc
-	}
 	reserveMiB := int64(1024)
 	if v, ok := intValue(policy["reserveMiB"]); ok {
 		reserveMiB = int64(v)
 	}
-	capacity := stagingPlan(selectedGuests, selectedVolumes, reserveMiB<<20, withRecovery)
+	capacity := stagingPlan(selectedGuests, selectedVolumes, reserveMiB<<20)
 	backupProgress("preflight", M{"coverage": coverage, "capacity": capacity})
 	if !isTrue(capacity["sufficientForEstimate"]) {
 		return Public("Insufficient free backup staging space for estimated exports plus reserve; no guests stopped")
@@ -722,11 +703,6 @@ func runBackup(withRecovery bool) error {
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
 		"guests": selectedGuests, "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
 		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
-	if withRecovery {
-		if err := recoveryBackup(destination); err != nil {
-			return err
-		}
-	}
 	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
 	sort.Strings(archives)
 	checksums, sizes := M{}, M{}
@@ -810,7 +786,7 @@ func backupGenerations(root string) []any {
 	return result
 }
 
-// backupMain is the restic pre-backup hook: `nixus backup [--recover] [--with-recovery]`.
+// backupMain: `nixus backup [--recover]`; --recover restarts guests a cancelled export stopped.
 func backupMain(args []string) int {
 	syscall.Umask(0o077)
 	release, err := lockFile(incusLock, true)
@@ -823,15 +799,14 @@ func backupMain(args []string) int {
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	done := make(chan error, 1)
 	go func() {
-		recoverOnly, withRecovery := false, false
+		recoverOnly := false
 		for _, a := range args {
 			recoverOnly = recoverOnly || a == "--recover"
-			withRecovery = withRecovery || a == "--with-recovery"
 		}
 		if recoverOnly {
 			done <- backupRecover()
 		} else {
-			done <- runBackup(withRecovery)
+			done <- runBackup()
 		}
 	}()
 	select {
@@ -846,42 +821,6 @@ func backupMain(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-// --- scheduled backup health -------------------------------------------------
-
-func backupHealthEvaluate(enabled bool, phase, active, result string, lastTrigger, lastSuccess, at float64) string {
-	switch {
-	case !enabled:
-		return "disabled"
-	case active == "active" || active == "activating" || active == "deactivating":
-		return "running"
-	case (result != "" && result != "success") || phase == "failed":
-		return "failed"
-	case phase == "complete-with-exclusions":
-		return "partial"
-	case lastTrigger > 0 && lastTrigger > lastSuccess && at >= lastTrigger+7200:
-		return "overdue"
-	case lastSuccess == 0:
-		return "never-run"
-	}
-	return "successful"
-}
-
-func backupHealth(enabled bool) string {
-	if !enabled {
-		return "disabled"
-	}
-	unit := systemctlUnix("restic-backups-nixus.service", "ActiveState,Result")
-	timer := systemctlUnix("restic-backups-nixus.timer", "LastTriggerUSec")
-	if str(unit["ActiveState"]) == "" || timer["LastTriggerUSec"] == nil {
-		return "unknown"
-	}
-	trigger, _ := strconv.ParseFloat(strings.TrimPrefix(str(timer["LastTriggerUSec"]), "@"), 64)
-	raw, _ := os.ReadFile(backupSuccessFile)
-	last, _ := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
-	phase := str(readObj(backupStatusFile)["phase"])
-	return backupHealthEvaluate(true, phase, str(unit["ActiveState"]), str(unit["Result"]), trigger, last, now())
 }
 
 func systemctlUnix(unit, properties string) M {
