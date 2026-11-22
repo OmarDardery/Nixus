@@ -11,7 +11,6 @@ let operationView = {
   backupStatus: {},
   backupService: {},
   backupVerification: {},
-  releases: [],
   loading: false,
   error: "",
 };
@@ -118,24 +117,21 @@ function operationsPage() {
 }
 
 
-function platformSelectionText() {
-  if (!state.platformRevision) return "No platform update selected.";
-  if (!platformUpdateSelected()) return "Selected installed revision: rebuild only; no platform update.";
-  return "Proposed: " + state.platformRevision + ". File changes will be calculated by a new review.";
-}
+// Changes shows what a candidate brings; Nixus itself is updated with
+// Overview → Update Nixus. Staged Nix modules still need password approval.
 function platformReview() {
   if (!administrator()) return "";
   const job = state.status.job;
   const files = job?.platformChanges || [];
-  const historical = job?.status === "confirmed";
+  const approval = Object.keys(state.modules || {}).length
+    ? card("Approve staged Nix modules", `<div class="fields"><label class="field"><span>Your password</span><input id="platform-password" type="password" autocomplete="current-password"></label></div><label class="toggle"><input id="platform-ack" type="checkbox">I approve building the staged Nix modules (they run as root).</label>`, "", { open: true })
+    : "";
+  if (!job?.platformRevision && !Object.keys(job?.inputChanges || {}).length) return approval;
   const changes = files.map(file => `<tr><td><code>${esc(file.path)}</code></td><td>${file.after === null ? "Removed" : file.before === null ? "Added" : "Changed"}</td></tr>`).join("");
-  return card("Platform update", `<p>Installed: ${esc(state.status.release?.version || "unknown")} · <code>${esc((state.status.release?.revision || "unknown").slice(0, 12))}</code></p>
-    <button type="button" data-load-main>Review latest main</button><p class="note" id="platform-selected">${esc(platformSelectionText())}</p>
-    <details><summary>Advanced: published release or commit</summary><button type="button" data-load-releases>Find published releases</button><label class="field full"><span>Release</span><select id="platform-release"><option value="">Select a release</option>${operationView.releases.map(r => `<option value="${esc(r.revision)}">${esc(r.name)} · ${esc(r.tag)}</option>`).join("")}</select></label><label class="field full"><span>Upstream commit SHA (optional)</span><input id="platform-revision" value="${esc(state.platformRevision || "")}" maxlength="40" placeholder="40 hexadecimal characters"></label></details>
-    <div class="fields"><label class="field"><span>Current portal password for privileged code</span><input id="platform-password" type="password" autocomplete="current-password"></label></div><label class="toggle"><input id="platform-ack" type="checkbox">I approve building the selected privileged platform revision and staged Nix modules.</label>
-    ${job?.platformRevision ? `<p>${historical ? "Historical confirmed review" : "Existing job (not a preview of the selection above)"}: <a href="${projectRepository}/commit/${esc(job.platformRevision)}" target="_blank" rel="noopener noreferrer">${esc(job.platformRevision.slice(0, 12))}</a></p><details><summary>${historical ? "Historical platform files" : "Existing job platform files"} (${files.length})</summary><div class="table-wrap"><table><thead><tr><th>Path</th><th>Change</th></tr></thead><tbody>${changes || '<tr><td colspan="2">No platform file changes.</td></tr>'}</tbody></table></div></details>` : ""}
-    ${job?.inputChanges && Object.keys(job.inputChanges).length ? `<details><summary>Changed pinned inputs</summary><pre class="log">${esc(JSON.stringify(job.inputChanges, null, 2))}</pre></details>` : ""}
-    ${job?.rebootRequired ? '<p class="note">The new kernel needs a separate reboot after confirming activation.</p>' : ""}`);
+  return approval + card("Nixus version in this candidate",
+    (job.platformRevision ? `<p><a href="${projectRepository}/commit/${esc(job.platformRevision)}" target="_blank" rel="noopener noreferrer">${esc(job.platformRevision.slice(0, 12))}</a> · ${files.length} platform file(s)</p><div class="table-wrap"><table><thead><tr><th>Path</th><th>Change</th></tr></thead><tbody>${changes || '<tr><td colspan="2">No platform file changes.</td></tr>'}</tbody></table></div>` : "") +
+    (Object.keys(job.inputChanges || {}).length ? `<details><summary>Changed pinned inputs</summary><pre class="log">${esc(JSON.stringify(job.inputChanges, null, 2))}</pre></details>` : "") +
+    (job.rebootRequired ? '<p class="note">The new kernel needs a reboot after confirming activation.</p>' : ""), job.platformRevision ? job.platformRevision.slice(0, 12) : "inputs");
 }
 
 async function refreshOperations(full = true) {
@@ -279,52 +275,9 @@ function bindOperations() {
         by("recovery-password").value = "";
       })),
   );
-  document.querySelectorAll("[data-load-main]").forEach(el => {
-    el.onclick = safe(async () => {
-      const result = await api("main-revision");
-      if (!/^[a-f0-9]{40}$/.test(result.revision)) throw Error("Invalid upstream revision");
-      state.platformRevision = result.revision;
-      shell();
-    });
-  });
   document.querySelectorAll("[data-overview-refresh]").forEach(el => {
     el.onclick = safe(async () => { await refreshOverview(); shell(); });
   });
-  document.querySelectorAll("[data-load-releases]").forEach(
-    (el) =>
-      (el.onclick = safe(async () => {
-        operationView.releases = (await api("releases")).releases;
-        const select = by("platform-release");
-        select.innerHTML =
-          '<option value="">Select a release</option>' +
-          operationView.releases
-            .map(
-              (r) =>
-                `<option value="${esc(r.revision)}">${esc(r.name)} · ${esc(r.tag)} · ${esc(r.revision.slice(0, 12))}</option>`,
-            )
-            .join("");
-        if (!operationView.releases.length)
-          toast("No published releases are available yet.");
-      })),
-  );
-  const release = by("platform-release");
-  if (release)
-    release.onchange = () => {
-      state.platformRevision = release.value;
-      by("platform-password").value = "";
-      by("platform-ack").checked = false;
-      const revision = by("platform-revision");
-      if (revision) revision.value = release.value;
-      shell();
-    };
-  const revision = by("platform-revision");
-  if (revision)
-    revision.oninput = () => {
-      state.platformRevision = revision.value.trim();
-      by("platform-password").value = "";
-      by("platform-ack").checked = false;
-      by("platform-selected").textContent = platformSelectionText();
-    };
   if (
     state.page === "operations" &&
     !operationView.loaded &&

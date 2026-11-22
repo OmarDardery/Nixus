@@ -15,23 +15,25 @@ const state = {
 const app = document.querySelector("#app");
 // Page IDs continue to match the existing renderers and API handlers.
 const pages = [
-  ["setup","Setup"],["overview","Overview"],["projects","Apps"],["guests","Guests"],["network","Networking"],["storage","Storage"],
-  ["hardware","Hardware"],["integrations","Services"],["security","Access"],
-  ["ingress","Public ingress"],["operations","Backups"],
-  ["review","Changes"],["system","Maintenance"],["files","Advanced"],["commands","Info"],
+  ["setup","Setup"],["overview","Overview"],["projects","Apps"],["network","Network"],["system","Host"],["storage","Storage"],
+  ["files","Advanced"],["operations","Backups"],["review","Changes"],["commands","Info"],
 ];
-// Six top-level destinations; the settings pages share one tab bar.
-const settingsPages = ["network","guests","storage","hardware","integrations","security","ingress","system","files"];
+// Six top-level destinations; Settings has four tabs.
+const settingsPages = ["network","system","storage","files"];
+// Older page addresses land on the page that now holds their settings.
+const pageAliases = {guests:"overview", hardware:"storage", integrations:"system", security:"system", accounts:"system",
+  ingress:"files", repository:"operations"};
 const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
 function primaryPage() { return state.page; }
 function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
 function selectedHash() {
-  try { const raw = decodeURIComponent(window.location.hash.slice(1)); const id = raw === "repository" ? "operations" : raw; return validPage(id) ? id : "overview"; }
+  try { const raw = decodeURIComponent(window.location.hash.slice(1)); const id = pageAliases[raw] || raw; return validPage(id) ? id : "overview"; }
   catch { return "overview"; }
 }
 function navigateTo(id, replace = false) {
+  id = pageAliases[id] || id;
   if (!validPage(id)) return;
   const jump = document.querySelector("#ui-jump");
   if (jump?.open) jump.close();
@@ -282,21 +284,18 @@ function shell() {
   bindUiChrome();
   countdown();
 }
+// Settings pages are built from older single-purpose sections; drop their titles.
+function untitled(html) { return String(html).replace(/^<div class="page-title">[\s\S]*?<\/div><\/div>/, ""); }
 function renderPage() {
   return {
     setup: setupPage,
     overview: hostOverview,
     projects: appsPage,
-    guests: () => title("", "Guests", "Every Incus container and VM with its addresses.") + guestNetwork(),
     network: hostConnectivity,
-    hardware: hostHardware,
-    storage: () => title("", "Storage", "Disks and mounts on this server.") + storage(),
-    integrations,
-    apps: integrations,
-    security,
-    ingress: ingressPage,
-    system: () => system() + card("Host health", healthSummary()),
-    files,
+    storage: () => title("", "Storage", "Disks, mounts and USB serial aliases.") + untitled(hostHardware()),
+    system: () => title("", "Host", "Name, time, access, Cockpit, radios and monitoring.") +
+      untitled(system()) + untitled(security()) + untitled(integrations()) + card("Host health", healthSummary()),
+    files: () => files() + untitled(ingressPage()),
     review,
     operations: operationsPage,
     commands: commandsPage,
@@ -362,10 +361,6 @@ function storage() {
     ) +
     `<section class="card section"><div class="card-header"><h2>Declared mounts</h2><button data-action="add-mount">＋ Add filesystem</button></div>${rows || '<div class="empty">No extra disks. Data uses the system filesystem.</div>'}<div class="separator"></div></section>`
   );
-}
-function apps() {
-  return card("Incus-native applications",
-    '<button type="button" data-go="projects">Open Projects</button>');
 }
 
 function security() {

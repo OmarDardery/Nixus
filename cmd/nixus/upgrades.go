@@ -5,9 +5,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/json"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,60 +40,6 @@ func platformVersion(root string) string {
 		}
 	}
 	return "unknown"
-}
-
-func releases() ([]any, error) {
-	req, _ := http.NewRequest("GET", "https://api.github.com/repos/OmarDardery/Nixus/releases?per_page=30", nil)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "nixus")
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	var data []any
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return nil, Public("Release list unavailable")
-	}
-	out, err := check([]string{"git", "ls-remote", "--tags", upstream}, nil, 30*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	tags, peeled := map[string]string{}, map[string]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		sha, ref, ok := strings.Cut(line, "\t")
-		if !ok || !fullmatch(sha40, sha) || !strings.HasPrefix(ref, "refs/tags/") {
-			continue
-		}
-		tag := strings.TrimPrefix(ref, "refs/tags/")
-		if strings.HasSuffix(tag, "^{}") {
-			peeled[strings.TrimSuffix(tag, "^{}")] = sha
-		} else {
-			tags[tag] = sha
-		}
-	}
-	result := []any{}
-	for _, raw := range data {
-		item := obj(raw)
-		tag := str(item["tag_name"])
-		if isTrue(item["draft"]) || !fullmatch(semver, tag) || tags[tag] == "" {
-			continue
-		}
-		name := str(item["name"])
-		if name == "" {
-			name = tag
-		}
-		if len(name) > 120 {
-			name = name[:120]
-		}
-		revision := peeled[tag]
-		if revision == "" {
-			revision = tags[tag]
-		}
-		result = append(result, M{"name": name, "tag": tag, "revision": revision})
-	}
-	return result, nil
 }
 
 func platformPath(name string) bool {

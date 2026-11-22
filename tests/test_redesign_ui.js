@@ -22,14 +22,14 @@ state.principal = {username:'admin',role:'admin'};
 state.page = 'overview';
 `, context);
 const ids = JSON.parse(vm.runInContext('JSON.stringify(pages.map(([id])=>id))', context));
-for (const id of ['overview','projects','guests','network','storage','hardware','integrations','security','ingress','operations','review','system','files','commands'])
+for (const id of ['overview','projects','network','storage','operations','review','system','files','commands'])
   assert.ok(ids.includes(id), 'Missing redesigned route: ' + id);
 const nav = vm.runInContext('navigationHtml()', context);
 for (const id of ['overview', 'projects', 'operations', 'network', 'review', 'commands']) assert.ok(nav.includes('data-go="' + id + '"'));
 assert.equal((nav.match(/data-go=/g) || []).length, 6, 'six top-level destinations');
 assert.ok(nav.includes('aria-current="page"'), 'Current page should be announced.');
 const tabs = vm.runInContext("state.page='storage';settingsTabs()", context);
-for (const id of ['network','guests','storage','hardware','integrations','security','ingress','system','files'])
+for (const id of ['network','system','storage','files'])
   assert.ok(tabs.includes('data-go="' + id + '"'), 'settings tab missing: ' + id);
 assert.ok(vm.runInContext("state.page='storage';navigationHtml()", context).includes('class="active"'), 'Settings stays highlighted');
 assert.equal(vm.runInContext("state.page='overview';settingsTabs()", context), '');
@@ -38,7 +38,13 @@ assert.equal(vm.runInContext('stagedCount()', context), 0);
 vm.runInContext("state.draft.management.address='192.0.2.110';state.draft.hostName='sample-host';",context);
 assert.equal(vm.runInContext('stagedCount()',context), 2);
 assert.ok(vm.runInContext('stagedBanner()',context).includes('2 staged changes'));
-const guest = vm.runInContext("state.page='guests';renderPage()",context);
+// Old page addresses land on their new home.
+assert.equal(vm.runInContext("pageAliases.security", context), 'system');
+assert.equal(vm.runInContext("pageAliases.hardware", context), 'storage');
+const hostTab = vm.runInContext("state.page='system';renderPage()",context);
+assert.ok(hostTab.includes('SSH administration') && hostTab.includes('Cockpit host terminal') && hostTab.includes('Identity &amp; maintenance') || hostTab.includes('Identity & maintenance'));
+assert.equal((hostTab.match(/class="page-title"/g) || []).length, 1, 'one title per merged page');
+const guest = vm.runInContext("state.page='overview';guestNetwork()",context);
 assert.ok(guest.includes('Guests & addresses'));
 assert.ok(!guest.includes('data-guest-action'), 'Guest mutations belong in Incus, not the Nixus portal.');
 const storage = vm.runInContext("state.page='storage';renderPage()",context);
@@ -62,13 +68,11 @@ console.log('Redesigned console checks passed: routing, drafts, safe delegation,
 
 vm.runInContext("state.status.release={revision:'a'.repeat(40)};state.draft=copy(fixture);state.platformRevision='a'.repeat(40)", context);
 assert.equal(vm.runInContext('stagedCount()',context),0);
-assert.ok(vm.runInContext('platformSelectionText()',context).includes('rebuild only'));
 vm.runInContext("state.platformRevision='b'.repeat(40);state.status.job={status:'confirmed',platformRevision:'a'.repeat(40),platformChanges:[{path:'old.nix',before:null,after:'{}'}]}",context);
 assert.equal(vm.runInContext('stagedCount()',context),1);
 const platform = vm.runInContext('platformReview()',context);
-assert.ok(platform.includes('Proposed: ') && platform.includes('Historical confirmed review'));
-assert.ok(platform.includes('Historical platform files (1)'));
-assert.ok(!platform.includes('Candidate:'));
+assert.ok(platform.includes('Nixus version in this candidate') && platform.includes('1 platform file(s)'));
+assert.ok(!platform.includes('Review latest main'));
 
 // Panels: the page's first section opens, the rest collapse; Overview and Changes start collapsed.
 vm.runInContext("state.page='network'; panelIndex = 0", context);

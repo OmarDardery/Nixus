@@ -1232,6 +1232,19 @@ func installRun(a installArgs) error {
 			if !bootstrapJob && !switchMode {
 				return usageError("A full installation transaction is active; rerun without --wizard to resume it")
 			}
+			// A candidate that was never applied may have been built from an older
+			// copy of Nixus (an earlier attempt). Discard it and stage this
+			// command's source instead; only resume once activation has begun.
+			if !bootstrapJob && (str(current["status"]) == "building" || str(current["status"]) == "ready") && a.checkout != "" && !a.noUpdate {
+				fmt.Println("Discarding unapplied candidate " + str(current["id"]) + " from an earlier attempt; staging this version.")
+				if _, err := manager.cancel(str(current["id"])); err != nil {
+					return err
+				}
+				current = nil
+			}
+		}
+		if current != nil && isActiveStatus(str(current["status"])) {
+			bootstrapJob := str(current["hostRole"]) == "bootstrap"
 			fmt.Println("Resuming transaction " + str(current["id"]))
 			principal := directPrincipal
 			if bootstrapJob {

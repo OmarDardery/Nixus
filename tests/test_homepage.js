@@ -107,11 +107,6 @@ assert.ok(vm.runInContext('quickManagementLinks()', context).includes('https://[
 
 
 vm.runInContext('state.status.setupComplete=true; state.status.settings.apps.enable=false; state.status.effectiveSettings=null',context);
-const freshAppsCard=vm.runInContext('apps()',context);
-assert.ok(!freshAppsCard.includes('Initial Arcane administrator password'));
-assert.ok(!freshAppsCard.includes('arcane-reuse'));
-assert.ok(!freshAppsCard.includes('data-field="apps.enable"'), 'No first-install Arcane enable toggle');
-vm.runInContext('state.status.settings.apps.enable=true',context);
-const staleLegacySettingsCard=vm.runInContext('apps()',context);
-assert.ok(staleLegacySettingsCard.includes('Incus-native applications'));
-assert.ok(!/Arcane|password|apps\.enable/.test(staleLegacySettingsCard), 'Stale legacy settings must not revive retired UI');
+vm.runInContext("state.page='system'", context);
+const hostPage=vm.runInContext('untitled(integrations())',context);
+assert.ok(!/Arcane|arcane-reuse|data-field="apps\.enable"/.test(hostPage), 'Retired application settings stay gone');
