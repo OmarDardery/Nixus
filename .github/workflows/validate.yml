@@ -46,7 +46,7 @@ jobs:
           for checks in nixusMigrationChecks nixusGuestSecretsChecks nixusProjectValidationChecks nixusFoundationChecks nixusSecretsChecks nixusManagementChecks; do
             nix eval --json ".#$checks" | jq -e 'length > 0 and all(.[]; . == true)'
           done
-          nix-instantiate --eval --strict --json site.nix | jq -e '.schemaVersion == 1'
+          nix-instantiate --eval --strict --json site.nix | jq -e '.schemaVersion == 2'
           nix eval --json .#nixusProjectChecks | jq -e '
             .schemaVersion == 1 and (.projects | keys) == ["alpha", "beta"]
             and .projects.alpha.backend == "incus-compose" and .projects.alpha.resources.cpus == 3

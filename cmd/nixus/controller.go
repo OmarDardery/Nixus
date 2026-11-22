@@ -170,11 +170,6 @@ func (m *Manager) status() (M, error) {
 	booted, _ := filepath.EvalSymlinks("/run/booted-system/kernel")
 	running, _ := filepath.EvalSymlinks("/run/current-system/kernel")
 	reboot := booted != "" && running != "" && booted != running
-	modern, _ := modernLayout(m.root)
-	layout := 0
-	if modern {
-		layout = 1
-	}
 	schemaStored, ok := stored["schemaVersion"]
 	if !ok {
 		schemaStored = 0
@@ -190,7 +185,7 @@ func (m *Manager) status() (M, error) {
 	return M{"release": upgradeMetadata(m.root), "managementAddress": observed, "rebootRequired": reboot,
 		"effectiveSettings": effective, "codeOverrides": differences(desired, effective, ""), "settings": desired,
 		"job": jobValue, "lastConfirmed": last, "pending": must(readJSON(filepath.Join(m.state, "pending.json"), nil)),
-		"moduleDirectory": machinePath(m.root, "modules"), "layoutVersion": layout, "currentSystem": current,
+		"moduleDirectory": machinePath(m.root, "modules"), "currentSystem": current,
 		"setupComplete": desired["ready"], "settingsSchema": M{"stored": schemaStored, "desired": schemaDesired}}, nil
 }
 

@@ -204,7 +204,7 @@ func commissioningContext(settings M, mode, environment string) M {
 	return M{"revision": revision, "version": version, "sourceDigest": sourceDigest,
 		"inputsDigest": digestJSON(readText(filepath.Join(ROOT, "flake.lock"))), "settingsDigest": digestJSON(settings),
 		"system": system, "kernel": kernelRelease(), "incus": incus, "hardwareDigest": digestJSON(hardware), "scope": virtScope(),
-		"architecture": machineArch(), "hardwareDevices": isTrue(jget(settings, "hardware", "serialAliases")) || len(obj(jget(settings, "hardware", "serialAliases"))) > 0,
+		"architecture": machineArch(), "hardwareDevices": false,
 		"mode": mode, "environment": environment}
 }
 

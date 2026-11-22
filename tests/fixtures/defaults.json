@@ -3,18 +3,6 @@
     "sshPasswordLogin": true
   },
   "adminKeys": [],
-  "backup": {
-    "enable": false,
-    "environmentFile": "/var/lib/nixus-secrets/restic-environment",
-    "exclude": [],
-    "groups": [],
-    "initialize": false,
-    "passwordFile": "/var/lib/nixus-secrets/restic-password",
-    "repository": "",
-    "reserveMiB": 1024,
-    "schedule": "*-*-* 03:00:00",
-    "stagingDirectory": "/var/lib/nixus/exports"
-  },
   "cockpit": {
     "enable": false,
     "managePassword": false,
@@ -36,12 +24,6 @@
     "cidr": "",
     "dhcpRange": "",
     "gatewayCIDR": ""
-  },
-  "hardware": {
-    "serialAliases": []
-  },
-  "helpers": {
-    "enable": true
   },
   "hostName": "nixus",
   "instances": [],
@@ -79,7 +61,7 @@
     }
   },
   "ready": false,
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "secrets": {
     "ageKeyFile": "/var/lib/sops-nix/key.txt",
     "enable": false,
@@ -98,11 +80,5 @@
     "pool": "guests",
     "source": "/var/lib/incus/storage-pools/guests"
   },
-  "system": "x86_64-linux",
-  "tunnel": {
-    "credentialsFile": "/var/lib/nixus-secrets/cloudflared.json",
-    "enable": false,
-    "ingress": {},
-    "uuid": ""
-  }
+  "system": "x86_64-linux"
 }

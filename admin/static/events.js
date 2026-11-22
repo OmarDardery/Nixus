@@ -82,15 +82,6 @@ function bind() {
 async function action(name, el) {
   el.disabled = true;
   try {
-    if (name === "migrate-layout") {
-      await api("migrate-layout", {
-        current: document.querySelector("#layout-password").value,
-      });
-      state.status = await api("status");
-      shell();
-      toast("Local machine layout migrated. Original files retained.");
-      return;
-    }
     if (name === "stage-module") {
       const file = document.querySelector("#module-file").files[0];
       if (!file) throw Error("Select a Nix file.");

@@ -321,7 +321,7 @@ func systemctlShow(unit, properties string) M {
 // settingsInputs are every file site.nix can read; their stat fingerprint
 // keys the settings cache.
 var settingsInputs = []string{"site.nix", "site-defaults.nix", "lib/machine.nix", "lib/settings-migrations.nix",
-	"machine/format.json", "machine/settings.json", "local/settings.json"}
+	"machine/format.json", "machine/settings.json"}
 
 var settingsCache = struct {
 	sync.Mutex

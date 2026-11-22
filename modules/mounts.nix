@@ -6,6 +6,7 @@ let
   pools = builtins.filter (m: builtins.elem m.role [ "guests" "pool" ]) mounts;
   guestPaths = map (m: m.path) pools;
   backupPaths = map (m: m.path) (builtins.filter (m: m.role == "backup") mounts);
+  exportDirectory = if backupPaths == [ ] then "/var/lib/nixus/exports" else builtins.head backupPaths + "/exports";
 in {
   fileSystems = builtins.listToAttrs (map (m: {
     name = m.path;
@@ -29,6 +30,10 @@ in {
   virtualisation.incus.preseed.storage_pools = map (m: {
     name = "disk-${m.name}"; driver = "dir"; config.source = m.path + "/incus";
   }) (builtins.filter (m: m.role == "pool") mounts);
-  systemd.services.nixus-project-backup.unitConfig.RequiresMountsFor = backupPaths;
-  systemd.tmpfiles.rules = [ "d ${site.backup.stagingDirectory} 0700 root root -" ];
+  # Incus data exports stage on the backup-role disk when there is one.
+  systemd.services.nixus-project-backup = {
+    unitConfig.RequiresMountsFor = backupPaths;
+    environment.NIXUS_EXPORT_DIRECTORY = exportDirectory;
+  };
+  systemd.tmpfiles.rules = [ "d ${exportDirectory} 0700 root root -" ];
 }
