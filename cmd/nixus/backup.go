@@ -555,34 +555,11 @@ func runBackup() error {
 			}
 		}
 	}
-	policy := M{}
-	if f := os.Getenv("NIXUS_BACKUP_POLICY"); f != "" {
-		if policy, err = mustReadObj(f); err != nil {
-			return err
-		}
-	}
-	groups, err := consistencyGroups(guests, volumes, list(policy["groups"]), namespaces)
+	// Guests sharing a writable volume stop together; an instance can opt out
+	// with user.nixus.backup=manual.
+	groups, err := consistencyGroups(guests, volumes, nil, namespaces)
 	if err != nil {
 		return err
-	}
-	excludedList, _ := anyStrings(policy["exclude"])
-	excluded := map[string]bool{}
-	for _, e := range excludedList {
-		excluded[e] = true
-	}
-	present := map[string]bool{}
-	for _, g := range guests {
-		present[str(g["project"])+"/"+str(g["name"])] = true
-	}
-	var unknown []string
-	for e := range excluded {
-		if !present[e] {
-			unknown = append(unknown, e)
-		}
-	}
-	if len(unknown) > 0 {
-		sort.Strings(unknown)
-		return Public("Backup exclusion references an absent project/guest: " + strings.Join(unknown, ", "))
 	}
 	skipped := []any{}
 	var selected []M
@@ -597,7 +574,7 @@ func runBackup() error {
 			if config == nil {
 				config = obj(g["config"])
 			}
-			if excluded[member] || str(config["user.nixus.backup"]) == "manual" {
+			if str(config["user.nixus.backup"]) == "manual" {
 				protected = true
 			}
 		}
@@ -618,9 +595,6 @@ func runBackup() error {
 	}
 	coverage := backupCoverage(guests, volumes, selectedGuests, selectedVolumes, namespaces)
 	reserveMiB := int64(1024)
-	if v, ok := intValue(policy["reserveMiB"]); ok {
-		reserveMiB = int64(v)
-	}
 	capacity := stagingPlan(selectedGuests, selectedVolumes, reserveMiB<<20)
 	backupProgress("preflight", M{"coverage": coverage, "capacity": capacity})
 	if !isTrue(capacity["sufficientForEstimate"]) {
@@ -821,15 +795,4 @@ func backupMain(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-func systemctlUnix(unit, properties string) M {
-	res, _ := run([]string{"systemctl", "show", unit, "--timestamp=unix", "--property=" + properties}, nil, 10*time.Second, nil, "")
-	data := M{}
-	for _, line := range strings.Split(string(res.Stdout), "\n") {
-		if k, v, ok := strings.Cut(line, "="); ok {
-			data[k] = v
-		}
-	}
-	return data
 }

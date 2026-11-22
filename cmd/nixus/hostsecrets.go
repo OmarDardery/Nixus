@@ -16,9 +16,8 @@ import (
 const hostKeyFile = "/var/lib/sops-nix/key.txt"
 const hostSecretsRelative = "machine/secrets/host.yaml"
 const hostSecretsPlaceholder = "nixus-host-secrets"
-const hostSecretsUnset = "cockpit-operator-password-unset"
 
-var hostSecretNames = map[string]string{"cockpitPassword": "cockpit-operator-password", "wifiPassword": "wifi-env"}
+var hostSecretNames = map[string]string{"wifiPassword": "wifi-env"}
 
 var ageRecipient = re(`age1[02-9ac-hj-np-z]{58}`)
 var topKey = re(`([A-Za-z0-9][A-Za-z0-9_-]{0,63}):.*`)
@@ -121,37 +120,14 @@ func hostEncrypt(values M, target, keyFile string) error {
 	return atomic(target, out, 0o644, "")
 }
 
-// lockedPasswordHash is a SHA-512 crypt of a discarded random password.
-func lockedPasswordHash() (string, error) {
-	out, err := sopsRun([]string{"openssl", "passwd", "-6", "-stdin"}, []byte(tokenURLSafe(32)+"\n"), "")
-	if err != nil {
-		return "", err
-	}
-	value := strings.TrimSpace(string(out))
-	if !strings.HasPrefix(value, "$6$") {
-		return "", Public("Could not create a locked operator password")
-	}
-	return value + "\n", nil
-}
-
 func hostSecretsInitialize(root, keyFile string) (string, error) {
 	target := hostSecretsPath(root)
 	if !isFile(target) {
-		hash, err := lockedPasswordHash()
-		if err != nil {
-			return "", err
-		}
-		if err := hostEncrypt(M{hostSecretsPlaceholder: "initialized", hostSecretNames["cockpitPassword"]: hash,
-			hostSecretsUnset: "true"}, target, keyFile); err != nil {
+		if err := hostEncrypt(M{hostSecretsPlaceholder: "initialized"}, target, keyFile); err != nil {
 			return "", err
 		}
 	}
 	return target, nil
-}
-
-func operatorPasswordSet(root string) bool {
-	found := sopsNames(hostSecretsPath(root))
-	return found[hostSecretNames["cockpitPassword"]] && !found[hostSecretsUnset]
 }
 
 // hostSecretsWrite merges encoded values into the staged source ciphertext.
@@ -175,9 +151,6 @@ func hostSecretsWrite(root string, values M, keyFile string) ([]string, error) {
 	delete(current, "sops")
 	for field, value := range values {
 		current[hostSecretNames[field]] = value
-	}
-	if _, ok := values["cockpitPassword"]; ok {
-		delete(current, hostSecretsUnset)
 	}
 	if err := hostEncrypt(current, target, keyFile); err != nil {
 		return nil, err

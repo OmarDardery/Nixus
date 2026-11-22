@@ -50,8 +50,7 @@ func defaultSource() string {
 }
 
 var SECRET_PATHS = map[string]string{
-	"cockpitPassword": "/var/lib/nixus-secrets/cockpit-operator-password",
-	"wifiPassword":    "/var/lib/nixus-secrets/wifi.env",
+	"wifiPassword": "/var/lib/nixus-secrets/wifi.env",
 }
 
 var ENV_KEYS = map[string]bool{"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true,
@@ -663,14 +662,6 @@ func cleanupTerminalSecrets(state string) error {
 	return nil
 }
 
-func groupID(name string) (int, error) {
-	g, err := user.LookupGroup(name)
-	if err != nil {
-		return -1, err
-	}
-	return strconv.Atoi(g.Gid)
-}
-
 // prepareStateAccess is kept for callers; the console stores no accounts the
 // UI process must read.
 func prepareStateAccess(locked bool) error { return nil }
@@ -1038,21 +1029,6 @@ func encodeSecrets(values M, settings M) (M, error) {
 				return nil, Public("Wi-Fi WPA password must contain 8–63 characters, or 64 hex digits")
 			}
 			value = "NIXUS_WIFI_PSK=" + shellQuote(strings.ReplaceAll(value, `\`, `\\`)) + "\n"
-		case "cockpitPassword":
-			if !isTrue(jget(settings, "cockpit", "managePassword")) {
-				return nil, Public("Cockpit password enrollment must manage the operator password")
-			}
-			if n < 16 || n > 256 || strings.ContainsAny(value, "\n\r") {
-				return nil, Public("Cockpit passwords must contain 16–256 characters and no newline")
-			}
-			out, err := check([]string{"openssl", "passwd", "-6", "-stdin"}, []byte(value+"\n"), 30*time.Second)
-			if err != nil {
-				return nil, err
-			}
-			value = strings.TrimSpace(string(out)) + "\n"
-			if !strings.HasPrefix(value, "$6$") {
-				return nil, Public("Failed to encode the local account password")
-			}
 		default:
 			if n < 16 || strings.ContainsAny(value, "\n\r") {
 				return nil, Public("Service passwords must contain at least 16 characters and no newline")

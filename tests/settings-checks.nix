@@ -6,7 +6,7 @@ let
   migrate = import ../lib/settings-migrations.nix;
   legacy = { ready = true; monitoring.history = false; adminKeys = [ "fixture" ]; };
 in {
-  currentMonitoringUnchanged = !(((migrate { schemaVersion = 2; ready = true; monitoring.history = false; }).monitoring) ? collection);
+  currentMonitoringUnchanged = !(((migrate { schemaVersion = 3; ready = true; monitoring.history = false; }).monitoring) ? collection);
   defaultsPreserved = check defaults == defaults;
   legacyCollectionPreserved = (migrate legacy).monitoring.collection;
   explicitFalsePreserved = !(migrate (legacy // { monitoring.collection = false; })).monitoring.collection;
@@ -14,12 +14,14 @@ in {
   migrationIdempotent = migrate (migrate legacy) == migrate legacy;
   migrationPreservesUnrelated = (migrate legacy).adminKeys == legacy.adminKeys;
   currentSchemaPreserved = migrate defaults == defaults;
-  futureSchemaRejected = !(builtins.tryEval (builtins.deepSeq (migrate { schemaVersion = 3; }) true)).success;
-  effectiveSchemaCannotOverride = rejects { schemaVersion = 3; };
+  futureSchemaRejected = !(builtins.tryEval (builtins.deepSeq (migrate { schemaVersion = 4; }) true)).success;
+  effectiveSchemaCannotOverride = rejects { schemaVersion = 4; };
   retiredSectionsDropped = let m = migrate { schemaVersion = 1; hostName = "kept"; backup.enable = true; tunnel.enable = false;
       helpers.enable = true; hardware.serialAliases = [ ]; }; in
-    m.schemaVersion == 2 && m.hostName == "kept" && !(m ? backup) && !(m ? tunnel) && !(m ? helpers) && !(m ? hardware);
-  legacyReachesCurrent = (migrate legacy).schemaVersion == 2;
+    m.schemaVersion == 3 && m.hostName == "kept" && !(m ? backup) && !(m ? tunnel) && !(m ? helpers) && !(m ? hardware);
+  legacyReachesCurrent = (migrate legacy).schemaVersion == 3;
+  managedPasswordDropped = let m = migrate { schemaVersion = 2; cockpit = { enable = true; port = 9090; managePassword = true; }; }; in
+    m.schemaVersion == 3 && m.cockpit.enable && !(m.cockpit ? managePassword);
   invalidSchemaRejected = !(builtins.tryEval (builtins.deepSeq (migrate { schemaVersion = "1"; }) true)).success;
   partialInventory = (check { hostName = "fixture"; }).cockpit == defaults.cockpit;
   retiredAppsRejected = rejects { apps.enable = false; };

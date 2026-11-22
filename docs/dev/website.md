@@ -46,9 +46,9 @@ Official references: [custom subdomains](https://docs.github.com/en/pages/config
   the provider's DNS TTL to expire. With Cloudflare, use DNS only during validation.
 - **HTTPS is unavailable:** wait for Pages certificate provisioning and check the
   DNS guidance above. Do not disable TLS validation as a workaround.
-- **Styles or docs return 404:** the build needs the correct base path. The workflow
-  gets it from `actions/configure-pages`; a custom domain uses the root, while a
-  project site can use `/nixus`. Both layouts are checked during builds.
+- **Styles or docs return 404:** the build needs the correct base path. The deploy
+  builds for the root because the site is served from the custom domain; if the domain
+  is removed, deploy with `--base-path /nixus`. Both layouts are checked during builds.
 - **The page describes code not yet on main:** merge the implementation changes
   before treating the canonical installation command as updated.
 

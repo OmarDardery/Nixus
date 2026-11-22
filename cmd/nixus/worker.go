@@ -16,45 +16,6 @@ import (
 	"time"
 )
 
-func saveOperatorPassword(recovery string) error {
-	res, _ := run([]string{"getent", "shadow", "operator"}, nil, 10*time.Second, nil, "")
-	value := ""
-	if res.Code != 0 {
-		passwd, _ := run([]string{"getent", "passwd", "operator"}, nil, 10*time.Second, nil, "")
-		if passwd.Code == 0 || res.Code != 2 {
-			return Public("Cannot preserve the local operator credential")
-		}
-		value = "!"
-	} else {
-		fields := strings.Split(strings.TrimSpace(string(res.Stdout)), ":")
-		if len(fields) != 9 || fields[0] != "operator" {
-			return Public("Cannot preserve the local operator credential")
-		}
-		value = fields[1]
-	}
-	return atomicString(filepath.Join(recovery, "operator-password"), value+"\n", 0o600)
-}
-
-func restoreOperatorPassword(recovery string) error {
-	p := filepath.Join(recovery, "operator-password")
-	if !exists(p) {
-		return nil
-	}
-	account, _ := run([]string{"getent", "passwd", "operator"}, nil, 10*time.Second, nil, "")
-	if account.Code == 2 {
-		return nil
-	}
-	if account.Code != 0 {
-		return Public("Cannot inspect the local operator account for recovery")
-	}
-	raw, _ := os.ReadFile(p)
-	res, err := run([]string{"chpasswd", "--encrypted"}, []byte("operator:"+strings.TrimSpace(string(raw))+"\n"), 30*time.Second, nil, "")
-	if err != nil || res.Code != 0 {
-		return Public("Could not restore the local operator credential; use the host console")
-	}
-	return nil
-}
-
 // hostCommand runs a host tool with output discarded; only progress is logged.
 func hostCommand(argv []string, log *os.File, timeout time.Duration, checkStatus bool) (int, error) {
 	if timeout == 0 {
@@ -217,19 +178,8 @@ func workerBuild(directory string) error {
 		return Public("Bootstrap source marks the host configured; use the full guarded installer")
 	}
 	secretChanges, _ := anyStrings(job["secretChanges"])
-	staged, err := readStagedSecrets(directory, secretChanges)
-	if err != nil {
+	if _, err := readStagedSecrets(directory, secretChanges); err != nil {
 		return err
-	}
-	encryptedChanges, _ := anyStrings(job["encryptedSecretChanges"])
-	wantsCockpit := staged["cockpitPassword"] != nil
-	for _, e := range encryptedChanges {
-		if e == "cockpitPassword" {
-			wantsCockpit = true
-		}
-	}
-	if wantsCockpit && !(isTrue(jget(effective, "cockpit", "enable")) && isTrue(jget(effective, "cockpit", "managePassword"))) {
-		return Public("Cockpit password enrollment conflicts with file-owned effective settings")
 	}
 	validation := cloneM(effective)
 	mounts := list(validation["mounts"])
@@ -303,11 +253,6 @@ func saveRecovery(directory string) error {
 	candidate := obj(record["effectiveSettings"])
 	if candidate == nil {
 		candidate = obj(record["settings"])
-	}
-	if isTrue(jget(candidate, "cockpit", "managePassword")) {
-		if err := saveOperatorPassword(recovery); err != nil {
-			return err
-		}
 	}
 	platform := str(record["platformRevision"]) != "" || isTrue(record["sourcePlatformUpdated"])
 	if platform {
@@ -479,10 +424,6 @@ func workerRollback(directory, reason string) error {
 		log.Close()
 		return err
 	}
-	if err := restoreOperatorPassword(filepath.Join(directory, "recovery")); err != nil {
-		log.Close()
-		return err
-	}
 	if lookPath("rfkill") != "" {
 		for _, raw := range list(manifest["radios"]) {
 			radio := obj(raw)
@@ -605,9 +546,6 @@ func workerApply(directory string) error {
 		for _, key := range keys(staged) {
 			if err := atomicString(SECRET_PATHS[key], str(staged[key]), 0o600); err != nil {
 				return err
-			}
-			if key == "cockpitPassword" {
-				durableUnlink(operatorUnsetMarker())
 			}
 		}
 		if err := removeStagedSecrets(directory); err != nil {

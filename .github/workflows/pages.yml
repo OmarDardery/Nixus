@@ -22,13 +22,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version-file: go.mod
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b
       - name: Build and validate custom-domain site
-        run: go run ./cmd/website --base-path '' --check
+        run: nix develop -c go run ./cmd/website --base-path '' --check
       - name: Validate project-site paths too
-        run: go run ./cmd/website --base-path /nixus --output /tmp/nixus-project-site --check
+        run: nix develop -c go run ./cmd/website --base-path /nixus --output /tmp/nixus-project-site --check
       - name: Check browser JavaScript
         run: node --check website/assets/site.js
   deploy:
@@ -44,16 +42,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version-file: go.mod
-      - name: Get Pages base path
-        id: pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-      - name: Build deployment using configured Pages base path
-        env:
-          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: go run ./cmd/website --base-path "$PAGES_BASE_PATH" --check
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b
+      # Served from the custom domain nixus.dardery.work, so the base path is empty.
+      - name: Build deployment for the custom domain
+        run: nix develop -c go run ./cmd/website --base-path '' --check
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: _site

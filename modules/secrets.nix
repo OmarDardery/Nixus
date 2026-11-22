@@ -7,9 +7,7 @@
   sops = lib.mkIf site.secrets.enable {
     defaultSopsFile = ../. + "/${site.secrets.hostFile}";
     age.keyFile = site.secrets.ageKeyFile;
-    secrets = (lib.optionalAttrs (site.cockpit.enable && site.cockpit.managePassword) {
-      cockpit-operator-password.neededForUsers = true;
-    }) // (lib.optionalAttrs (site.radios.wifi.enable && site.radios.wifi.manageProfile) {
+    secrets = (lib.optionalAttrs (site.radios.wifi.enable && site.radios.wifi.manageProfile) {
       wifi-env = { path = "/var/lib/nixus-secrets/wifi.env"; restartUnits = [ "NetworkManager-ensure-profiles.service" ]; };
     });
   };

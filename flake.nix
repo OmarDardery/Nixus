@@ -122,7 +122,7 @@
         # Fresh-install shape: every host credential is SOPS/age ciphertext.
         validation-sops = mkHost (testSite // {
           secrets = testSite.secrets // { enable = true; hostFile = "tests/fixtures/host-secrets.yaml"; };
-          cockpit = testSite.cockpit // { enable = true; managePassword = true; };
+          cockpit = testSite.cockpit // { enable = true; };
           radios = testSite.radios // { wifi = { enable = true; interface = "wlan0"; ssid = "FIXTURE-ONLY"; manageProfile = true; }; };
         }) [ ./tests/hardware.nix { networking.networkmanager.enable = true; } ];
         validation-bootstrap = nixpkgs.lib.nixosSystem {
@@ -166,8 +166,6 @@
         plain = self.nixosConfigurations.validation-services.config;
       in {
         hostFileIsDefault = toString c.sops.defaultSopsFile == toString ./tests/fixtures/host-secrets.yaml;
-        operatorFromSops = c.users.users.operator.hashedPasswordFile == c.sops.secrets.cockpit-operator-password.path
-          && c.sops.secrets.cockpit-operator-password.neededForUsers;
         wifiFromSops = c.sops.secrets.wifi-env.path == "/var/lib/nixus-secrets/wifi.env";
         disabledDeclaresNothing = plain.sops.secrets == { };
       };

@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -235,11 +234,6 @@ func parseObject(raw []byte) (M, error) {
 	return m, nil
 }
 
-func pretty(v any) string {
-	raw, _ := json.MarshalIndent(v, "", "  ")
-	return string(raw)
-}
-
 func now() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // monotonic returns CLOCK_MONOTONIC seconds, shared by every process on a boot
@@ -330,8 +324,6 @@ func check(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
 	}
 	return res.Stdout, nil
 }
-
-func environ(extra ...string) []string { return append(os.Environ(), extra...) }
 
 func utf8Valid(b []byte) bool { return utf8.Valid(b) }
 
