@@ -89,10 +89,10 @@ Research date: 2026-10-27.
 The host foundation update (2026-10-29) narrows the portal to host installation,
 maintenance, physical networking, hardware prerequisites and independent recovery.
 Incus owns guest lifecycle, resources, devices, networks and volumes; see the
-[ownership contract](ownership.md). Community Scripts use the pinned upstream
+ownership contract. Community Scripts use the pinned upstream
 Incus backend through a local CLI, with no portal script execution.
 
-The [installer/portal architecture](setup.md) adds a preserved-installation bootstrap, typed JSON
+The installer/portal architecture adds a preserved-installation bootstrap, typed JSON
 Nix input, separate unprivileged HTTPS process/local root broker, reviewed rebuild transactions,
 UUID-backed mounts, modular radios and a persistent rollback guard. Manual mode retains the original direct/SSH workflow.
  The lock file pins Nixpkgs to
@@ -166,7 +166,7 @@ separate applications VM is involved:
 
 Named volumes become Incus custom volumes and survive redeployments; Nixus never runs
 `down --volumes`. The native reconciler never edits a Compose-owned project, and Compose
-never adopts native resources. See [OCI source uploads](oci-source-intake.md).
+never adopts native resources. See OCI source uploads.
 
 ## Declarative boundaries
 
@@ -209,7 +209,7 @@ configuration deployment. Update an existing NixOS VM through `nixos-rebuild` ov
 
 The default deployment is an Incus host without a Prometheus history database, which is opt-in
 through declared settings. The portal serves its own static assets from the Go HTTPS service.
-Nginx only redirects port 80 to the HTTPS portal. See [setup](setup.md#lightweight-defaults-and-declarative-ownership)
+Nginx only redirects port 80 to the HTTPS portal. See setup
 for service ownership, monitoring trade-offs and state that must be backed up separately.
 
 ## HTTPS request limits

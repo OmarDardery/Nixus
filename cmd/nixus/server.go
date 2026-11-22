@@ -141,8 +141,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return NewProjectTransactions("", "").status("")
 	case p == "/project-sources":
 		return projectsOverview(""), nil
-	case p == "/project-imports":
-		return NewPublishedSources("").inventory()
 	case p == "/project-secrets":
 		return NewSecrets("", "", "").inventory()
 	case p == "/apps":
@@ -289,7 +287,7 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return m.confirm(id)
 		}
 		return m.rollback(id)
-	case "/project/initialize", "/project/review", "/project/publish", "/project/rollback", "/project/cancel", "/project/recover", "/project/deploy":
+	case "/project/initialize", "/project/review", "/project/publish", "/project/deploy":
 		t := NewProjectTransactions("", "")
 		switch p {
 		case "/project/initialize":
@@ -298,14 +296,8 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return t.review(body["changes"], actor, body["sourceRevisions"])
 		case "/project/publish":
 			return t.publish(body["id"], body["planHash"])
-		case "/project/rollback":
-			return t.rollback(body["id"], body["planHash"])
-		case "/project/cancel":
-			return t.cancel(body["id"])
-		case "/project/deploy":
-			return t.deploy(body["id"], body["planHash"], ack(body["resume"]))
 		}
-		return t.recover(body["id"])
+		return t.deploy(body["id"], body["planHash"], ack(body["resume"]))
 	case "/browser-certificate":
 		fullAdmin := body["fullAdmin"]
 		if fullAdmin == nil {
@@ -314,8 +306,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return browserIssue(STATE, body["device"], body["passphrase"], actor, fullAdmin, body["renew"])
 	case "/image-updates/check":
 		return checkImageUpdates()
-	case "/image-updates/prepare":
-		return prepareImageUpdate(actor, body["project"])
 	case "/apps/deploy":
 		return startAppDeploy(actor, body)
 	case "/apps/backup-policy":
@@ -627,20 +617,18 @@ var staticAssets = map[string][2]string{
 	"/fonts/space-grotesk-latin.woff2": {"fonts/space-grotesk-latin.woff2", "font/woff2"},
 }
 
-var adminGets = map[string]bool{"/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
+var adminGets = map[string]bool{"/api/main-revision": true,
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true}
 var portalActions = map[string]bool{}
 
 func init() {
-	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish /api/project-import/review
-		/api/project-import/publish /api/project-import/plan /api/oci/review /api/oci/build /api/review /api/apply /api/confirm /api/rollback
-		/api/cancel /api/users /api/project/initialize
-		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
+	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish
+		/api/review /api/apply /api/confirm /api/rollback /api/cancel
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
-		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
-		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-policy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
+		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/image-updates/check
+		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
 		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/env /api/apps/power /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
 		portalActions[a] = true
 	}
@@ -906,10 +894,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/project-import/publish", "/api/oci/review", "/api/oci/build", "/api/image-updates/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-policy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env", "/api/apps-repo/connect", "/api/apps-repo/deploy", "/api/apps-repo/disconnect":
-		if strings.HasPrefix(path, "/api/oci/") && !ack(body["acknowledge"]) {
-			return Public("Explicitly acknowledge the offline OCI build and resource costs")
-		}
+	case "/api/project-import/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env", "/api/apps-repo/connect", "/api/apps-repo/deploy", "/api/apps-repo/disconnect":
 		if err := reauth("current", "Reauthenticate before changing project source"); err != nil {
 			return err
 		}
@@ -1003,19 +988,6 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		if err := requireFreshWebConfirmation(s, active, clientIP(r)); err != nil {
 			return err
 		}
-	case "/api/users":
-		if err := reauth("current", "Reauthenticate before changing accounts"); err != nil {
-			return err
-		}
-	}
-	if strings.HasPrefix(path, "/api/project/") {
-		if !ack(body["acknowledgePrivilegedNix"]) {
-			return Public("Acknowledge that project Nix files are privileged code")
-		}
-		if err := reauth("current", "Reauthenticate before changing declarative project source"); err != nil {
-			return err
-		}
-		delete(body, "acknowledgePrivilegedNix")
 	}
 	if !portalActions[path] {
 		replyError(w, 404, "Unknown action")
