@@ -32,7 +32,7 @@ let
   };
   makeType = path: value:
     if builtins.hasAttr path foundationTypes then foundationTypes.${path}
-    else if path == "schemaVersion" then types.enum [ 2 ]
+    else if path == "schemaVersion" then types.enum [ 3 ]
     else if builtins.elem path [ "cockpit.port" "setup.port" ] then types.port
     else if path == "instances" then types.listOf instance
     else if path == "mounts" then types.listOf mount

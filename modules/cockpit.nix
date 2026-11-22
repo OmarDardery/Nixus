@@ -30,12 +30,6 @@ in {
       "cockpit/ws-certs.d/90-nixus.key".source = "/var/lib/nixus-admin/tls.key";
     };
     systemd.tmpfiles.rules = lib.optional site.setup.enable "d /run/nixus 0755 root root -";
-    users.users.operator.hashedPasswordFile = lib.mkIf c.managePassword
-      (if site.secrets.enable then config.sops.secrets.cockpit-operator-password.path else "/var/lib/nixus-secrets/cockpit-operator-password");
-    assertions = [
-      { assertion = !c.managePassword || config.users.mutableUsers;
-        message = "Cockpit password enrollment requires mutable local accounts; manage immutable accounts in your source instead."; }
-    ];
   };
 }
 

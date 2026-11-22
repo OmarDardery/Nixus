@@ -5,7 +5,6 @@ package main
 // when called as "nixus-go", on its first argument.
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -17,8 +16,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 func nilLogger() *log.Logger { return log.New(io.Discard, "", 0) }
@@ -98,28 +95,6 @@ func releaseCommand(args []string) int {
 }
 
 // --- terminal helpers ----------------------------------------------------------
-
-func readSecret(promptText string) (string, error) {
-	fd := int(os.Stdin.Fd())
-	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
-	if err != nil {
-		return "", Public("A private terminal is required")
-	}
-	quiet := *old
-	quiet.Lflag &^= unix.ECHO
-	quiet.Lflag |= unix.ICANON | unix.ISIG
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &quiet); err != nil {
-		return "", Public("A private terminal is required")
-	}
-	defer unix.IoctlSetTermios(fd, unix.TCSETS, old)
-	fmt.Fprint(os.Stderr, promptText)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	fmt.Fprintln(os.Stderr)
-	if err != nil && line == "" {
-		return "", Public("Input ended")
-	}
-	return strings.TrimRight(line, "\r\n"), nil
-}
 
 // sshLoginEpoch is the start time of the nearest SSH/Cockpit session ancestor.
 func sshLoginEpoch() (float64, bool) {

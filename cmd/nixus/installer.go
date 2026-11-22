@@ -70,7 +70,7 @@ var intentQuestions = [][]string{
 }
 
 func intentDefaults() M {
-	return M{"version": 1, "workloads": "both", "access": "lan", "network": "nat", "laptop": false, "monitoring": true, "backup": false, "guestSubnet": nil}
+	return M{"version": 1, "workloads": "both", "access": "lan", "network": "nat", "laptop": false, "monitoring": true, "guestSubnet": nil}
 }
 
 var privateBlocks = []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("172.16.0.0/12"), netip.MustParsePrefix("192.168.0.0/16")}
@@ -119,7 +119,7 @@ func normalizeIntent(raw M) (M, error) {
 			return nil, Public(q[0] + " must be one of: " + strings.Join(q[2:], ", "))
 		}
 	}
-	for _, f := range []string{"laptop", "monitoring", "backup"} {
+	for _, f := range []string{"laptop", "monitoring"} {
 		if _, ok := result[f].(bool); !ok {
 			return nil, Public(f + " must be true or false")
 		}
@@ -783,11 +783,6 @@ func directActivate(m *Manager, candidate, effective M, staged, expected string)
 	if effective == nil {
 		effective = candidate
 	}
-	if isTrue(jget(effective, "cockpit", "enable")) && isTrue(jget(effective, "cockpit", "managePassword")) && !isTrue(jget(effective, "secrets", "enable")) {
-		if err := ensureOperatorPassword(); err != nil {
-			return nil, err
-		}
-	}
 	reviewed, err := m.review(candidate, ReviewOptions{Secrets: M{}, Principal: directPrincipal, StagedSource: staged, ExpectedDigest: expected})
 	if err != nil {
 		return nil, err
@@ -1066,11 +1061,7 @@ func installSummary(settings, record M) {
 		fmt.Println("Incus: https://" + address + ":8443 (create/import a browser certificate from the Nixus portal)")
 		if isTrue(jget(settings, "cockpit", "enable")) {
 			fmt.Printf("Cockpit: https://%s:%v (existing non-root Linux account/password)\n", address, jget(settings, "cockpit", "port"))
-			if isTrue(jget(settings, "cockpit", "managePassword")) {
-				fmt.Println("Set a persistent managed Linux operator password in the portal under Host > Services, then review and activate it.")
-			} else {
-				fmt.Println("Linux operator recovery: use an authorized host terminal and sudo passwd operator.")
-			}
+			fmt.Println("Linux operator recovery: use an authorized host terminal and sudo passwd operator.")
 		}
 		fmt.Println("All enabled management endpoints passed health checks. No disks were formatted.")
 		if isTrue(record["rebootRequired"]) {
@@ -1512,8 +1503,7 @@ func installRun(a installArgs) error {
 			return err
 		}
 		if len(cockpitAccounts()) == 0 {
-			obj(candidate["cockpit"])["managePassword"] = true
-			fmt.Println("No usable local administrator password was found; a stable operator login will be provisioned for SSH and Cockpit.")
+			return Public("No sudo user with a password was found. Set one (sudo passwd YOURUSER), then rerun; the console signs in with it.")
 		}
 		writeJSON(machinePath(stage, "settings"), candidate)
 		if effective, err = nixEval(stage, "nixusSettings"); err != nil {
@@ -1525,9 +1515,6 @@ func installRun(a installArgs) error {
 		}
 		if remote && len(list(effective["adminKeys"])) == 0 && !isTrue(jget(effective, "access", "sshPasswordLogin")) {
 			return Public("File-owned SSH settings remove remote login access; enroll a client key before activation")
-		}
-		if isTrue(jget(effective, "cockpit", "enable")) && len(cockpitAccounts()) == 0 && !isTrue(jget(effective, "cockpit", "managePassword")) {
-			return Public("File-owned Cockpit settings require an existing usable Linux password or managePassword=true")
 		}
 		if isTrue(jget(effective, "access", "sshPasswordLogin")) {
 			fmt.Println("SSH policy after activation: password login retained for existing non-root accounts")

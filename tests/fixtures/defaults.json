@@ -5,7 +5,6 @@
   "adminKeys": [],
   "cockpit": {
     "enable": false,
-    "managePassword": false,
     "port": 9090
   },
   "connectivity": {
@@ -61,7 +60,7 @@
     }
   },
   "ready": false,
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "secrets": {
     "ageKeyFile": "/var/lib/sops-nix/key.txt",
     "enable": false,

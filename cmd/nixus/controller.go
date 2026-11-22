@@ -326,9 +326,6 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	}
 	stored := readObj(machinePath(m.root, "settings"))
 	requested := mergeSettings(current, changes)
-	if str(o.Secrets["cockpitPassword"]) != "" {
-		obj(requested["cockpit"])["managePassword"] = true
-	}
 	host := hostInventory()
 	var candidate M
 	if o.HostRole == "bootstrap" {
@@ -370,11 +367,6 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 			return hostSecretPresent(m.root, field)
 		}
 		return exists(SECRET_PATHS[field])
-	}
-	if isTrue(jget(candidate, "cockpit", "enable")) && isTrue(jget(candidate, "cockpit", "managePassword")) {
-		if _, ok := encoded["cockpitPassword"]; !ok && !kept("cockpitPassword") {
-			return nil, Public("Set the Cockpit operator password, or retain existing local-account authentication")
-		}
 	}
 	if isTrue(wifi["manageProfile"]) && isTrue(wifi["enable"]) {
 		if _, ok := encoded["wifiPassword"]; !ok && !kept("wifiPassword") {

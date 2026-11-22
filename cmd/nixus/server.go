@@ -627,7 +627,7 @@ func init() {
 	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish
 		/api/review /api/apply /api/confirm /api/rollback /api/cancel
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
-		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/image-updates/check
+		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check
 		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
 		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/env /api/apps/power /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
 		portalActions[a] = true
@@ -875,9 +875,6 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	}
 	body, err := jsonBody(r)
 	if err != nil {
-		return err
-	}
-	if err := authorize(M{"username": s.username, "role": s.role}, path, body); err != nil {
 		return err
 	}
 	reauth := func(field, message string) error {

@@ -1,7 +1,7 @@
 # Deployment inventory. Empty values deliberately prevent activation.
 # Fill from the physical host; documentation examples are not discovered facts.
 {
-  schemaVersion = 2;
+  schemaVersion = 3;
   ready = false;
   system = "x86_64-linux";
   hostName = "nixus";
@@ -30,7 +30,7 @@
     confirmedExistingZfsDataset = false;
     hostId = ""; # eight hexadecimal characters, required for ZFS
   };
-  cockpit = { enable = false; port = 9090; managePassword = false; };
+  cockpit = { enable = false; port = 9090; };
   # Additional instances: { name; project = "lab"; image = "images:<fingerprint>";
   # type = "container"; profiles = [ "base" ]; config = {}; devices = {}; }
   instances = [ ];

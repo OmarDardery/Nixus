@@ -21,10 +21,6 @@ func sha256str(s string) string { return sha256hex([]byte(s)) }
 
 func present(name string) bool { return lexists(filepath.Join(STATE, name)) }
 
-// The console is single-user: whoever signs in with a Linux account that has
-// sudo is the administrator. There are no console-only accounts or roles.
-func authorize(session M, path string, body M) error { return nil }
-
 // --- local host administrator proof ---------------------------------------
 
 const pamService = "nixus-enrollment"
@@ -150,8 +146,6 @@ func lookPath(name string) string {
 
 // --- local login readiness ------------------------------------------------
 
-func operatorUnsetMarker() string { return filepath.Join(STATE, "operator-password-unset") }
-
 func shadowHash(username string) string {
 	res, err := run([]string{"getent", "shadow", username}, nil, 10*time.Second, nil, "")
 	if err != nil || res.Code != 0 {
@@ -190,23 +184,6 @@ func cockpitAccounts() []string {
 	}
 	sort.Strings(accounts)
 	return accounts
-}
-
-// ensureOperatorPassword locks the managed operator until a password is set.
-func ensureOperatorPassword() error {
-	encoded := SECRET_PATHS["cockpitPassword"]
-	durableUnlink(filepath.Join(STATE, "operator-password"))
-	if !exists(encoded) {
-		hash, err := lockedPasswordHash()
-		if err != nil {
-			return err
-		}
-		if err := atomicString(encoded, hash, 0o600); err != nil {
-			return err
-		}
-		return atomicString(operatorUnsetMarker(), "1\n", 0o600)
-	}
-	return nil
 }
 
 var _ = sync.Mutex{}
