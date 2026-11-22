@@ -11,11 +11,10 @@ const recoveryMarker = "recovery-kit.json"
 
 var setupItems = [][4]string{
 	{"activation", "Activate the hypervisor", "Build, activate and confirm the first configuration.", "review"},
-	{"incusBrowser", "Enroll this browser for the Incus web UI", "Issue and import a browser certificate.", "security"},
-	{"cockpitPassword", "Set the Cockpit operator password", "Used for Cockpit and SSH.", "integrations"},
+	{"incusBrowser", "Enroll this browser for the Incus web UI (optional)", "Only needed to use the Incus UI.", "system"},
 	{"secretsKey", "Create the secrets encryption key", "Backups → Encryption key.", "operations"},
 	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download it, store it off this server, then verify it.", "operations"},
-	{"sshKey", "Enroll an SSH key (optional)", "Your laptop's public key.", "security"},
+	{"sshKey", "Enroll an SSH key (optional)", "Your laptop's public key.", "system"},
 	{"backup", "Set up backups (optional)", "Save a backup policy on the Apps page.", "projects"},
 }
 
@@ -48,13 +47,6 @@ func browserEnrolled(state string) bool {
 	return false
 }
 
-func cockpitPasswordSet(settings M) bool {
-	if isTrue(jget(settings, "secrets", "enable")) {
-		return operatorPasswordSet(ROOT)
-	}
-	return exists(SECRET_PATHS["cockpitPassword"]) && !exists(filepath.Join(STATE, "operator-password-unset"))
-}
-
 func setupProgress(status M) M {
 	settings := obj(status["effectiveSettings"])
 	if len(settings) == 0 {
@@ -66,22 +58,17 @@ func setupProgress(status M) M {
 		marker = readObj(filepath.Join(STATE, recoveryMarker))
 	}
 	done := map[string]bool{
-		"activation":      isTrue(status["setupComplete"]) && status["lastConfirmed"] != nil,
-		"incusBrowser":    browserEnrolled(STATE),
-		"cockpitPassword": cockpitPasswordSet(settings),
-		"secretsKey":      key != nil,
-		"recoveryKit":     key != nil && equalJSON(marker["identity"], key),
-		"sshKey":          len(list(settings["adminKeys"])) > 0,
-		"backup":          isTrue(jget(settings, "backup", "enable")) || isTrue(projectBackupStatus()["enabled"]),
+		"activation":   isTrue(status["setupComplete"]) && status["lastConfirmed"] != nil,
+		"incusBrowser": browserEnrolled(STATE),
+		"secretsKey":   key != nil,
+		"recoveryKit":  key != nil && equalJSON(marker["identity"], key),
+		"sshKey":       len(list(settings["adminKeys"])) > 0,
+		"backup":       isTrue(jget(settings, "backup", "enable")) || isTrue(projectBackupStatus()["enabled"]),
 	}
-	cockpit := obj(settings["cockpit"])
 	items := []any{}
 	completed, total := 0, 0
 	for _, it := range setupItems {
-		if it[0] == "cockpitPassword" && !(isTrue(cockpit["enable"]) && isTrue(cockpit["managePassword"])) {
-			continue
-		}
-		required := it[0] != "sshKey" && it[0] != "backup"
+		required := it[0] != "sshKey" && it[0] != "backup" && it[0] != "incusBrowser"
 		items = append(items, M{"id": it[0], "title": it[1], "detail": it[2], "page": it[3], "required": required, "done": done[it[0]]})
 		if required {
 			total++

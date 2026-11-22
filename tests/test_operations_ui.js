@@ -45,9 +45,12 @@ html=vm.runInContext('operationsPage()',context);
 assert.ok(html.includes('Coverage: <b>Incomplete'));
 assert.ok(html.includes('&lt;img src=x&gt;: external') && !html.includes('<img src=x>'));
 assert.ok(html.includes('Current size unknown for 1 archive(s)'));
+// Staged Nix modules need password approval in Changes; there is no version picker there.
+vm.runInContext("state.modules={'site-modules/x.nix':'{}'}",context);
 const review=vm.runInContext('platformReview()',context);
-assert.ok(review.includes('platform-password'));
-assert.ok(review.includes('platform-ack'));
+assert.ok(review.includes('platform-password') && review.includes('platform-ack'));
+assert.ok(!review.includes('data-load-main') && !review.includes('platform-revision'));
+vm.runInContext("state.modules={}",context);
 vm.runInContext("state.page='operations'", context);
 assert.ok(vm.runInContext("title('', 'Backups', '')",context).includes('href="/docs/backups.md"'), 'Recovery guidance must stay local and available offline');
 console.log('Operations UI checks passed: roles, escaped metadata, source approval and offline guides.');

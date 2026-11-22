@@ -123,9 +123,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return setupProgress(s), nil
 	case p == "/inventory":
 		return m.hostInventory(), nil
-	case p == "/releases":
-		r, err := releases()
-		return M{"releases": r}, err
 	case p == "/main-revision":
 		r, err := mainRevision()
 		return M{"revision": r}, err
@@ -678,7 +675,7 @@ var staticAssets = map[string][2]string{
 	"/fonts/space-grotesk-latin.woff2": {"fonts/space-grotesk-latin.woff2", "font/woff2"},
 }
 
-var adminGets = map[string]bool{"/api/releases": true, "/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
+var adminGets = map[string]bool{"/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
 	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
 	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}

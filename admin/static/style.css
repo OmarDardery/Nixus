@@ -728,3 +728,8 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
   .setup-step .setup-copy small { font-size: 12px; }
 }
 @media (max-width: 720px) { .banner { flex-direction: column; align-items: flex-start !important; } }
+
+/* Collapsed panels keep their own height inside grids. */
+.grid:not(.overview-grid) { display: flex; flex-direction: column; gap: 0; }
+.grid:not(.overview-grid) > .card { width: 100%; }
+.overview-grid { align-items: start; }

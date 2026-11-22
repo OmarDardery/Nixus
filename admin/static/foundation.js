@@ -205,15 +205,11 @@ function integrations() {
       "SERVICES",
       "Services", "Turn on Cockpit and other host tools.",
     ) +
-    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}${secret("Local operator password for Cockpit", "cockpitPassword", "At least 16 characters. This enrolls the Linux operator account; SSH accepts the same password when password login is enabled. Leave blank to retain an existing local account password.")}</div><p>Sign in as <code>operator</code> with its Linux password.</p>`) +
-    apps() +
-    '<details class="card"><summary>Optional provisioning tools</summary>' +
+    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}</div><p>Sign in with your Linux account, the same as this console.</p>`) +
     card(
       "Community Scripts",
       `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixus" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/administration.md">Runner, prerequisites and compatibility</a>`,
-    ) +
-    '</details>' +
-    ''
+    )
   );
 }
 
