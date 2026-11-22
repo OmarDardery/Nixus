@@ -301,9 +301,9 @@ func intentPlan(answers, host, settings M, remote bool) (M, error) {
 		"For LAN-facing services such as DNS, validate stable guest reachability and firewall rules before changing router or client settings")
 	switch str(a["access"]) {
 	case "private":
-		pending = append(pending, "Enable/enroll Tailscale through the Private Access recipe; verify private SSH without publishing management dashboards")
+		pending = append(pending, "Enable private access (Tailscale) under Settings → Network; verify private SSH without publishing management dashboards")
 	case "public":
-		pending = append(pending, "Supply an existing tunnel UUID and root-only Cloudflare credential separately; publish only selected app origins, never SSH/Incus/Cockpit/Nixus")
+		pending = append(pending, "Run cloudflared as an app for public ingress; publish only app origins, never SSH/Incus/Cockpit/Nixus")
 	}
 	pending = append(pending, "Set up backups on the Backups page and test a restore before trusting app data")
 	if isTrue(a["monitoring"]) {

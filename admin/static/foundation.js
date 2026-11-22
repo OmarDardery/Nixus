@@ -12,18 +12,6 @@ function candidateOverridesReview() {
   return card("Host module overrides in this candidate", `${overrides.map(item => `<div class="diff"><code>${esc(item.setting)}</code><span class="before">${esc(JSON.stringify(item.before))}</span><span class="after">${esc(JSON.stringify(item.after))}</span></div>`).join("")}`);
 }
 
-function guestDeploymentReview() {
-  const job = state.status.job, plan = job?.guestPlan;
-  if (!plan?.targets?.length) return "";
-  const deployment = job.guestDeployment;
-  const busy = ["queued", "running"].includes(deployment?.status);
-  const rows = plan.targets.map(target => {
-    const status = deployment?.targets?.[target.id];
-    return `<tr><td><code>${esc(target.project)}/${esc(target.name)}</code><br><small>${esc(target.dependsOn.length ? "After: " + target.dependsOn.join(", ") : "After host confirmation")}</small></td><td><small>Current: <code>${esc(status?.currentSystem || target.currentSystem || "Unknown / not yet reachable")}</code><br>Target: <code>${esc(target.targetSystem)}</code></small></td><td>${esc(status?.phase || "Not deployed")}<br><small>${esc(status?.attempts || 0)}/${esc(target.maxAttempts)} attempts · reboot: ${esc(target.restartPolicy)}<br>Checks: ${esc(target.healthUnits.join(", "))}${target.httpChecks ? " · " + esc(target.httpChecks) + " HTTP" : ""}</small>${status?.checkedAt ? `<p><small>Last passed: ${esc(new Date(status.checkedAt * 1000).toLocaleString())}</small></p>` : ""}${status?.error ? `<p class="error">${esc(status.error)}</p>` : !status && target.observation ? `<p>${esc(target.observation)}</p>` : ""}</td></tr>`;
-  }).join("");
-  return card("Guest deployment", `<p>Overall: <b>${esc(deployment?.status || "Not started")}</b>.</p><div class="table-wrap" tabindex="0"><table><thead><tr><th>Guest & order</th><th>OS generations</th><th>Deployment state</th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${esc(plan.boundary)}</p>${deployment?.error ? `<p class="error">${esc(deployment.error)}</p>` : ""}<div class="actions"><button data-action="deploy-guests" ${!administrator() || job.status !== "confirmed" || busy || deployment?.status === "abandoned" ? "disabled" : ""}>${deployment ? "Resume / recheck guests" : "Deploy reviewed guests"}</button>${deployment && !busy && deployment.status !== "abandoned" ? `<button data-action="abandon-deployment" ${!administrator() ? "disabled" : ""}>Abandon retries</button>` : ""}</div><p><a href="/docs/apps.md">Guest update and recovery guide →</a></p>`);
-}
-
 function impactReview() {
   const plan = state.status.job?.impactPlan;
   if (!plan) return state.status.job?.status === "ready"
@@ -90,7 +78,7 @@ function hostOverview() {
        <div class="stat"><div class="label">Incus guests</div><div class="value">${esc(guestCount)}</div><div class="detail">${esc(guestDetail)}</div></div>
        <div class="stat"><div class="label">Apps</div><div class="value">${esc(typeof quick === "object" && quick.apps ? (quick.apps.projects || []).length : "—")}</div><div class="detail">Deployed apps</div></div>
        <div class="stat"><div class="label">Backups</div><div class="value">${esc(typeof quick === "object" && quick.backups?.lastSuccess ? "OK" : "None")}</div><div class="detail">${esc(typeof quick === "object" && quick.backups?.lastSuccess ? "Last " + new Date(quick.backups.lastSuccess * 1000).toLocaleString() : "Set up on Backups")}</div></div>
-     </div><div class="grid overview-grid">${homepageTools()}${card("Host", `<dl class="host-facts"><div><dt>Management</dt><dd><code>${esc(s.management.interface)} · ${esc(state.status.managementAddress || s.management.address)}</code></dd></div><div><dt>Services</dt><dd class="${fresh && known && (degraded.length || failed.length) ? "error" : ""}">${esc(services)}</dd></div><div><dt>Virtualization</dt><dd>${state.host.kvm ? "KVM device detected" : "KVM not detected"}</dd></div><div><dt>Backup</dt><dd>${esc(!s.backup?.enable ? "Disabled" : fresh ? health?.backup?.health || "unknown" : "unknown")}</dd></div><div><dt>Reboot</dt><dd>${state.status.rebootRequired ? "Required" : "Not pending"}</dd></div>${health?.rootStorage && fresh ? `<div><dt>Free root space</dt><dd>${esc(formatBytes(health.rootStorage.availableBytes))}</dd></div>` : ""}<div><dt>Changes</dt><dd>${esc(state.status.job?.status || "None pending")}</dd></div></dl>${fresh && known && degraded.length ? `<p class="error">${esc(degraded.join(", "))}</p>` : ""}<div class="actions"><button class="small" data-overview-refresh>Refresh status</button><a href="/docs/troubleshooting.md">Troubleshooting</a></div>`, fresh ? "Checked " + new Date(health.checkedAt * 1000).toLocaleTimeString() : "Health unknown")}</div>${guestNetwork()}${publicApplications()}`;
+     </div><div class="grid overview-grid">${homepageTools()}${card("Host", `<dl class="host-facts"><div><dt>Management</dt><dd><code>${esc(s.management.interface)} · ${esc(state.status.managementAddress || s.management.address)}</code></dd></div><div><dt>Services</dt><dd class="${fresh && known && (degraded.length || failed.length) ? "error" : ""}">${esc(services)}</dd></div><div><dt>Virtualization</dt><dd>${state.host.kvm ? "KVM device detected" : "KVM not detected"}</dd></div><div><dt>Backup</dt><dd>${esc(fresh ? health?.backup?.health || "unknown" : "unknown")}</dd></div><div><dt>Reboot</dt><dd>${state.status.rebootRequired ? "Required" : "Not pending"}</dd></div>${health?.rootStorage && fresh ? `<div><dt>Free root space</dt><dd>${esc(formatBytes(health.rootStorage.availableBytes))}</dd></div>` : ""}<div><dt>Changes</dt><dd>${esc(state.status.job?.status || "None pending")}</dd></div></dl>${fresh && known && degraded.length ? `<p class="error">${esc(degraded.join(", "))}</p>` : ""}<div class="actions"><button class="small" data-overview-refresh>Refresh status</button><a href="/docs/troubleshooting.md">Troubleshooting</a></div>`, fresh ? "Checked " + new Date(health.checkedAt * 1000).toLocaleTimeString() : "Health unknown")}</div>${guestNetwork()}`;
 }
 
 function recordEditor(heading, path, columns, defaults) {
@@ -162,54 +150,14 @@ function hostConnectivity() {
   );
 }
 
-function hostHardware() {
-  const devices = state.host.serialDevices || [];
-  return (
-    title(
-      "HARDWARE & DISKS",
-      "Hardware", "USB and serial devices for passthrough.",
-    ) +
-    card(
-      "USB serial devices",
-      devices
-        .map(
-          (d, index) =>
-            `<div class="service-row"><div class="service-copy"><h3>${esc(d.product || d.path)}</h3><p><code>${esc(d.path)}</code> · ${esc(d.vendorId)}:${esc(d.productId)} · ${esc(d.serial || "No unique serial")}</p><small>${esc(d.driver)} · ${esc(d.stablePaths.join(", "))}</small></div><button data-serial-pick="${index}" ${d.serial ? "" : "disabled"}>Declare stable alias</button></div>`,
-        )
-        .join("") ||
-        "<p>No USB serial devices detected.</p>",
-    ) +
-    recordEditor(
-      "Selected stable serial aliases",
-      "hardware.serialAliases",
-      [
-        ["name", "Alias name"],
-        ["vendorId", "USB vendor ID"],
-        ["productId", "USB product ID"],
-        ["serial", "Exact device serial"],
-      ],
-      { name: "serial-device", vendorId: "", productId: "", serial: "" },
-    ) +
-    card(
-      "Use the device in Incus",
-      '<p>An alias such as <code>/dev/nixus/serial-device</code> identifies one selected device. In Incus, add a unix-char device with that source, an appropriate guest path, <code>required=false</code>, and the application’s guest UID/GID and mode.</p><a href="/docs/apps.md">Attachment and hardware qualification guide</a>',
-    ) +
-    storage()
-  );
-}
 
 function integrations() {
-  const info = state.host.helpers || { sources: {}, applications: [] };
   return (
     title(
       "SERVICES",
       "Services", "Turn on Cockpit and other host tools.",
     ) +
-    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}</div><p>Sign in with your Linux account, the same as this console.</p>`) +
-    card(
-      "Community Scripts",
-      `${toggle("Install the packaged helper runner", "helpers.enable")}<p>The packaged runner opens an interactive Incus wizard from your host terminal.</p><button class="small" data-go="commands">Helper commands & documentation →</button><a href="https://community-scripts.org/" target="_blank" rel="noopener noreferrer">Browse upstream applications ↗</a><details><summary>Compatibility & pinned revisions</summary><div class="table-wrap"><table><thead><tr><th>Qualification target</th><th>Compatibility</th><th>Notes</th></tr></thead><tbody>${info.applications.map((item) => `<tr><td>${esc(item.title)}</td><td>${item.status === "verified" ? "Verified on Nixus" : "Upstream-supported; unverified here"}</td><td>${esc(item.notes)}</td></tr>`).join("")}</tbody></table></div><pre class="log">${esc(JSON.stringify(info.sources, null, 2))}</pre></details><a href="/docs/administration.md">Runner, prerequisites and compatibility</a>`,
-    )
+    card("Cockpit host terminal", `${toggle("Enable Cockpit on the host", "cockpit.enable")}<div class="fields">${field("Cockpit HTTPS port", "cockpit.port", { type: "number" })}</div><p>Sign in with your Linux account, the same as this console.</p>`)
   );
 }
 
@@ -250,18 +198,5 @@ function bindFoundation() {
         shell();
       };
     });
-  document.querySelectorAll("[data-serial-pick]").forEach((el) => {
-    el.disabled = el.disabled || !writable("hardware.serialAliases");
-    el.onclick = () => {
-      const d = state.host.serialDevices[Number(el.dataset.serialPick)];
-      state.draft.hardware.serialAliases.push({
-        name: "serial-" + (state.draft.hardware.serialAliases.length + 1),
-        vendorId: d.vendorId,
-        productId: d.productId,
-        serial: d.serial,
-      });
-      shell();
-    };
-  });
 
 }

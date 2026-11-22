@@ -135,19 +135,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 			return M{"available": false, "guests": []any{}, "conflicts": []any{}}, nil
 		}
 		return guestNetworkInventory()
-	case p == "/operations":
-		ops := NewOperations()
-		return M{"jobs": ops.status(0), "archives": ops.archives()}, nil
-	case p == "/guests":
-		s, err := m.settings()
-		if err != nil {
-			return nil, err
-		}
-		if !isTrue(s["ready"]) {
-			return M{"guests": []any{}}, nil
-		}
-		g, err := listGuests("lab")
-		return M{"guests": g}, err
 	case p == "/oci/status":
 		return NewOCIBuilds("", nil).status("")
 	case p == "/project/status":
@@ -158,8 +145,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return NewPublishedSources("").inventory()
 	case p == "/project-secrets":
 		return NewSecrets("", "", "").inventory()
-	case strings.HasPrefix(p, "/deployment/"):
-		return NewDeployments("", "").status(strings.TrimPrefix(p, "/deployment/"))
 	case p == "/apps":
 		return appJobs(), nil
 	case p == "/apps/env":
@@ -186,9 +171,6 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return browserInventory(STATE)
 	case p == "/health":
 		return health(), nil
-	case p == "/recipes":
-		r, err := recipes()
-		return M{"recipes": r}, err
 	case p == "/access":
 		s, err := m.effectiveSettings(nil)
 		if err != nil {
@@ -309,8 +291,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return m.rollback(id)
 	case "/migrate-layout":
 		return lockedValue(false, func() (M, error) { return migrateLayout(m.root) })
-	case "/operation":
-		return NewOperations().submit(body, actor)
 	case "/project/initialize", "/project/review", "/project/publish", "/project/rollback", "/project/cancel", "/project/recover", "/project/deploy":
 		t := NewProjectTransactions("", "")
 		switch p {
@@ -328,16 +308,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return t.deploy(body["id"], body["planHash"], ack(body["resume"]))
 		}
 		return t.recover(body["id"])
-	case "/deploy-guests":
-		id, err := required(body, "id")
-		if err != nil {
-			return nil, err
-		}
-		d := NewDeployments("", "")
-		if ack(body["abandon"]) {
-			return d.abandon(id)
-		}
-		return d.submit(id, body["resume"], actor)
 	case "/browser-certificate":
 		fullAdmin := body["fullAdmin"]
 		if fullAdmin == nil {
@@ -661,14 +631,14 @@ var staticAssets = map[string][2]string{
 
 var adminGets = map[string]bool{"/api/main-revision": true, "/api/project-imports": true, "/api/project/status": true,
 	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true, "/api/oci/status": true}
-var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true, "/api/operations": true, "/api/guests": true,
-	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true, "/api/recipes": true}
+var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true,
+	"/api/guest-network": true, "/api/project-sources": true, "/api/health": true}
 var portalActions = map[string]bool{}
 
 func init() {
 	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish /api/project-import/review
 		/api/project-import/publish /api/project-import/plan /api/oci/review /api/oci/build /api/review /api/apply /api/confirm /api/rollback
-		/api/cancel /api/migrate-layout /api/operation /api/users /api/deploy-guests /api/project/initialize
+		/api/cancel /api/migrate-layout /api/users /api/project/initialize
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare

@@ -950,13 +950,6 @@ func (t *ProjectTransactions) rootState(deployment string) error {
 	if err := checkIdle(t.state, deployment); err != nil {
 		return err
 	}
-	ops := &Operations{ROOT, t.state, filepath.Join(t.state, "operations")}
-	os.MkdirAll(ops.directory, 0o700)
-	for _, j := range ops.status(0) {
-		if s := str(obj(j)["status"]); s == "queued" || s == "running" {
-			return Public("Finish the queued or running guest operation before project changes")
-		}
-	}
 	return nil
 }
 

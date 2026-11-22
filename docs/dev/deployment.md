@@ -111,9 +111,7 @@ Hosts with `secrets.enable = false` keep the older root-owned files under
 
 ## Deploy changes into the existing VM
 
-Use [reviewed guest deployments](guest-deployments.md) for dependency ordering,
-health checks and resumable updates of existing source-owned NixOS guests. The
-SSH-based commands below remain alternatives outside that journal.
+Use the SSH-based commands below to update an existing NixOS guest.
 
 Importing a newer image changes future creations only. Existing guest disks retain their OS.
 Use NixOS deployment over SSH with the same reviewed inventory/repository revision, for example

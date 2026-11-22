@@ -79,31 +79,3 @@ func setupProgress(status M) M {
 	}
 	return M{"version": 1, "items": items, "completed": completed, "total": total, "complete": completed == total}
 }
-
-// recipes returns packaged recipes; helper scripts are never downloaded.
-func recipes() ([]any, error) {
-	matches, _ := filepath.Glob(filepath.Join(SOURCE, "recipes", "*.json"))
-	result := []any{}
-	for _, p := range matches {
-		if isSymlink(p) {
-			return nil, Public("Recipes must be regular packaged files")
-		}
-		item := readObj(p)
-		id := str(item["id"])
-		if !fullmatch(re(`[a-z][a-z0-9-]*`), id) || id+".json" != filepath.Base(p) {
-			return nil, Public("Recipe identity must match its filename")
-		}
-		for k := range item {
-			if k != "id" && k != "title" && k != "description" && k != "module" && k != "settings" {
-				return nil, Public("Unknown recipe fields")
-			}
-		}
-		if m := str(item["module"]); m != "" {
-			if _, err := validateModules(M{"recipes/" + id + ".nix": m}); err != nil {
-				return nil, err
-			}
-		}
-		result = append(result, item)
-	}
-	return result, nil
-}

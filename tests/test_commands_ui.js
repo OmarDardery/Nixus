@@ -17,7 +17,7 @@ assert.ok(!/klipper|aiostreams/i.test(JSON.stringify(items)), 'Cheatsheet must n
 assert.equal(new Set(items.map(item => item[0])).size, items.length, 'Every copy target needs a unique ID');
 assert.ok(items.some(item => item[0] === 'platform-update' && item[4] === 'nix run --refresh github:OmarDardery/Nixus#update'));
 assert.ok(items.some(item => item[4] === 'sudo nixus-admin config review --update-inputs'));
-assert.ok(items.some(item => item[4] === 'sudo nixus-helpers run debian --project lab'));
+assert.ok(!items.some(item => item[4].includes('nixus-helpers')));
 assert.ok(items.some(item => item[4] === 'sudo incus project list'), 'Native Incus namespaces must be discoverable');
 assert.ok(items.every(item => !/arcane|homelab exec apps|docker compose/i.test(item[4])), 'No obsolete application commands');
 assert.ok(items.some(item => item[4] === 'ssh operator@192.0.2.10'));
@@ -26,7 +26,7 @@ assert.equal(vm.runInContext("commandGroups().find(group => group.id === 'health
 const html = vm.runInContext('commandsPage()', context);
 assert.ok(!/data-action=|data-guest-action=|data-install-script=/.test(html), 'Command reference must have no execution or mutation controls');
 assert.equal((html.match(/data-copy-command=/g) || []).length, items.length);
-for (const target of ['community-scripts/Incus', 'cockpit-project.org/applications', 'restic/others', 'Mic92/sops-nix']) {
+for (const target of ['cockpit-project.org/applications', 'restic/others', 'Mic92/sops-nix']) {
   assert.ok(html.includes(target), 'Missing project resource: ' + target);
 }
 for (const link of html.matchAll(/<a [^>]+>/g)) {

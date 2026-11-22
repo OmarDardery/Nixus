@@ -1,7 +1,7 @@
 package main
 
 // Multi-call entry point. The binary dispatches on its invoked name
-// (nixus-admin, nixus-install, nixus-update, nixus-helpers, nixus, ...) or,
+// (nixus-admin, nixus-install, nixus-update, nixus, ...) or,
 // when called as "nixus-go", on its first argument.
 
 import (
@@ -37,8 +37,6 @@ func init() {
 		"install":              installMain,
 		"nixus-update":         updateMain,
 		"update":               updateMain,
-		"nixus-helpers":        helpersMain,
-		"helpers":              helpersMain,
 		"nixus":                homelabMain,
 		"homelab":              homelabMain,
 		"nixus-console-status": func([]string) int { return consoleStatusMain() },
@@ -65,7 +63,7 @@ func main() {
 	run, ok := commands[name]
 	if !ok {
 		if len(args) == 0 || commands[args[0]] == nil {
-			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|helpers|homelab|console-status|notify|backup|reconcile|release} ...")
+			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|homelab|console-status|notify|backup|reconcile|release} ...")
 			os.Exit(2)
 		}
 		run, args = commands[args[0]], args[1:]
@@ -370,85 +368,6 @@ func projectCLI(args []string) int {
 	return 0
 }
 
-func deployCLI(args []string) error {
-	if len(args) == 0 {
-		return Public("usage: nixus-admin deploy {status [id]|start id|resume id|abandon id}")
-	}
-	var result any
-	var err error
-	switch args[0] {
-	case "status":
-		if len(args) > 1 {
-			result, err = brokerRequest("GET", "/deployment/"+args[1], nil)
-		} else {
-			state, serr := brokerRequest("GET", "/status", nil)
-			if serr != nil {
-				return serr
-			}
-			job := obj(state["job"])
-			result = M{"plan": job["guestPlan"], "deployment": job["guestDeployment"]}
-		}
-	case "start", "resume", "abandon":
-		if len(args) != 2 {
-			return Public("Supply one deployment ID")
-		}
-		result, err = brokerRequest("POST", "/deploy-guests", M{"id": args[1], "resume": args[0] == "resume", "abandon": args[0] == "abandon"})
-	default:
-		return Public("Unknown deploy command")
-	}
-	if err != nil {
-		return err
-	}
-	printJSON(result)
-	return nil
-}
-
-func guestsCLI(args []string) error {
-	if len(args) == 0 {
-		return Public("usage: nixus-admin guests ACTION [--name N] [--project P] ...")
-	}
-	action := args[0]
-	fs := flag.NewFlagSet("guests", flag.ContinueOnError)
-	file := fs.String("file", "", "")
-	project := fs.String("project", "lab", "")
-	values := map[string]*string{}
-	for _, k := range []string{"name", "snapshot", "target", "archive"} {
-		values[k] = fs.String(k, "", "")
-	}
-	acknowledge := fs.Bool("acknowledge", false, "")
-	if err := fs.Parse(args[1:]); err != nil {
-		return Public("Invalid guest arguments")
-	}
-	var result any
-	var err error
-	switch action {
-	case "register-export":
-		if *file == "" {
-			return Public("Use --file with the recovered local Incus export")
-		}
-		result, err = NewOperations().registerArchive(*file, *project, *values["name"])
-	case "list":
-		result, err = brokerRequest("GET", "/guests", nil)
-	case "status":
-		result, err = brokerRequest("GET", "/operations", nil)
-	case "start", "stop", "restart", "snapshot", "snapshot-copy", "export", "restore", "release-restore":
-		request := M{"action": action, "project": *project, "acknowledge": *acknowledge}
-		for k, v := range values {
-			if *v != "" {
-				request[k] = *v
-			}
-		}
-		result, err = brokerRequest("POST", "/operation", request)
-	default:
-		return Public("Unknown guests action")
-	}
-	if err != nil {
-		return err
-	}
-	printJSON(result)
-	return nil
-}
-
 // reorderFlags lets flags follow positional arguments, as argparse allows.
 func reorderFlags(args []string) []string {
 	var flags, positional []string
@@ -607,7 +526,7 @@ func enrollKey(m *Manager, publicKeyFile string, settings M) error {
 	return nil
 }
 
-const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|config|projects|deploy|guests|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
+const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|config|projects|commissioning|prune-jobs|project-backup|image-updates|apps|disk prepare}"
 
 func adminMain(argv []string) int {
 	syscall.Umask(0o027)
@@ -673,11 +592,6 @@ func adminMain(argv []string) int {
 		return generic(guard())
 	case action == "job" && len(rest) == 2:
 		return generic(workerJob(rest[0], rest[1]))
-	case action == "operation-job" && root && len(rest) == 1:
-		return generic(NewOperations().run(rest[0]))
-	case action == "deployment-job" && root && len(rest) == 1:
-		_, err := NewDeployments("", "").run(rest[0])
-		return generic(err)
 	case action == "oci-build-job" && root:
 		if len(rest) != 1 {
 			return fail("Expected one OCI build review ID")
@@ -692,26 +606,13 @@ func adminMain(argv []string) int {
 		return generic(err)
 	case action == "network-identity":
 		return networkIdentityMain(rest)
-	case action == "deploy" && root:
-		return generic(deployCLI(rest))
 	case action == "projects" && root:
 		return projectCLI(rest)
-	case action == "install-plan" && root:
-		installation := readObj(machinePath(ROOT, "installation"))
-		pending := installation["pendingTasks"]
-		if pending == nil {
-			pending = []any{}
-		}
-		printJSON(M{"intent": installation["intent"], "pendingTasks": pending,
-			"note": "Pending tasks are not proof of physical completion; use commissioning evidence."})
-		return 0
 	case action == "commissioning":
 		if err := commissioningCLI(rest); err != nil {
 			return fail("Commissioning report unavailable or invalid: " + publicError(err))
 		}
 		return 0
-	case action == "guests" && root:
-		return generic(guestsCLI(rest))
 	case action == "disk" && root && len(rest) == 1 && rest[0] == "prepare":
 		return generic(diskPrepare())
 	case action == "image-updates" && root:

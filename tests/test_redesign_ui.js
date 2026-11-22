@@ -16,7 +16,7 @@ const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/defaul
 context.fixture = fixture;
 vm.runInContext(`
 state.status = {settings: copy(fixture),setupComplete:true,codeOverrides:[],job:null};
-state.host = {kvm:true,interfaces:[],disks:[],serialDevices:[],helpers:{sources:{},applications:[]}};
+state.host = {kvm:true,interfaces:[],disks:[],serialDevices:[]};
 state.draft = copy(fixture);
 state.principal = {username:'admin',role:'admin'};
 state.page = 'overview';
@@ -52,14 +52,11 @@ assert.ok(storage.includes('Detected drives') && storage.includes('Declared moun
 const access = vm.runInContext("state.page='security';security()",context);
 assert.ok(access.includes('Create an Incus browser identity'));
 assert.ok(!access.includes('Cloudflare Tunnel'), 'Ingress configuration must live on its dedicated page.');
-const ingress = vm.runInContext("state.page='ingress';ingressPage()",context);
-assert.ok(ingress.includes('data-path="tunnel.enable"'));
-assert.ok(ingress.includes('data-ingress'));
-assert.ok(!ingress.includes('certificate-passphrase'));
-const ready = vm.runInContext("state.page='review';state.status.job={id:'a'.repeat(32),status:'ready',guestPlan:{targets:[]}};deploymentTimeline()",context);
+assert.equal(vm.runInContext("typeof ingressPage",context),'undefined','Public ingress runs as an app, not a host setting');
+const ready = vm.runInContext("state.page='review';state.status.job={id:'a'.repeat(32),status:'ready'};deploymentTimeline()",context);
 assert.ok(ready.includes('aria-current="step"') && ready.includes('Activate host'));
 const confirmed = vm.runInContext("state.status.job.status='confirmed';deploymentTimeline()",context);
-assert.ok(confirmed.includes('Deploy guests') && confirmed.includes('complete'));
+assert.ok(!confirmed.includes('Deploy guests') && (confirmed.match(/class="complete"/g) || []).length === 4, 'Confirmed means every step is done');
 const ops = vm.runInContext("state.page='operations';operationView.users=[];operationsPage()",context);
 assert.ok(!ops.includes('Portal accounts'), 'Accounts are not part of backup recovery.');
 assert.ok(!vm.runInContext("state.page='operations';title('','Backups','')",context).includes('href="/docs/install.md"'));

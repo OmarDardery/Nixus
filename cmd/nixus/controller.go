@@ -63,12 +63,6 @@ func (m *Manager) job(id string) (M, error) {
 			job[field] = "Transaction did not complete; inspect host status before retrying"
 		}
 	}
-	if job["guestPlan"] != nil {
-		status, err := NewDeployments(m.root, m.state).status(id)
-		if err == nil {
-			job["guestDeployment"] = status
-		}
-	}
 	return job, nil
 }
 
@@ -202,17 +196,6 @@ func (m *Manager) status() (M, error) {
 
 func (m *Manager) hostInventory() M {
 	data := hostInventory()
-	helperBase := SOURCE
-	sources, compat := "helper-sources.json", "helper-compatibility.json"
-	if !isFile(filepath.Join(SOURCE, "helper-sources.json")) {
-		helperBase = filepath.Join(filepath.Dir(SOURCE), "helpers")
-		sources, compat = "sources.json", "compatibility.json"
-	}
-	applications := []any{}
-	for _, k := range keys(readObj(filepath.Join(helperBase, compat))) {
-		applications = append(applications, readObj(filepath.Join(helperBase, compat))[k])
-	}
-	data["helpers"] = M{"sources": readObj(filepath.Join(helperBase, sources)), "applications": applications}
 	out, err := command([]string{"nix", "--extra-experimental-features", "nix-command flakes", "eval", "--json",
 		"path:" + m.root + "#nixusOverview"}, 120*time.Second)
 	if err == nil {
@@ -371,11 +354,6 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	} else if candidate, err = validateSettings(requested, current, host, true); err != nil {
 		return nil, err
 	}
-	for _, pair := range [][2]string{{"tunnel", "credentialsFile"}} {
-		if !equalJSON(jget(candidate, pair[0], pair[1]), jget(current, pair[0], pair[1])) {
-			return nil, Public("Secret file paths are source-managed")
-		}
-	}
 	for _, k := range list(candidate["adminKeys"]) {
 		f, err := os.CreateTemp(m.state, "key")
 		if err != nil {
@@ -413,11 +391,6 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	if isTrue(wifi["manageProfile"]) && isTrue(wifi["enable"]) {
 		if _, ok := encoded["wifiPassword"]; !ok && !kept("wifiPassword") {
 			return nil, Public("Provide the WPA password for the managed Wi-Fi profile")
-		}
-	}
-	if isTrue(jget(candidate, "tunnel", "enable")) {
-		if _, ok := encoded["tunnelCredentials"]; !ok && !kept("tunnelCredentials") {
-			return nil, Public("Provide the tunnel-specific credentials JSON")
 		}
 	}
 	runtimeSettings := current

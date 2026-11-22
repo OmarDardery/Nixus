@@ -7,7 +7,7 @@ let
           top = builtins.head (pkgs.lib.splitString "/" relative);
       in type != "symlink"
         && (toString path == toString ../. || builtins.elem top [
-          "admin" "cmd" "pkgs" "installer" "scripts" "helpers" "lib" "modules"
+          "admin" "cmd" "pkgs" "installer" "scripts" "lib" "modules"
           "guests" "tests" "docs" "examples" "configuration.nix" "configuration-bootstrap.nix"
           "hardware-configuration.nix" "flake.nix" "flake.lock" "go.mod" "go.sum" "site.nix" "site-defaults.nix"
           "README.md" "VERSION" ".gitignore"

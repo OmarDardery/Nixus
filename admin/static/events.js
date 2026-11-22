@@ -39,18 +39,7 @@ function bind() {
       (el) =>
         (el.oninput = () => (state.secrets[el.dataset.secret] = el.value)),
     );
-  document.querySelectorAll("[data-ingress]").forEach(
-    (el) =>
-      (el.onchange = () => {
-        try {
-          state.draft.tunnel.ingress = JSON.parse(el.value);
-          el.setCustomValidity("");
-        } catch {
-          el.setCustomValidity("Use a valid JSON hostname mapping");
-          el.reportValidity();
-        }
-      }),
-  );
+
   document.querySelectorAll("[data-mount]").forEach(
     (el) =>
       (el.onchange = () => {
@@ -86,16 +75,6 @@ function bind() {
       .querySelectorAll(
         '[data-mount],[data-remove-mount],[data-action="add-mount"]',
       )
-      .forEach((el) => (el.disabled = true));
-  if (
-    (state.status.codeOverrides || []).some(
-      (c) =>
-        c.setting === "tunnel.ingress" ||
-        c.setting.startsWith("tunnel.ingress."),
-    )
-  )
-    document
-      .querySelectorAll("[data-ingress]")
       .forEach((el) => (el.disabled = true));
   const update = document.querySelector("#update-inputs");
   if (update) update.onchange = () => (state.updateInputs = update.checked);
@@ -202,10 +181,6 @@ async function action(name, el) {
       state.page = "review";
       shell();
       return;
-    }
-    if (["deploy-guests", "abandon-deployment"].includes(name)) {
-      await api("deploy-guests", {id: state.status.job.id, resume: !!state.status.job.guestDeployment, abandon: name === "abandon-deployment"});
-      state.status = await api("status"); shell(); return;
     }
     if (
       ["apply", "confirm", "rollback", "cancel", "rollback-confirmed"].includes(

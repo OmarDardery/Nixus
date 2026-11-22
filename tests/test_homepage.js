@@ -46,8 +46,8 @@ tools = vm.runInContext('homepageTools()', context);
 assert.ok(!tools.includes(':8443"'));
 assert.ok(tools.includes('Finish setup'));
 assert.equal(vm.runInContext('quickManagementLinks(state.status.settings)', context), '', 'No unverified management shortcuts before setup');
-let resources = vm.runInContext('homepageResources() + referenceCatalog()', context);
-for (const destination of ['https://github.com/community-scripts/Incus','https://community-scripts.org/','https://photos.example.com','https://github.com/lxc/incus-compose','https://github.com/getsops/sops']) {
+let resources = vm.runInContext('referenceCatalog()', context);
+for (const destination of ['https://github.com/lxc/incus-compose','https://github.com/getsops/sops','https://github.com/cloudflare/cloudflared']) {
   assert.ok(resources.includes(destination), 'Missing destination: '+destination);
 }
 assert.ok(!resources.includes('https://*.example.com'), 'Wildcard DNS records are not browsable endpoints');
@@ -55,10 +55,7 @@ assert.ok(!/data-(action|install-script|guest-action)=/.test(resources), 'Refere
 for (const match of (tools+resources).matchAll(/<a [^>]+>/g)) {
   assert.ok(match[0].includes('rel="noopener noreferrer"'), 'External tabs must not retain opener/referrer access');
 }
-vm.runInContext('state.status.settings.tunnel.enable=false', context);
-resources = vm.runInContext('homepageResources()', context);
-assert.ok(!resources.includes('https://photos.example.com'));
-console.log('Homepage checks passed: active URLs, disabled services, helper resources and public endpoints.');
+console.log('Homepage checks passed: active URLs, disabled services, and reference links.');
 
 vm.runInContext("state.status.job={moduleChanges:[{path:'<script>',before:null,after:'<img src=x onerror=alert(1)>'}]};",context);
 const moduleReview = vm.runInContext('moduleReview()',context);

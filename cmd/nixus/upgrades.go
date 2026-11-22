@@ -67,11 +67,6 @@ func upgradeMetadata(root string) M {
 		}
 		record = M{"version": platformVersion(root), "revision": revision, "repository": upstream}
 	}
-	helpers := readObj(filepath.Join(root, "helpers/sources.json"))
-	if len(helpers) == 0 {
-		helpers = readObj(filepath.Join(SOURCE, "helper-sources.json"))
-	}
-	record["helperSources"] = helpers
 	return record
 }
 

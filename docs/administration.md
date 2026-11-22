@@ -8,16 +8,8 @@ ports, so the Nixus session cookie is host-only, `Secure`, `HttpOnly` and
 
 ## Commands, docs and community resources
 
-Open **Help** in the Nixus host console for copyable platform updates,
-package-refresh reviews, health checks, guest examples and community helper
-commands. Each example says where to run it. Copying never executes a command or
-creates a guest from the browser. Application wizards run interactively in the host
-terminal.
-
-The same section groups Nixus guides, upstream documentation and community resources
-by project. Incus helpers, Cockpit plugins and Compose examples are labeled separately. Optional backup, secret, ingress and monitoring
-references are under the expanded resources list. Community compatibility and
-Nixus qualification remain separate.
+Open **Info** in the console for copyable host commands, the guides and links to
+every upstream project. Copying never runs a command.
 
 ## Signing in
 
