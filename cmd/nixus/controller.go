@@ -196,13 +196,6 @@ func (m *Manager) status() (M, error) {
 
 func (m *Manager) hostInventory() M {
 	data := hostInventory()
-	out, err := command([]string{"nix", "--extra-experimental-features", "nix-command flakes", "eval", "--json",
-		"path:" + m.root + "#nixusOverview"}, 120*time.Second)
-	if err == nil {
-		data["evaluated"], _ = parseJSON([]byte(out))
-	} else {
-		data["evaluationError"] = "Host inventory evaluation failed"
-	}
 	var networks []netip.Prefix
 	for _, r := range list(data["routes"]) {
 		dst := str(obj(r)["dst"])
