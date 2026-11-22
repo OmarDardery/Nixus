@@ -326,9 +326,6 @@ func applyImageUpdate(actor, project string) (M, error) {
 	if !fullmatch(projectName, project) {
 		return nil, Public("Choose a project")
 	}
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	if s := str(updateJournal(project)["status"]); s != "" && s != "updated" && s != "rolled-back" && s != "failed" {
 		return nil, Public("An update for this project is already in progress or needs recovery")
 	}
@@ -518,9 +515,6 @@ func startImageUpdate(actor string, projectArg any) (M, error) {
 	if !ok || !fullmatch(projectName, project) {
 		return nil, Public("Choose a project")
 	}
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	if s := str(updateJournal(project)["status"]); s != "" && s != "updated" && s != "rolled-back" && s != "failed" {
 		return nil, Public("An update for this project is already in progress or needs recovery")
 	}
@@ -562,9 +556,6 @@ func applyAllImageUpdates(actor string) (M, error) {
 
 // startAllImageUpdates runs applyAllImageUpdates in a worker unit.
 func startAllImageUpdates(actor string) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	pending := 0
 	for _, raw := range obj(readObj(imageUpdatesPath())["projects"]) {
 		if n, _ := num(obj(raw)["updates"]); n > 0 {

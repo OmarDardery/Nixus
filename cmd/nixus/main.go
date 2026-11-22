@@ -47,8 +47,6 @@ func init() {
 		"notify":               notifyMain,
 		"nixus-backup":         backupMain,
 		"backup":               backupMain,
-		"nixus-backup-verify":  backupVerificationMain,
-		"backup-verify":        backupVerificationMain,
 		"nixus-reconcile":      reconcileCommand,
 		"reconcile":            reconcileCommand,
 		"oci-child":            ociChildMain,
@@ -67,7 +65,7 @@ func main() {
 	run, ok := commands[name]
 	if !ok {
 		if len(args) == 0 || commands[args[0]] == nil {
-			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|helpers|homelab|console-status|notify|backup|backup-verify|reconcile|release} ...")
+			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|helpers|homelab|console-status|notify|backup|reconcile|release} ...")
 			os.Exit(2)
 		}
 		run, args = commands[args[0]], args[1:]
@@ -433,7 +431,7 @@ func guestsCLI(args []string) error {
 		result, err = brokerRequest("GET", "/guests", nil)
 	case "status":
 		result, err = brokerRequest("GET", "/operations", nil)
-	case "start", "stop", "restart", "snapshot", "snapshot-copy", "export", "restore", "backup", "backup-check", "release-restore":
+	case "start", "stop", "restart", "snapshot", "snapshot-copy", "export", "restore", "release-restore":
 		request := M{"action": action, "project": *project, "acknowledge": *acknowledge}
 		for k, v := range values {
 			if *v != "" {
@@ -443,84 +441,6 @@ func guestsCLI(args []string) error {
 		result, err = brokerRequest("POST", "/operation", request)
 	default:
 		return Public("Unknown guests action")
-	}
-	if err != nil {
-		return err
-	}
-	printJSON(result)
-	return nil
-}
-
-func recoveryCLI(args []string) error {
-	if len(args) == 0 {
-		return Public("usage: nixus-admin recovery {coverage|export|inspect|stage|plan|status|resume|release|export-report}")
-	}
-	fs := flag.NewFlagSet("recovery", flag.ContinueOnError)
-	recipient := fs.String("recipient", "", "")
-	includeSecrets := fs.Bool("include-secrets", false, "")
-	mappings := fs.String("mappings", "", "")
-	confirm := fs.Bool("confirm", false, "")
-	dataVerified := fs.Bool("data-verified", false, "")
-	acknowledgeExclusions := fs.Bool("acknowledge-exclusions", false, "")
-	command := args[0]
-	if err := fs.Parse(reorderFlags(args[1:])); err != nil {
-		return Public("Invalid recovery arguments")
-	}
-	positional := fs.Args()
-	need := func(n int) error {
-		if len(positional) != n {
-			return Public("Missing recovery argument")
-		}
-		return nil
-	}
-	var result any
-	var err error
-	switch command {
-	case "coverage":
-		result = recoveryCoverage()
-	case "export":
-		if err := need(1); err != nil {
-			return err
-		}
-		result, err = lockedValue(false, func() (M, error) { return recoveryExport(positional[0], *recipient, *includeSecrets) })
-	case "inspect":
-		if err := need(1); err != nil {
-			return err
-		}
-		result, _, err = recoveryInspect(positional[0])
-	case "stage":
-		if err := need(2); err != nil {
-			return err
-		}
-		result, err = recoveryStage(positional[0], positional[1])
-	case "status":
-		result, err = replacementStatus(nil)
-	case "export-report":
-		result, err = replacementReport()
-	case "plan", "resume", "release":
-		result, err = lockedValue(false, func() (M, error) {
-			release, err := lockFile(incusLock, false)
-			if err != nil {
-				return nil, err
-			}
-			defer release()
-			switch command {
-			case "plan":
-				if err := need(1); err != nil {
-					return nil, err
-				}
-				raw, err := boundedJSON(*mappings)
-				if err != nil {
-					return nil, err
-				}
-				return replacementPlan(positional[0], obj(raw))
-			case "resume":
-				return replacementResume(*confirm)
-			}
-			return replacementRelease(*confirm, *dataVerified, *acknowledgeExclusions)
-		})
-	default:
-		return Public("Unknown recovery command")
 	}
 	if err != nil {
 		return err
@@ -687,7 +607,7 @@ func enrollKey(m *Manager, publicKeyFile string, settings M) error {
 	return nil
 }
 
-const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|config|projects|deploy|guests|recovery|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
+const adminUsage = "Usage: nixus-admin {doctor|identity|enroll-key|backend|web|guard|renew|config|projects|deploy|guests|commissioning|install-plan|prune-jobs|project-backup|image-updates|apps|disk prepare}"
 
 func adminMain(argv []string) int {
 	syscall.Umask(0o027)
@@ -776,8 +696,6 @@ func adminMain(argv []string) int {
 		return generic(deployCLI(rest))
 	case action == "projects" && root:
 		return projectCLI(rest)
-	case action == "recovery" && root:
-		return generic(recoveryCLI(rest))
 	case action == "install-plan" && root:
 		installation := readObj(machinePath(ROOT, "installation"))
 		pending := installation["pendingTasks"]
@@ -796,11 +714,6 @@ func adminMain(argv []string) int {
 		return generic(guestsCLI(rest))
 	case action == "disk" && root && len(rest) == 1 && rest[0] == "prepare":
 		return generic(diskPrepare())
-	case action == "recovery-backup" && root && len(rest) == 1:
-		return generic(recoveryBackup(rest[0]))
-	case action == "recovery-coverage" && root:
-		fmt.Println(canonicalSpaced(recoveryCoverage()))
-		return 0
 	case action == "image-updates" && root:
 		return generic(imageUpdatesCLI(rest))
 	case action == "apps" && root:
@@ -876,7 +789,7 @@ func infrastructureCommand(args []string) int {
 }
 
 func backupHealthCommand(args []string) int {
-	if backupHealth(true) == "overdue" {
+	if projectBackupHealth() == "overdue" {
 		fmt.Println("1")
 	} else {
 		fmt.Println("0")

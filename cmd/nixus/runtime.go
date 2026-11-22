@@ -52,8 +52,6 @@ func defaultSource() string {
 var SECRET_PATHS = map[string]string{
 	"cockpitPassword":   "/var/lib/nixus-secrets/cockpit-operator-password",
 	"wifiPassword":      "/var/lib/nixus-secrets/wifi.env",
-	"resticPassword":    "/var/lib/nixus-secrets/restic-password",
-	"resticEnvironment": "/var/lib/nixus-secrets/restic-environment",
 	"tunnelCredentials": "/var/lib/nixus-secrets/cloudflared.json",
 }
 
@@ -1161,23 +1159,6 @@ func encodeSecrets(values M, settings M) (M, error) {
 			if !strings.HasPrefix(value, "$6$") {
 				return nil, Public("Failed to encode the local account password")
 			}
-		case "resticEnvironment":
-			credentials, err := parseObject([]byte(value))
-			if err != nil {
-				return nil, Public("Unsupported backup credential environment variable")
-			}
-			var lines []string
-			for _, k := range keys(credentials) {
-				if !ENV_KEYS[k] {
-					return nil, Public("Unsupported backup credential environment variable")
-				}
-				v, ok := credentials[k].(string)
-				if !ok || strings.ContainsAny(v, "\n\r\x00") {
-					return nil, Public("Backup credential values must be single-line strings")
-				}
-				lines = append(lines, k+"="+shellQuote(v))
-			}
-			value = strings.Join(lines, "\n") + "\n"
 		case "tunnelCredentials":
 			data, err := parseObject([]byte(value))
 			valid := err == nil
@@ -1263,22 +1244,6 @@ func pendingAccess(id string, record M) {
 	if d, ok := num(record["deadline"]); ok && d > 0 {
 		fmt.Println("Confirmation deadline: " + time.Unix(int64(d), 0).UTC().Format("2006-01-02 15:04:05 UTC"))
 	}
-}
-
-// requireNormal blocks ordinary automation while host recovery is active.
-func requireNormal() error {
-	if exists("/etc/nixus/recovery-mode") {
-		return Public("Replacement-host recovery is active; use the recovery workflow before enabling ordinary automation")
-	}
-	journal := filepath.Join(STATE, "replacement-recovery.json")
-	if exists(journal) {
-		record := readObj(journal)
-		if v, _ := num(record["format"]); v == 1 && str(record["phase"]) == "complete" {
-			return nil
-		}
-		return Public("Unfinished recovery journal blocks automation; inspect nixus-admin recovery status")
-	}
-	return nil
 }
 
 // incusRun is the shared local Incus CLI transport.

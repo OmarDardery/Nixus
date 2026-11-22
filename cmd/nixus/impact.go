@@ -791,10 +791,6 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		if incusMount {
 			affected["incus.service"], affected["incus-preseed.service"], affected["nixus-instances.service"] = true, true, true
 		}
-		backup := obj(jget(before, "settings", "backup"))
-		if isTrue(backup["enable"]) && (incusMount || role == "backup" || onMount(str(backup["stagingDirectory"]))) {
-			affected["restic-backups-nixus.service"] = true
-		}
 		kind := "restart-required"
 		var resolution any
 		if critical {

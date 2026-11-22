@@ -63,7 +63,7 @@ func setupProgress(status M) M {
 		"secretsKey":   key != nil,
 		"recoveryKit":  key != nil && equalJSON(marker["identity"], key),
 		"sshKey":       len(list(settings["adminKeys"])) > 0,
-		"backup":       isTrue(jget(settings, "backup", "enable")) || isTrue(projectBackupStatus()["enabled"]),
+		"backup":       isTrue(projectBackupStatus()["enabled"]),
 	}
 	items := []any{}
 	completed, total := 0, 0

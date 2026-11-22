@@ -569,9 +569,6 @@ func (d *Deployments) statusPrivate(id string, private bool) (any, error) {
 }
 
 func (d *Deployments) submit(id string, resume any, principal string) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	r, ok := resume.(bool)
 	if !ok {
 		return nil, Public("Resume must be a boolean")
@@ -890,9 +887,6 @@ func (d *Deployments) target(directory string, record M, key string, spec M) err
 }
 
 func (d *Deployments) run(id string) (M, error) {
-	if err := requireNormal(); err != nil {
-		return nil, err
-	}
 	directory, err := d.directory(id)
 	if err != nil {
 		return nil, err

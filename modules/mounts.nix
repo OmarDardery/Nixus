@@ -29,8 +29,6 @@ in {
   virtualisation.incus.preseed.storage_pools = map (m: {
     name = "disk-${m.name}"; driver = "dir"; config.source = m.path + "/incus";
   }) (builtins.filter (m: m.role == "pool") mounts);
-  systemd.services.restic-backups-nixus = lib.mkIf site.backup.enable {
-    unitConfig.RequiresMountsFor = backupPaths;
-  };
+  systemd.services.nixus-project-backup.unitConfig.RequiresMountsFor = backupPaths;
   systemd.tmpfiles.rules = [ "d ${site.backup.stagingDirectory} 0700 root root -" ];
 }

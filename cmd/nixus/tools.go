@@ -123,21 +123,7 @@ func consoleLines(settings M, links []any, units map[string]map[string]string, c
 		states = append(states, l[1]+"="+cleanText(state))
 	}
 	out = append(out, "Services: "+strings.Join(states, "  "))
-	if isTrue(jget(settings, "backup", "enable")) {
-		backup := units["restic-backups-nixus.service"]
-		if ts := backup["ExecMainExitTimestamp"]; ts != "" && backup["LoadState"] == "loaded" {
-			result := backup["Result"]
-			if result == "" {
-				result = "unknown"
-			}
-			out = append(out, "Backup last run: "+cleanText(ts)+"  result="+cleanText(result))
-		} else {
-			out = append(out, "Backup: configured; no recorded run available")
-		}
-		out = append(out, "Restore verification: not checked by this summary")
-	} else {
-		out = append(out, "Backups: disabled")
-	}
+	out = append(out, "Backups: "+projectBackupHealth())
 	switch {
 	case current != "" && def != "" && current == def:
 		out = append(out, "Boot: current configuration is the boot default")
@@ -168,9 +154,6 @@ func consoleStatusMain() int {
 	}
 	linksAny, _ := parseJSON([]byte(quickOutput("ip", "-j", "address", "show")))
 	names := []string{"incus.service", "nixus-ui.service", "nginx.service"}
-	if isTrue(jget(settings, "backup", "enable")) {
-		names = append(names, "restic-backups-nixus.service")
-	}
 	for _, line := range consoleLines(settings, list(linksAny), unitStates(names), resolvedTarget("/run/current-system"),
 		resolvedTarget("/nix/var/nix/profiles/system"), resolvedTarget("/run/current-system/kernel"), resolvedTarget("/run/booted-system/kernel")) {
 		fmt.Println(line)

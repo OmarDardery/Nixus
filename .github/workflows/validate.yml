@@ -54,33 +54,23 @@ jobs:
             and .projects.alpha.secrets.bindings.API_TOKEN.destination == "/run/secrets/API_TOKEN"
             and .projects.alpha.modules == ["modules/nested/resources.nix", "modules/network.nix"]
             and .projects.beta.backup.consistency == "quiesce"'
-      - name: Verify defaults and backup verification policy
+      - name: Verify defaults
         run: |
           diff <(nix eval --json .#nixusDefaults | jq -S .) <(jq -S . tests/fixtures/defaults.json)
-          test "$(nix eval --json .#nixosConfigurations.validation-services.config.nixus.backupVerification.enable)" = "true"
-          test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.nixus.backupVerification.enable)" = "false"
-          nix eval --json .#nixosConfigurations.validation-services.config.systemd.timers.nixus-backup-check.timerConfig \
-            | jq -e '.Persistent and .OnCalendar == "Sun *-*-* 05:00:00"'
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.prometheus.enable)" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.services.nginx.enable)" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-minimal.config.virtualisation.docker.enable)" = "false"
           test "$(nix eval --json .#nixosConfigurations.validation-services.config.services.prometheus.enable)" = "true"
-      - name: Verify replacement recovery suppresses ordinary guest automation
-        run: |
-          for unit in nixus-instances nixus-backup-recover restic-backups-nixus; do
-            test "$(nix eval --json ".#nixosConfigurations.validation-recovery.config.systemd.services.$unit.enable")" = false
-          done
-          test "$(nix eval --json .#nixosConfigurations.validation-recovery.config.systemd.timers.restic-backups-nixus.enable)" = false
       - name: Evaluate configuration variants
         run: |
-          for target in validation-minimal validation-file-disk validation-recipes validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup validation-management validation-recovery validation-sops; do
+          for target in validation-minimal validation-file-disk validation-recipes validation-host validation-ethernet validation-ethernet-nm validation-ethernet-wifi validation-services validation-zfs validation-inherited validation-bootstrap validation-setup validation-management validation-sops; do
             nix eval ".#nixosConfigurations.$target.config.system.build.toplevel.drvPath"
           done
       - name: Build packages, launchers and service units
         run: |
           nix build .#packages.x86_64-linux.admin .#packages.x86_64-linux.installer .#packages.x86_64-linux.homelab --no-link
           nix run .#update -- --help
-          nix build '.#nixosConfigurations.validation-services.config.systemd.units."restic-backups-nixus.service".unit' '.#nixosConfigurations.validation-services.config.systemd.units."nixus-metrics.service".unit' --no-link
+          nix build '.#nixosConfigurations.validation-services.config.systemd.units."nixus-metrics.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-recipes.config.systemd.units."nixus-notify@.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
       - name: Build pinned upstream helper runner

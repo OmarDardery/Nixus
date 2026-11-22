@@ -56,19 +56,6 @@ func TestPublicErrorsOnlyExposeReviewedMessages(t *testing.T) {
 	}
 }
 
-func TestRecoveryGuardBlocksAutomationUntilReleased(t *testing.T) {
-	state := useState(t)
-	journal := filepath.Join(state, "replacement-recovery.json")
-	writeFile(t, journal, `{"format": 1, "phase": "planned"}`)
-	if err := requireNormal(); err == nil || !strings.Contains(publicError(err), "Unfinished recovery journal") {
-		t.Fatalf("expected recovery block, got %v", err)
-	}
-	writeFile(t, journal, `{"format": 1, "phase": "complete"}`)
-	if err := requireNormal(); err != nil {
-		t.Fatalf("released journal still blocks: %v", err)
-	}
-}
-
 func TestClockStatusRejectsImplausibleTimestamps(t *testing.T) {
 	if s := clockStatus(1); s["state"] != "invalid-clock" || s["evidenceWarning"] != true {
 		t.Fatalf("epoch accepted: %v", s)
@@ -184,29 +171,6 @@ func TestRecoveryKitEnvelopeRoundTrip(t *testing.T) {
 	}
 	if _, err := kitAEAD("short", salt); err == nil {
 		t.Fatal("short passphrase accepted")
-	}
-}
-
-func TestRecoveryArchiveRoundTripAndTamper(t *testing.T) {
-	useState(t)
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "a"), "alpha")
-	var buf bytes.Buffer
-	if err := writeRecoveryArchive(&buf, map[string]string{"config/a": filepath.Join(dir, "a")}, "configuration"); err != nil {
-		t.Fatal(err)
-	}
-	archive := filepath.Join(dir, "kit.tar.gz")
-	os.WriteFile(archive, buf.Bytes(), 0o600)
-	manifest, entries, err := recoveryInspect(archive)
-	if err != nil || str(manifest["kind"]) != "configuration" || string(entries["config/a"]) != "alpha" {
-		t.Fatalf("inspect: %v %v", manifest, err)
-	}
-	staged := filepath.Join(dir, "staged")
-	if _, err := recoveryStage(archive, staged); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := recoveryStage(archive, staged); err == nil {
-		t.Fatal("existing staging destination overwritten")
 	}
 }
 

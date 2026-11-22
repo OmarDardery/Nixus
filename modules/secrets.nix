@@ -14,9 +14,6 @@
     }) // (lib.optionalAttrs site.tunnel.enable {
       cloudflared = { path = site.tunnel.credentialsFile;
         restartUnits = [ "cloudflared-tunnel-${site.tunnel.uuid}.service" ]; };
-    }) // (lib.optionalAttrs site.backup.enable {
-      restic-password = { path = site.backup.passwordFile; };
-      restic-environment = { path = site.backup.environmentFile; };
     });
   };
   systemd.tmpfiles.rules = [ "d /var/lib/nixus-secrets 0700 root root -" ];

@@ -27,7 +27,5 @@ in {
     systemd.services.nixus-image-updates.onFailure = [ "nixus-notify@%n.service" ];
     systemd.services.nixus-project-backup.onFailure = [ "nixus-notify@%n.service" ];
     systemd.services.nixus-rollback-guard = lib.mkIf site.setup.enable { onFailure = [ "nixus-notify@%n.service" ]; };
-    systemd.services.restic-backups-nixus = lib.mkIf site.backup.enable { onFailure = [ "nixus-notify@%n.service" ]; };
-    systemd.services.nixus-backup-check = lib.mkIf site.backup.enable { onFailure = [ "nixus-notify@%n.service" ]; };
   };
 }

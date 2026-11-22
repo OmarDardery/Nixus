@@ -7,21 +7,10 @@ let operationView = {
   archives: [],
   health: null,
   users: [],
-  generations: [],
-  backupStatus: {},
-  backupService: {},
-  backupVerification: {},
   loading: false,
   error: "",
 };
 const administrator = () => (state.principal?.role || "admin") === "admin";
-
-function repositoryVerification() {
-  const verification = operationView.backupVerification || {};
-  const mode = verification.lastMode || verification.mode;
-  const scope = mode === "full" ? "full repository data read" : mode === "metadata" ? "metadata only; data blocks were not read" : "scope unknown";
-  return `<p>Repository verification: <b>${esc(verification.state || "unknown")}</b> · ${esc(scope)}</p>${verification.reason === "repository-unverified" ? "<p>The repository target has no matching verification evidence. Run a new check.</p>" : ""}${verification.finishedAt ? `<p>Last check: ${esc(new Date(verification.finishedAt * 1000).toLocaleString())}</p>` : ""}${verification.scheduled ? `<p>Schedule: ${esc(verification.schedule)} · next checks use ${verification.mode === "full" ? "full data reads" : "metadata checks"}</p>` : ""}${verification.timeWarning ? '<p class="error">Verification timestamps are unreliable; check host time synchronization.</p>' : ""}`;
-}
 
 function healthSummary() {
   const h = operationView.health;
@@ -44,76 +33,9 @@ function healthSummary() {
   return `${clock}<p>Backup: <b>${esc(h.backup?.health || "unknown")}</b> · Guests awaiting restart: ${esc(h.guestsAwaitingRestart ?? "unknown")}</p>${h.rootStorage ? `<p>Root storage: ${esc(formatBytes(h.rootStorage.availableBytes))} available of ${esc(formatBytes(h.rootStorage.totalBytes))}</p>` : ""}<ul>${services}${certificates}</ul>`;
 }
 
-function backupCoverage(status) {
-  const coverage = status.coverage, capacity = status.capacity;
-  const gaps = (coverage?.items || []).filter(item => item.status !== "included");
-  return `<p>Coverage: <b>${coverage ? (coverage.complete ? "Inventoried exports included" : "Incomplete") : "Not assessed"}</b></p>${gaps.length ? `<ul class="error">${gaps.map(item => `<li>${esc(item.identity)}: ${esc(item.status)}</li>`).join("")}</ul>` : ""}${capacity ? `<p>Estimated new staging: ${esc(formatBytes(capacity.estimatedNewBytes))} plus ${esc(formatBytes(capacity.reserveBytes))} reserve; ${esc(formatBytes(capacity.availableBytes))} available.</p>${capacity.unknown?.length ? `<p class="error">Current size unknown for ${esc(capacity.unknown.length)} archive(s). Estimates may be incomplete.</p>` : ""}` : ""}`;
-}
-
 function operationsPage() {
-  const busy = operationView.jobs.some((j) =>
-    ["queued", "running"].includes(j.status),
-  );
-  const status = operationView.backupStatus || {};
-  const backupRunning = ["active", "activating", "deactivating"].includes(
-    operationView.backupService?.ActiveState,
-  );
-  const localComplete = ["complete", "complete-with-exclusions"].includes(
-    status.phase,
-  );
-  const failedUpload =
-    localComplete &&
-    !backupRunning &&
-    operationView.backupService?.Result &&
-    operationView.backupService.Result !== "success";
-  const phase =
-    backupRunning && localComplete
-      ? "Local export complete; off-host transfer/retention running"
-      : failedUpload
-        ? "Local export complete; off-host backup failed"
-        : status.phase || "No backup recorded";
-  return (
-    title("", "Backups", "Apps, their data and their secrets, backed up off this server.") +
-    (administrator() && typeof backupsCards === "function" ? backupsCards() : "") +
-    // Whole-host export tooling is advanced; fold it into one panel.
-    '<details class="card panel advanced-block" data-panel="operations:advanced"' + (panelState["operations:advanced"] ? " open" : "") +
-      '><summary class="card-header"><h2>Advanced · full-server export</h2><span class="caption">' + esc(phase) + '</span></summary><div class="panel-body">' +
-    card(
-      "Backup status",
-      `<p>Current phase: <b>${esc(phase)}</b> ${status.group ? `· group ${esc(status.group)} of ${esc(status.groups)}` : ""}</p><p>${esc((status.members || []).join(", "))}</p>${status.excluded?.length ? `<p class="error">Excluded from coverage: ${esc(status.excluded.join(", "))}</p>` : ""}<p>Last full-host success: ${operationView.health?.lastBackupSuccess ? esc(new Date(operationView.health.lastBackupSuccess * 1000).toLocaleString()) : "Not recorded"}</p><p>Guests awaiting restart recovery: ${esc(operationView.health?.guestsAwaitingRestart ?? "Unknown")}</p>${operationView.error ? `<p class="error">${esc(operationView.error)}</p>` : ""}${repositoryVerification()}<button data-ops-refresh>Refresh</button> <button data-run-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Run scheduled backup</button> <button data-check-backup ${!administrator() || busy || !state.status.settings.backup.enable ? "disabled" : ""}>Check restic repository</button> <button data-cancel-backup ${!administrator() || !backupRunning ? "disabled" : ""}>Cancel scheduled backup</button>`,
-    ) +
-    backupCoverage(status) +
-    backupSettings() +
-    card(
-      "Complete local generations",
-      `<div class="table-wrap"><table><thead><tr><th>Created</th><th>Coverage</th><th>Archives</th></tr></thead><tbody>${operationView.generations.map((g) => `<tr><td>${esc(new Date(g.created * 1000).toLocaleString())}<br><code>${esc(g.id)}</code></td><td>${esc(g.coverage)} · ${esc(g.guests)} guest(s)${g.excluded.length ? `<br>Excluded: ${esc(g.excluded.join(", "))}` : ""}</td><td>${esc(g.archives)}</td></tr>`).join("") || '<tr><td colspan="3">No complete generations recorded.</td></tr>'}</tbody></table></div>`,
-    ) +
-    card(
-      "Restore an independent export",
-      `<div class="fields"><label class="field"><span>Available archive</span><select id="restore-archive"><option value="">Select an export</option>${operationView.archives.map((a) => `<option value="${esc(a.id)}" ${a.available === false ? "disabled" : ""}>${esc(a.project)}/${esc(a.name)} · ${esc(new Date(a.created * 1000).toLocaleString())}${a.available === false ? " (unavailable)" : ""}</option>`).join("")}</select></label><label class="field"><span>New stopped instance name</span><input id="restore-target" placeholder="restore-test"></label></div><button data-restore-export ${!administrator() || busy ? "disabled" : ""}>Restore stopped copy</button><a href="/docs/backups.md">Full off-host recovery procedure</a>`,
-    ) +
-    card(
-      "Nixus task history",
-      `<div class="table-wrap"><table><thead><tr><th>Action</th><th>Target</th><th>Status</th><th>Result</th></tr></thead><tbody>${operationView.jobs
-        .filter((j) => ["backup", "backup-check", "restore"].includes(j.action))
-        .map(
-          (j) =>
-            `<tr><td>${esc(j.action)}</td><td>${esc(j.project)}/${esc(j.name)}</td><td>${esc(j.status)}</td><td>${esc(j.error || j.restoredInstance || "")}</td></tr>`,
-        )
-        .join("")}</tbody></table></div>`,
-    ) +
-    card(
-      "Host service and certificate health",
-      healthSummary() +
-        `<details><summary>Diagnostic details</summary><pre class="log">${esc(JSON.stringify(operationView.health, null, 2))}</pre></details><button data-download-diagnostics>Download diagnostics</button>`,
-    ) +
-    (administrator()
-      ? card(
-          "Portable recovery kit",
-          `<div class="fields"><label class="field full"><span>age public recipient (optional)</span><input id="recovery-recipient" placeholder="age1…"></label><label class="field"><span>Your password</span><input id="recovery-password" type="password" autocomplete="current-password"></label></div><button data-download-recovery>Download recovery kit</button>`,
-        )
-      : "") + "</div></details>"
-  );
+  return title("", "Backups", "Apps, their data, their secrets and this server's settings, backed up off this server.") +
+    (administrator() && typeof backupsCards === "function" ? backupsCards() : "");
 }
 
 
@@ -140,21 +62,7 @@ async function refreshOperations(full = true) {
   let changed = false;
   try {
     const operations = await api("operations");
-    changed =
-      JSON.stringify([
-        operations.jobs,
-        operations.generations,
-        operations.backupStatus,
-        operations.backupService,
-        operations.backupVerification,
-      ]) !==
-      JSON.stringify([
-        operationView.jobs,
-        operationView.generations,
-        operationView.backupStatus,
-        operationView.backupService,
-        operationView.backupVerification,
-      ]);
+    changed = JSON.stringify(operations.jobs) !== JSON.stringify(operationView.jobs);
     Object.assign(operationView, operations);
     if (full || changed) {
       operationView.health = await api("health");
@@ -196,58 +104,6 @@ function bindOperations() {
     .querySelectorAll("[data-ops-refresh]")
     .forEach((el) => (el.onclick = safe(() => refreshOperations())));
   const by = (id) => document.getElementById(id);
-  const restore = by("restore-archive");
-  if (restore)
-    document.querySelector("[data-restore-export]").onclick = safe(async () => {
-      const archive = operationView.archives.find(
-        (a) => a.id === restore.value,
-      );
-      if (!archive) throw Error("Select an export.");
-      if (window.confirm("Restore to a new stopped instance?"))
-        await submitOperation({
-          action: "restore",
-          project: archive.project,
-          name: archive.name,
-          archive: archive.id,
-          target: by("restore-target").value.trim(),
-          acknowledge: true,
-        });
-    });
-  for (const [selector, action] of [
-    ["[data-run-backup]", "backup"],
-    ["[data-check-backup]", "backup-check"],
-  ])
-    document.querySelectorAll(selector).forEach(
-      (el) =>
-        (el.onclick = safe(async () => {
-          if (
-            window.confirm(
-              action === "backup"
-                ? "Back up the configured scope? Selected guest groups stop briefly."
-                : "Check the independent repository?",
-            )
-          )
-            await submitOperation({
-              action,
-              project: "lab",
-              name: "all",
-              acknowledge: true,
-            });
-        })),
-    );
-  document.querySelectorAll("[data-cancel-backup]").forEach(
-    (el) =>
-      (el.onclick = safe(async () => {
-        if (
-          window.confirm(
-            "Cancel the scheduled backup and recover stopped guests?",
-          )
-        ) {
-          await api("cancel-backup", {});
-          await refreshOperations();
-        }
-      })),
-  );
   document
     .querySelectorAll("[data-download-diagnostics]")
     .forEach(
@@ -259,22 +115,6 @@ function bindOperations() {
             "application/json",
           )),
     );
-  document.querySelectorAll("[data-download-recovery]").forEach(
-    (el) =>
-      (el.onclick = safe(async () => {
-        const result = await api("recovery-export", {
-          recipient: by("recovery-recipient").value.trim() || null,
-          current: by("recovery-password").value,
-        });
-        for (const [name, data] of Object.entries(result.files))
-          download(
-            name,
-            Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
-            "application/octet-stream",
-          );
-        by("recovery-password").value = "";
-      })),
-  );
   document.querySelectorAll("[data-overview-refresh]").forEach(el => {
     el.onclick = safe(async () => { await refreshOverview(); shell(); });
   });

@@ -56,12 +56,11 @@ let collecting = site.monitoring.collection || site.monitoring.history; in {
       curl --fail --silent --show-error --max-time 30 --unix-socket /var/lib/incus/unix.socket \
         http://localhost/1.0/metrics > "$metrics/incus.tmp"
       mv "$metrics/incus.tmp" "$metrics/incus.prom"
-      last=0
-      if test -f /var/lib/nixus/last-backup-success; then
-        read -r last < /var/lib/nixus/last-backup-success
-      fi
+      status=/var/lib/nixus-admin/project-backup-status.json
+      last=$(${pkgs.jq}/bin/jq -r '.lastSuccess // 0 | floor' "$status" 2>/dev/null || echo 0)
+      enabled=$(${pkgs.jq}/bin/jq -r 'if .enabled then 1 else 0 end' "$status" 2>/dev/null || echo 0)
       overdue=$(${import ../pkgs/nixus.nix { inherit pkgs; }}/bin/nixus-go backup-health)
-      printf 'nixus_last_backup_success_seconds %s\nnixus_backup_enabled %s\nnixus_backup_overdue %s\n' "$last" '${if site.backup.enable then "1" else "0"}' "$overdue" > "$metrics/backup.tmp"
+      printf 'nixus_last_backup_success_seconds %s\nnixus_backup_enabled %s\nnixus_backup_overdue %s\n' "$last" "$enabled" "$overdue" > "$metrics/backup.tmp"
       mv "$metrics/backup.tmp" "$metrics/backup.prom"
     '';
   };

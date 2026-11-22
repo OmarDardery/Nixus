@@ -1396,9 +1396,6 @@ func (t *ProjectTransactions) rollback(identityArg, planHash any) (M, error) {
 func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M, error) {
 	identity, _ := identityArg.(string)
 	return lockedValue(false, func() (M, error) {
-		if err := requireNormal(); err != nil {
-			return nil, err
-		}
 		if err := t.rootState(identity); err != nil {
 			return nil, err
 		}
@@ -1490,9 +1487,6 @@ func (t *ProjectTransactions) runDeployment(identity string) (M, error) {
 			return nil, err
 		}
 		defer release()
-		if err := requireNormal(); err != nil {
-			return nil, err
-		}
 		dir, err := t.job(identity)
 		if err != nil {
 			return nil, err

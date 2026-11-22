@@ -424,9 +424,6 @@ func (b *OCIBuilds) review(project, revision any, principal string) (M, error) {
 
 func (b *OCIBuilds) queue(identity, planHash any, resume bool) (M, error) {
 	return lockedValue(false, func() (M, error) {
-		if err := requireNormal(); err != nil {
-			return nil, err
-		}
 		id, _ := identity.(string)
 		if err := b.active(id); err != nil {
 			return nil, err
