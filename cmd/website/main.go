@@ -387,7 +387,7 @@ func build(output, base string) error {
 		}
 		body += "</ul>"
 	}
-	home, err := template(map[string]string{"BASE": base, "TITLE": "Read this before improvising.", "DESCRIPTION": descriptions["index"],
+	home, err := template(map[string]string{"BASE": base, "TITLE": "Documentation", "DESCRIPTION": descriptions["index"],
 		"CANONICAL": "/docs/", "NAV": navigation(base, "index", pages), "BODY": body,
 		"TOC": `<a href="` + docURL(base, "install") + `">Start with installation →</a>`, "SOURCE": repo + "/tree/main/docs"})
 	if err != nil {
@@ -396,7 +396,7 @@ func build(output, base string) error {
 	os.WriteFile(filepath.Join(output, "docs", "index.html"), []byte(home), 0o644)
 	index, _ := json.Marshal(search)
 	os.WriteFile(filepath.Join(output, "search-index.json"), index, 0o644)
-	notFound := `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>404 · Nixus</title><link rel="stylesheet" href="` + base + `/assets/brand.css"><link rel="stylesheet" href="` + base + `/assets/style.css"></head><body><main class="not-found section-wrap"><p class="eyebrow">404 / UNDECLARED RESOURCE</p><h1>This page failed to evaluate.</h1><p>Or the link moved. Either way, a rebuild of your server will not help.</p><a class="button button-primary" href="` + docURL(base, "index") + `">Back to the docs →</a></main></body></html>`
+	notFound := `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>404 · Nixus</title><link rel="stylesheet" href="` + base + `/assets/style.css"></head><body><main class="not-found"><p class="eyebrow">404</p><h1>Page not found.</h1><p>The link may have moved.</p><a class="button primary" href="` + docURL(base, "index") + `">Back to the docs</a></main></body></html>`
 	os.WriteFile(filepath.Join(output, "404.html"), []byte(notFound), 0o644)
 	urls := []string{domain + "/", domain + "/docs/"}
 	for _, p := range sources {

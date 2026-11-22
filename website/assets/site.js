@@ -28,6 +28,30 @@
       window.setTimeout(() => { button.textContent = initial; }, 2500);
     });
   });
+  document.querySelectorAll('[data-carousel]').forEach(carousel => {
+    const track = carousel.querySelector('.slides');
+    const slides = [...track.querySelectorAll('.slide')];
+    const dots = carousel.querySelector('.dots');
+    const current = () => Math.round(track.scrollLeft / track.clientWidth);
+    const go = i => track.scrollTo({ left: ((i + slides.length) % slides.length) * track.clientWidth });
+    slides.forEach((slide, i) => {
+      const dot = document.createElement('button');
+      dot.type = 'button'; dot.setAttribute('role', 'tab');
+      dot.setAttribute('aria-label', slide.querySelector('figcaption')?.textContent || 'Screenshot ' + (i + 1));
+      dot.addEventListener('click', () => go(i));
+      dots.append(dot);
+    });
+    const sync = () => dots.querySelectorAll('button').forEach((d, i) => d.setAttribute('aria-selected', String(i === current())));
+    track.addEventListener('scroll', () => window.requestAnimationFrame(sync), { passive: true });
+    carousel.querySelector('[data-prev]').addEventListener('click', () => go(current() - 1));
+    carousel.querySelector('[data-next]').addEventListener('click', () => go(current() + 1));
+    track.addEventListener('keydown', event => {
+      if (event.key === 'ArrowRight') { event.preventDefault(); go(current() + 1); }
+      if (event.key === 'ArrowLeft') { event.preventDefault(); go(current() - 1); }
+    });
+    sync();
+  });
+
   const input = document.getElementById('docs-search');
   const results = document.getElementById('search-results');
   if (!input || !results) return;
