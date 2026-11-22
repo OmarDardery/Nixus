@@ -19,7 +19,7 @@
   ];
   environment.etc."nixus/client.json".text = builtins.toJSON {
     remote = "local"; project = "lab";
-    exportDirectory = site.backup.stagingDirectory;
+    exportDirectory = "/var/lib/nixus/exports";
   };
   system.stateVersion = lib.mkDefault "26.05";
 }

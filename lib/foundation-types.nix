@@ -19,11 +19,4 @@ in {
     protocol = option (types.enum [ "tcp" "udp" ]);
     ports = option (types.listOf types.port);
   });
-  "hardware.serialAliases" = types.listOf (record {
-    name = option (types.strMatching "[a-z][a-z0-9-]{0,31}");
-    vendorId = option (types.strMatching "[0-9a-fA-F]{4}");
-    productId = option (types.strMatching "[0-9a-fA-F]{4}");
-    serial = option (types.strMatching "[A-Za-z0-9_.:+-]{1,128}");
-  });
-  "backup.groups" = types.listOf (types.listOf types.str);
 }

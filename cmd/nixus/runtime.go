@@ -770,95 +770,10 @@ func modernLayout(root string) (bool, error) {
 	return true, nil
 }
 
+// machinePath locates per-host files under machine/.
 func machinePath(root, name string) string {
-	modern, _ := modernLayout(root)
-	legacy := map[string]string{"settings": "local/settings.json", "installation": "local/installation.json",
-		"modules": "site-modules", "installed": "installed-system"}
-	current := map[string]string{"settings": "settings.json", "installation": "installation.json",
-		"modules": "modules", "installed": "installed-system"}
-	if modern {
-		return filepath.Join(root, "machine", current[name])
-	}
-	return filepath.Join(root, legacy[name])
-}
-
-func migrateIdleLayout(root, state string) (M, error) {
-	return lockedValue(true, func() (M, error) {
-		active := readObj(filepath.Join(state, "active.json"))
-		id := str(active["id"])
-		if id == "" {
-			id = "-"
-		}
-		job, err := readJobRecord(filepath.Join(state, "jobs", id, "job.json"), M{})
-		if err != nil {
-			return nil, err
-		}
-		pending, _ := readJSON(filepath.Join(state, "pending.json"), nil)
-		switch str(job["status"]) {
-		case "building", "ready", "applying", "awaiting-confirmation", "rolling-back":
-			pending = true
-		}
-		if pending != nil && pending != false {
-			return nil, Public("Finish or discard the configuration transaction before migrating layout")
-		}
-		return migrateLayout(root)
-	})
-}
-
-func migrateLayout(root string) (M, error) {
-	modern, err := modernLayout(root)
-	if err != nil {
-		return nil, err
-	}
-	if modern {
-		return M{"changed": false, "directory": filepath.Join(root, "machine")}, nil
-	}
-	if lexists(filepath.Join(root, "machine")) {
-		return nil, Public("Inspect the existing machine directory before migration")
-	}
-	if !isFile(machinePath(root, "settings")) {
-		return nil, Public("No installed settings inventory to migrate")
-	}
-	files, err := sourceFiles(root)
-	if err != nil {
-		return nil, err
-	}
-	staging, err := os.MkdirTemp(root, ".machine-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(staging)
-	for _, f := range files {
-		var relative string
-		switch {
-		case f.name == "local/settings.json":
-			relative = "settings.json"
-		case f.name == "local/installation.json":
-			relative = "installation.json"
-		case strings.HasPrefix(f.name, "site-modules/"):
-			relative = "modules/" + strings.TrimPrefix(f.name, "site-modules/")
-		case strings.HasPrefix(f.name, "installed-system/"):
-			relative = f.name
-		default:
-			continue
-		}
-		data, err := os.ReadFile(f.path)
-		if err != nil {
-			return nil, err
-		}
-		info, _ := os.Stat(f.path)
-		if err := atomic(filepath.Join(staging, relative), data, info.Mode().Perm(), ""); err != nil {
-			return nil, err
-		}
-	}
-	if err := writeJSON(filepath.Join(staging, "format.json"), M{"version": 1}); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(staging, filepath.Join(root, "machine")); err != nil {
-		return nil, err
-	}
-	fsyncDir(root)
-	return M{"changed": true, "directory": filepath.Join(root, "machine")}, nil
+	return filepath.Join(root, "machine", map[string]string{"settings": "settings.json", "installation": "installation.json",
+		"modules": "modules", "installed": "installed-system"}[name])
 }
 
 var moduleName = re(`[a-zA-Z0-9][a-zA-Z0-9_/-]*\.nix`)
@@ -972,16 +887,8 @@ func sourceFiles(root string) ([]sourceFile, error) {
 			}
 		}
 	}
-	modern, err := modernLayout(root)
-	if err != nil {
+	if _, err := modernLayout(root); err != nil {
 		return nil, err
-	}
-	if modern {
-		for n := range names {
-			if strings.HasPrefix(n, "local/") || strings.HasPrefix(n, "site-modules/") || strings.HasPrefix(n, "installed-system/") {
-				delete(names, n)
-			}
-		}
 	}
 	names["hardware-configuration.nix"] = true
 	modules, err := moduleFiles(root)
@@ -992,15 +899,7 @@ func sourceFiles(root string) ([]sourceFile, error) {
 		rel, _ := filepath.Rel(root, f)
 		names[rel] = true
 	}
-	prefixes := []string{"installed-system", "local"}
-	if modern {
-		prefixes = []string{"machine"}
-	}
-	for _, prefix := range prefixes {
-		directory := filepath.Join(root, prefix)
-		if !exists(directory) {
-			continue
-		}
+	if directory := filepath.Join(root, "machine"); exists(directory) {
 		filepath.WalkDir(directory, func(p string, d os.DirEntry, err error) error {
 			if err == nil && d.Type().IsRegular() {
 				rel, _ := filepath.Rel(root, p)
@@ -1037,12 +936,8 @@ func sourceFiles(root string) ([]sourceFile, error) {
 			name == "machine/installation.json" || name == hostSecretsRelative || (strings.HasPrefix(name, "machine/modules/") && (ext == ".nix" || ext == ".md")) ||
 			(strings.HasPrefix(name, "machine/installed-system/") && ext == ".nix")):
 			return nil, Public("Unexpected file in machine configuration: " + name)
-		case strings.HasPrefix(name, "local/") && name != "local/settings.json" && name != "local/installation.json":
-			return nil, Public("Unexpected local state file in source tree")
-		case strings.HasPrefix(name, "site-modules/") && ext != ".nix" && ext != ".md":
-			return nil, Public("Only Nix modules and documentation belong in site-modules")
-		case strings.HasPrefix(name, "installed-system/") && ext != ".nix":
-			return nil, Public("Only reviewed Nix modules may be imported from the installed system")
+		case strings.HasPrefix(name, "local/") || strings.HasPrefix(name, "site-modules/") || strings.HasPrefix(name, "installed-system/"):
+			continue // pre-machine/ layout files are not part of the source
 		}
 		out = append(out, sourceFile{name, p})
 	}

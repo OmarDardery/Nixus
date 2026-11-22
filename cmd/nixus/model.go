@@ -203,18 +203,7 @@ func jsonKind(v any) string {
 }
 
 func checkShape(value, template any, location string) error {
-	if location == "settings.tunnel.ingress" {
-		m, ok := value.(M)
-		if !ok {
-			return Public("Ingress must map hostnames to endpoint strings")
-		}
-		for _, v := range m {
-			if !isStr(v) {
-				return Public("Ingress must map hostnames to endpoint strings")
-			}
-		}
-		return nil
-	}
+
 	switch t := template.(type) {
 	case M:
 		m, ok := value.(M)
@@ -567,12 +556,6 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 		storage["source"] = str(primary[0]["path"]) + "/incus"
 	} else if str(storage["driver"]) == "dir" {
 		storage["source"] = "/var/lib/incus/storage-pools/" + pool
-	}
-	backup := obj(candidate["backup"])
-	if len(stages) == 1 {
-		backup["stagingDirectory"] = str(stages[0]["path"]) + "/exports"
-	} else {
-		backup["stagingDirectory"] = "/var/lib/nixus/exports"
 	}
 	candidate["ready"] = true
 	if err := validateNetwork(candidate); err != nil {

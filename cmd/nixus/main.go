@@ -201,13 +201,11 @@ func requireFreshCLIConfirmation(job M) error {
 
 func configCLI(args []string) error {
 	if len(args) == 0 {
-		return Public("usage: nixus-admin config {status|plan|migrate-layout|review|apply|confirm|cancel|rollback}")
+		return Public("usage: nixus-admin config {status|plan|review|apply|confirm|cancel|rollback}")
 	}
 	var result any
 	var err error
 	switch args[0] {
-	case "migrate-layout":
-		result, err = migrateIdleLayout(ROOT, STATE)
 	case "status", "plan":
 		var state M
 		if state, err = brokerRequest("GET", "/status", nil); err != nil {

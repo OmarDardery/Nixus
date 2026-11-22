@@ -32,11 +32,10 @@ let
   };
   makeType = path: value:
     if builtins.hasAttr path foundationTypes then foundationTypes.${path}
-    else if path == "schemaVersion" then types.enum [ 1 ]
+    else if path == "schemaVersion" then types.enum [ 2 ]
     else if builtins.elem path [ "cockpit.port" "setup.port" ] then types.port
     else if path == "instances" then types.listOf instance
     else if path == "mounts" then types.listOf mount
-    else if path == "tunnel.ingress" then strings
     else if builtins.isAttrs value then types.submodule {
       options = lib.mapAttrs (key: default: mkOption {
         type = makeType (if path == "" then key else path + "." + key) default;

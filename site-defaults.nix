@@ -1,7 +1,7 @@
 # Deployment inventory. Empty values deliberately prevent activation.
 # Fill from the physical host; documentation examples are not discovered facts.
 {
-  schemaVersion = 1;
+  schemaVersion = 2;
   ready = false;
   system = "x86_64-linux";
   hostName = "nixus";
@@ -43,8 +43,6 @@
     trustedLANAccess = false;
     privateAccess = [ ]; # { cidr = "192.168.1.2/32"; protocol = "udp"; ports = [ 53 ]; }
   };
-  hardware.serialAliases = [ ]; # Explicit { name; vendorId; productId; serial; } selections only.
-  helpers.enable = true; # CLI only, no background service or browser script execution.
   radios = {
     wifi = { enable = false; interface = ""; ssid = ""; manageProfile = false; };
     bluetooth.enable = false;
@@ -57,24 +55,6 @@
     hostFile = ""; # repository-relative encrypted YAML
     guestFile = "";
     ageKeyFile = "/var/lib/sops-nix/key.txt"; # private key deployed out of band
-  };
-  tunnel = {
-    enable = false;
-    uuid = "";
-    credentialsFile = "/var/lib/nixus-secrets/cloudflared.json";
-    ingress = { }; # "app.example.com" = "http://<guest address>:8080";
-  };
-  backup = {
-    enable = false;
-    repository = ""; # independent storage, e.g. sftp:backup@server:/backups/nixus
-    passwordFile = "/var/lib/nixus-secrets/restic-password";
-    environmentFile = "/var/lib/nixus-secrets/restic-environment";
-    stagingDirectory = "/var/lib/nixus/exports";
-    initialize = false; # explicitly opt in after verifying the remote repository
-    schedule = "*-*-* 03:00:00";
-    groups = [ ]; # Lists of project/guest identities that must stop together.
-    exclude = [ ]; # Explicit maintenance exclusions; also honors user.nixus.backup=manual.
-    reserveMiB = 1024;
   };
 }
 

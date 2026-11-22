@@ -289,8 +289,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 			return m.confirm(id)
 		}
 		return m.rollback(id)
-	case "/migrate-layout":
-		return lockedValue(false, func() (M, error) { return migrateLayout(m.root) })
 	case "/project/initialize", "/project/review", "/project/publish", "/project/rollback", "/project/cancel", "/project/recover", "/project/deploy":
 		t := NewProjectTransactions("", "")
 		switch p {
@@ -638,7 +636,7 @@ var portalActions = map[string]bool{}
 func init() {
 	for _, a := range strings.Fields(`/api/project-import/prepare /api/project-import/chunk /api/project-import/finish /api/project-import/review
 		/api/project-import/publish /api/project-import/plan /api/oci/review /api/oci/build /api/review /api/apply /api/confirm /api/rollback
-		/api/cancel /api/migrate-layout /api/users /api/project/initialize
+		/api/cancel /api/users /api/project/initialize
 		/api/project/review /api/project/publish /api/project/rollback /api/project/cancel /api/project/recover /api/project/deploy
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/recover /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check /api/image-updates/prepare
@@ -982,10 +980,6 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		p.auth.mu.Unlock()
 		reply(w, 200, M{"ok": true}, "", header{"Set-Cookie", "nixus_session=" + sessionCookie + "0"})
 		return nil
-	case "/api/migrate-layout":
-		if !passwordOK(s, body["current"]) {
-			return Public("Reauthenticate to migrate the machine layout")
-		}
 	case "/api/review":
 		password := body["adminPassword"]
 		delete(body, "adminPassword")

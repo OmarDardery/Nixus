@@ -383,12 +383,6 @@ function files() {
       "ADMINISTRATOR CONFIGURATION",
       "Advanced", "Add your own NixOS modules to the host.",
     ) +
-    (state.status.layoutVersion === 0
-      ? card(
-          "Upgrade the local configuration layout",
-          `<label class="field"><span>Administrator password</span><input id="layout-password" type="password" autocomplete="current-password"></label><button data-action="migrate-layout">Migrate local configuration</button>`,
-        )
-      : "") +
     card(
       "Stage a Nix module",
       `<label class="field"><span>Nix file</span><input type="file" id="module-file" accept=".nix"></label><label class="field"><span>Relative destination (optional)</span><input id="module-path" placeholder="disks/archive.nix"></label><button data-action="stage-module">Stage file for review</button><p>Files are imported under ${esc(state.status.moduleDirectory || "site-modules/")} after activation.</p><pre class="log">${esc(JSON.stringify(state.modules, null, 2))}</pre><button data-action="clear-modules">Clear staged files</button>`,
