@@ -282,6 +282,37 @@ func consistencyGroups(guests []M, volumes []M, configured []any, namespaces map
 	return groups, nil
 }
 
+// redactGuest returns a copy of an Incus guest record without the values of the
+// environment variables Nixus delivers. The inventory is staged on disk before
+// restic encrypts it, and restore never reads these values from it: the
+// instance archives carry the configuration (#110).
+func redactGuest(g M) M {
+	out := cloneM(g)
+	for _, section := range []string{"config", "expanded_config"} {
+		cfg := obj(out[section])
+		if cfg == nil {
+			continue
+		}
+		redacted := M{}
+		for k, v := range cfg {
+			if strings.HasPrefix(k, "environment.") {
+				v = "REDACTED"
+			}
+			redacted[k] = v
+		}
+		out[section] = redacted
+	}
+	return out
+}
+
+func redactGuests(guests []M) []M {
+	out := make([]M, len(guests))
+	for i, g := range guests {
+		out[i] = redactGuest(g)
+	}
+	return out
+}
+
 func previousSizes() map[string]int64 {
 	out := map[string]int64{}
 	pointer := readObj(filepath.Join(backupRoot, "latest.json"))
@@ -683,7 +714,7 @@ func runBackup(only []string) error {
 	}
 	manifest := M{"format": 2, "generation": generation, "created": now(), "consistencyGroups": windows,
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
-		"guests": selectedGuests, "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
+		"guests": redactGuests(selectedGuests), "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
 		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
 	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
 	sort.Strings(archives)

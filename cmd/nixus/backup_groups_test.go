@@ -72,3 +72,22 @@ func TestBackupStopsWhenAGuestCannotBeRestarted(t *testing.T) {
 		t.Fatalf("recovery should clear the record: %q %v", raw, state)
 	}
 }
+
+// The staged inventory must not carry variable values (#110).
+func TestBackupInventoryRedactsEnvironmentValues(t *testing.T) {
+	guest := M{"name": "web", "project": "p", "config": M{"environment.API_TOKEN": "marker-s3cret", "limits.cpu": "2"},
+		"expanded_config": M{"environment.API_TOKEN": "marker-s3cret", "volatile.uuid": "u"}}
+	out := redactGuest(guest)
+	if strings.Contains(string(jsonFile(out)), "marker-s3cret") {
+		t.Fatalf("a value survived: %v", out)
+	}
+	if obj(out["config"])["limits.cpu"] != "2" || obj(out["expanded_config"])["volatile.uuid"] != "u" {
+		t.Fatalf("other configuration must be kept: %v", out)
+	}
+	if _, ok := obj(out["config"])["environment.API_TOKEN"]; !ok {
+		t.Fatal("the variable name is still listed")
+	}
+	if !strings.Contains(string(jsonFile(guest)), "marker-s3cret") {
+		t.Fatal("the original record must not be modified")
+	}
+}
