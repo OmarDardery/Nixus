@@ -133,36 +133,98 @@ function appStatus(p) {
   return !instances.length ? "Stopped" : running === instances.length ? "Running" : running ? "Degraded" : "Stopped";
 }
 
+// Monochrome line icons (24px grid), drawn with currentColor.
+const ICONS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  import: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 3.5v5h-5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  git: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-6 9"/>',
+  archive: '<path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4"/>',
+  folder: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+};
+
+function icon(name) {
+  return '<svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + "</svg>";
+}
+
+// ago formats a Unix time as "5 min ago", "2 h ago" or "3 d ago".
+function ago(t) {
+  if (!t) return "";
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago" : Math.floor(s / 86400) + " d ago";
+}
+
 function appCard(p) {
   const instances = p.instances || [];
   const running = instances.filter(i => i.status === "Running").length;
   const updates = (appView.updates?.projects || {})[p.name]?.updates > 0;
-  return '<button type="button" class="app-card" data-app-open="' + esc(p.name) + '">' +
-    '<span class="app-name"><span class="app-icon" aria-hidden="true">' + esc(p.name.slice(0, 1).toUpperCase()) + "</span>" + esc(p.name) + "</span>" +
-    '<span class="app-meta"><span>' + badge(appStatus(p)) + "</span><span>" + (p.backend === "incus-compose" ? "Compose" : "VM / container") +
-    "</span><span>" + running + "/" + instances.length + " running</span>" + (updates ? '<span class="badge">Update available</span>' : "") + "</span></button>";
+  const status = appStatus(p);
+  const tone = status === "Running" ? "ok" : /failed|Degraded/.test(status) ? "bad" : /Stopped/.test(status) ? "off" : "busy";
+  const ports = [...new Set(instances.flatMap(i => i.ports || []).filter(n => Number.isInteger(n) && n > 0 && n < 65536))];
+  const job = appView.jobs[p.name];
+  return '<button type="button" class="app-card" data-app-open="' + esc(p.name) + '" aria-label="Open ' + esc(p.name) + ", " + esc(status) + '">' +
+    '<span class="app-card-top"><span class="app-name"><span class="app-dot ' + tone + '" aria-hidden="true"></span>' + esc(p.name) + "</span>" +
+    (updates ? '<span class="app-pill" title="Update available">Update</span>' : "") + "</span>" +
+    '<span class="app-sub">' + (p.backend === "incus-compose" ? "Compose" : "VM / container") + " · " + running + "/" + instances.length + " running</span>" +
+    '<span class="app-foot">' + (status === "Running" ? "" : "<span>" + esc(status) + "</span>") +
+    (ports.length ? '<span class="mono">' + ports.slice(0, 3).map(n => ":" + n).join(" ") + "</span>" : "") +
+    (job?.completedAt ? "<span>Deployed " + esc(ago(job.completedAt)) + "</span>" : "") + "</span></button>";
+}
+
+function appsHasProjects() { return appProjects().length > 0; }
+
+function importMenu() {
+  return '<details class="menu"><summary class="icon-button" aria-label="Import an app" title="Import">' + icon("import") + '<span class="label">Import</span></summary>' +
+    '<div class="menu-list" role="menu">' +
+    '<button type="button" role="menuitem" data-import="repo">' + icon("git") + "<span><b>From a Git repository</b><small>Deploy apps from your apps repo</small></span></button>" +
+    '<button type="button" role="menuitem" data-import="upload">' + icon("folder") + "<span><b>Upload a folder</b><small>A compose.yaml and its files</small></span></button>" +
+    (appsHasProjects() ? "" : '<button type="button" role="menuitem" data-import="backup">' + icon("archive") +
+      "<span><b>From a backup</b><small>Restore this server's apps and data</small></span></button>") +
+    "</div></details>";
 }
 
 function appsList() {
   const filter = appView.filter.toLowerCase();
-  const projects = appProjects().filter(p => !filter || p.name.includes(filter));
-  return title("", "Apps", "Deploy and update your apps, VMs and containers.") +
-    '<div class="toolbar"><input type="search" id="apps-filter" placeholder="Search apps…" value="' + esc(appView.filter) + '" aria-label="Search apps">' +
-    '<span><button type="button" class="small" id="apps-refresh">Refresh</button> <button type="button" class="primary" data-app-new>New app</button></span></div>' +
-    (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
-    draftsCard() +
+  const all = appProjects();
+  const projects = all.filter(p => !filter || p.name.includes(filter));
+  const head = '<div class="page-title apps-head"><div><h1>Apps</h1><p>' +
+    (all.length ? all.length + " app" + (all.length === 1 ? "" : "s") + " on this server." : "Deploy apps, VMs and containers.") + "</p></div>" +
+    '<div class="apps-actions">' + importMenu() +
+    '<button type="button" class="primary icon-button" data-app-new aria-label="Add app" title="Add app">' + icon("plus") + '<span class="label">Add app</span></button></div></div>';
+  const tools = all.length ? '<div class="apps-tools"><label class="search">' + icon("search") +
+    '<input type="search" id="apps-filter" placeholder="Search apps…" value="' + esc(appView.filter) + '" aria-label="Search apps"></label>' +
+    '<button type="button" class="icon-button ghost" id="apps-refresh" aria-label="Refresh" title="Refresh">' + icon("refresh") + "</button></div>" : "";
+  const empty = '<div class="apps-empty"><h2>No apps yet</h2><p>Add one from a Compose file or Dockerfile, or import your apps.</p>' +
+    '<div class="apps-actions"><button type="button" class="primary icon-button" data-app-new>' + icon("plus") + '<span class="label">Add app</span></button>' +
+    '<button type="button" class="icon-button" data-import="repo">' + icon("git") + '<span class="label">From Git</span></button>' +
+    '<button type="button" class="icon-button" data-import="backup">' + icon("archive") + '<span class="label">From a backup</span></button></div></div>';
+  return head + (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") + tools + draftsCard() +
     (projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
-      : card("No apps yet", '<p><button type="button" class="primary" data-app-new>New app</button> <button type="button" data-go="operations">Restore from a backup</button></p>'));
+      : all.length ? '<p class="apps-none">No apps match “' + esc(appView.filter) + "”.</p>" : empty);
 }
 
 function draftsCard() {
   const drafts = appView.drafts || [];
   if (!drafts.length) return "";
-  const when = t => t ? new Date(t * 1000).toLocaleString() : "";
-  return card("Drafts", '<div class="table-wrap"><table><tbody>' + drafts.map(d =>
-    "<tr><td><code>" + esc(d.name) + "</code></td><td>" + esc(when(d.updatedAt)) + "</td><td>" +
-    '<button type="button" class="small" data-draft-resume="' + esc(d.name) + '">Resume</button> ' +
-    '<button type="button" class="small" data-draft-delete="' + esc(d.name) + '">Delete</button></td></tr>').join("") + "</tbody></table></div>");
+  return '<section class="drafts" aria-label="Drafts"><h2>Drafts</h2><ul>' + drafts.map(d =>
+    '<li><span class="draft-tag">Draft</span><span class="draft-name">' + esc(d.name) + '</span><span class="draft-when">saved ' + esc(ago(d.updatedAt)) + "</span>" +
+    '<span class="draft-do"><button type="button" class="small" data-draft-resume="' + esc(d.name) + '">Resume</button>' +
+    '<button type="button" class="small icon-button ghost" data-draft-delete="' + esc(d.name) + '" aria-label="Delete draft ' + esc(d.name) + '" title="Delete">' +
+    icon("trash") + "</button></span></li>").join("") + "</ul></section>";
+}
+
+// openImport sends the user to where each kind of import lives.
+function openImport(kind) {
+  if (kind === "upload") { Object.assign(appView, { view: "new", mode: "files", error: "", message: "" }); rerender(); return; }
+  const heading = kind === "repo" ? "apps repository" : "restore this server from a backup";
+  if (typeof navigateTo === "function") navigateTo("operations");
+  setTimeout(() => {
+    const panel = document.querySelector('[data-panel="operations:' + heading + '"]');
+    if (panel) { panel.open = true; panel.scrollIntoView({ block: "start", behavior: "smooth" }); }
+  }, 80);
 }
 
 function appTabs() {
@@ -672,6 +734,7 @@ function bindApps() {
     const box = document.querySelector("#apps-filter");
     if (box) { box.focus(); box.setSelectionRange(caret, caret); }
   });
+  each("[data-import]", el => { el.closest("details")?.removeAttribute("open"); openImport(el.dataset.import); });
   each("[data-app-new]", () => { Object.assign(appView, { view: "new", error: "", message: "" }); rerender(); });
   each("[data-app-back]", () => { Object.assign(appView, { view: "list", log: null, error: "", message: "" }); rerender(); });
   each("[data-app-open]", el => { Object.assign(appView, { view: el.dataset.appOpen, tab: "deployments", log: null, error: "", message: "" }); rerender(); });

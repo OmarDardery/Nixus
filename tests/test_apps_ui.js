@@ -22,10 +22,19 @@ let html = render();
 assert.match(html, /data-app-open="web"/);
 assert.match(html, /data-app-open="printer"/);
 assert.match(html, /data-app-new/);
-assert.match(html, /Update available/);
+assert.match(html, /class="app-pill" title="Update available"/);
+// Header: an Add app button and an Import menu, both with icons and accessible names.
+assert.match(html, /data-app-new aria-label="Add app"/);
+assert.match(html, /<summary class="icon-button" aria-label="Import an app"/);
+assert.match(html, /data-import="repo"/);
+assert.match(html, /data-import="upload"/);
+assert.doesNotMatch(html, /data-import="backup"/, "restoring a whole server is only offered before any app exists");
+assert.match(html, /\.app-dot|app-dot bad/);
 assert.doesNotMatch(html, /<b>app<\/b>|<i>bad<\/i>|<x>/);
 vm.runInContext('appView.filter = "print"', context);
 assert.doesNotMatch(render(), /data-app-open="web"/, "search filters the grid");
+vm.runInContext('appView.filter = "zzz"', context);
+assert.match(render(), /No apps match/);
 vm.runInContext('appView.filter = ""', context);
 
 // App page: four tabs and an update action.
@@ -92,3 +101,16 @@ assert.throws(() => vm.runInContext("appFiles()", context), /digest/);
 const index = read("index.html");
 assert.match(index, /\/apps\.js/);
 console.log("Apps page verified");
+
+// Empty state offers Add app, Git and backup imports.
+{
+  const ctx2 = vm.createContext({ state: { page: "projects" }, shell: () => {}, api: async () => ({}), File, console, esc: context.esc, card: context.card, title: context.title });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx2);
+  vm.runInContext("Object.assign(appView, { overview: { projects: [] }, loading: true })", ctx2);
+  const empty = vm.runInContext("appsPage()", ctx2);
+  assert.match(empty, /No apps yet/);
+  assert.match(empty, /data-import="backup"/);
+  assert.match(empty, /data-import="repo"/);
+  assert.doesNotMatch(empty, /id="apps-filter"/, "no search box without apps");
+  console.log("Apps empty state verified");
+}
