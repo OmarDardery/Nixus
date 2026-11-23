@@ -418,6 +418,16 @@ func composeUpCommand(binary string, flags []string, build M, previousIntent, sc
 		if err := os.WriteFile(storage, []byte(conf), 0o600); err != nil {
 			return nil, nil, err
 		}
+		// Buildah refuses to run without a signature policy, and hosts without
+		// the containers module have none. Images are pinned by digest, which
+		// already fixes their content, so no signatures are required.
+		policyDir := filepath.Join(scratch, ".config", "containers")
+		if err := os.MkdirAll(policyDir, 0o700); err != nil {
+			return nil, nil, err
+		}
+		if err := os.WriteFile(filepath.Join(policyDir, "policy.json"), []byte(`{"default":[{"type":"insecureAcceptAnything"}]}`+"\n"), 0o600); err != nil {
+			return nil, nil, err
+		}
 	}
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing", "--no-healthd", "--no-dns")

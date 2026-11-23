@@ -36,6 +36,12 @@ func TestComposeUpCommand(t *testing.T) {
 		args[slices.Index(args, "--builder")+1] != "/nix/store/x-buildah/bin/buildah" || !slices.Contains(env, "BUILDAH_ISOLATION=chroot") {
 		t.Fatalf("built service: %v %v %v", args, env, err)
 	}
+	if _, err := os.Stat(filepath.Join(scratch, ".config", "containers", "policy.json")); err != nil {
+		t.Fatalf("buildah needs a signature policy under HOME: %v", err)
+	}
+	if !slices.Contains(env, "HOME="+scratch) {
+		t.Fatalf("HOME must point at the scratch directory: %v", env)
+	}
 }
 
 // The real parser names paths under the materialised source; validation must
