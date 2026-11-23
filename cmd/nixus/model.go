@@ -635,8 +635,6 @@ func foundationRecords(values any, fields []string, label string) ([]M, error) {
 	return out, nil
 }
 
-var guestIdentityRe = re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}/[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`)
-
 func validateFoundation(site, host M) (map[string]bool, error) {
 	c := obj(site["connectivity"])
 	bridges, err := foundationRecords(c["bridges"], []string{"name", "interfaces"}, "Ethernet bridges")

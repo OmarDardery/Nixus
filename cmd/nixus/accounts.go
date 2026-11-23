@@ -14,8 +14,6 @@ import (
 
 var portalUser = re(`[a-z_][a-z0-9_-]{0,31}`)
 var hex64 = re(`[0-9a-f]{64}`)
-var hex48 = re(`[0-9a-f]{48}`)
-var hex32 = re(`[0-9a-f]{32}`)
 
 func sha256str(s string) string { return sha256hex([]byte(s)) }
 

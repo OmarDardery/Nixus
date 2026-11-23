@@ -17,7 +17,6 @@ const upstream = "https://github.com/OmarDardery/Nixus.git"
 
 var protectedTop = map[string]bool{"machine": true, "local": true, "installed-system": true, "site-modules": true, "secrets": true, ".git": true}
 var sha40 = re(`[0-9a-f]{40}`)
-var semver = re(`v?[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9.-]+)?`)
 
 func mainRevision() (string, error) {
 	out, err := check([]string{"git", "-c", "core.hooksPath=/dev/null", "ls-remote", "--refs", upstream, "refs/heads/main"}, nil, 30*time.Second)
