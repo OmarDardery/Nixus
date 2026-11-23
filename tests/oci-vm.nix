@@ -440,6 +440,10 @@ in pkgs.testers.runNixOSTest {
         assert djob["status"] == "deployed", djob
         names = sorted(i["name"] for i in json.loads(machine.succeed("incus list --project dnsapp --format=json")))
         assert names == ["client", "web"], names
+        # DNS is set before the containers start (OCI containers read it only then).
+        resolv = machine.succeed("incus exec client --project dnsapp -- cat /etc/resolv.conf")
+        gateway = json.loads(machine.succeed("incus query /1.0/networks/" + json.loads(machine.succeed("incus query '/1.0/instances/client?project=dnsapp'"))["expanded_devices"]["eth0"]["network"] + "?project=dnsapp"))["config"]["ipv4.address"].split("/")[0]
+        assert "nameserver " + gateway in resolv, resolv
         machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
 
     with subtest("a service gets its own LAN address when the app asks for it"):

@@ -267,3 +267,50 @@ func TestLANServicesAndNIC(t *testing.T) {
 		t.Fatalf("%v %v", nic, err)
 	}
 }
+
+// Containers get the DNS server of the app's network before they start.
+func TestSetContainerDNS(t *testing.T) {
+	var patches []string
+	incus := func(_ time.Duration, args ...string) (string, error) {
+		path := args[len(args)-1]
+		switch {
+		case strings.HasPrefix(path, "/1.0/instances?recursion=1"):
+			return `[{"name":"cloudflared","type":"container","expanded_devices":{"eth0":{"type":"nic","network":"aio_default"}}},
+			         {"name":"aiostreams","type":"container","expanded_devices":{"eth0":{"type":"nic","network":"aio_default"},"lan":{"type":"nic","nictype":"macvlan"}}},
+			         {"name":"aio-ic-dns","type":"container","expanded_devices":{"eth0":{"network":"aio_default"}}}]`, nil
+		case strings.HasPrefix(path, "/1.0/networks/aio_default"):
+			return `{"config":{"ipv4.address":"10.88.0.1/24"}}`, nil
+		case args[1] == "-X" && args[2] == "PATCH":
+			patches = append(patches, path+" "+args[4])
+			return "", nil
+		}
+		return "", Public("unexpected " + strings.Join(args, " "))
+	}
+	if err := setContainerDNS(incus, "aio"); err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 2 {
+		t.Fatalf("the two service containers, not the sidecar: %v", patches)
+	}
+	for _, p := range patches {
+		if !strings.Contains(p, `"oci.dns.nameservers":"10.88.0.1"`) || !strings.Contains(p, `"oci.dns.search":"incus"`) {
+			t.Fatalf("%s", p)
+		}
+	}
+	noGateway := func(_ time.Duration, args ...string) (string, error) {
+		if strings.HasPrefix(args[len(args)-1], "/1.0/instances") {
+			return `[{"name":"web","type":"container","expanded_devices":{"eth0":{"network":"x"}}}]`, nil
+		}
+		return `{"config":{}}`, nil
+	}
+	if err := setContainerDNS(noGateway, "aio"); err == nil || !strings.Contains(publicError(err), "DNS server") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestStartCommandOnlyStarts(t *testing.T) {
+	got := strings.Join(startCommand([]string{"incus-compose", "-p", "x", "up", "--detach", "--build", "--builder", "/b/buildah", "--pull", "missing"}), " ")
+	if got != "incus-compose -p x up --detach --pull missing --no-build" {
+		t.Fatal(got)
+	}
+}
