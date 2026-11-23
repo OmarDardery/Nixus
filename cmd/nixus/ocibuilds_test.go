@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -135,5 +136,62 @@ func TestReviewLoneDockerfile(t *testing.T) {
 func TestReviewRefusesUnpinnedImage(t *testing.T) {
 	if _, err := reviewFixture(t, "loose", map[string]string{"compose.yaml": "services:\n  web:\n    image: nginx:latest\n"}); err == nil {
 		t.Fatal("an unpinned image was approved")
+	}
+}
+
+// Variables must be set before the containers start, so a service that needs
+// them at startup does not exit and fail the deployment.
+func TestStartCommandOnlyStartsExistingInstances(t *testing.T) {
+	scratch := t.TempDir()
+	t.Setenv("NIXUS_OCI_BUILDAH_BIN", "/nix/store/x-buildah/bin/buildah")
+	built := M{"intentHash": "h", "services": []any{M{"service": "app", "built": true}}}
+	args, _, err := composeUpCommand("incus-compose", []string{"-p", "x"}, built, scratch)
+	if err != nil || !slices.Contains(args, "--build") {
+		t.Fatalf("the first run builds: %v %v", args, err)
+	}
+	start := startCommand(args)
+	if slices.Contains(start, "--build") || slices.Contains(start, "--builder") || slices.Contains(start, "/nix/store/x-buildah/bin/buildah") {
+		t.Fatalf("starting must not build: %v", start)
+	}
+	if !slices.Contains(start, "--no-build") || !slices.Contains(start, "--detach") || !slices.Contains(start, "up") {
+		t.Fatalf("starting still brings the project up detached: %v", start)
+	}
+}
+
+func TestNotRunningNamesTheServices(t *testing.T) {
+	resource := M{"services": []any{"aiostreams", "cloudflared", "ghost"},
+		"instances": M{"a-1": M{"service": "aiostreams", "status": "Running"}, "c-1": M{"service": "cloudflared", "status": "Stopped"}}}
+	got := notRunning(resource)
+	if !strings.Contains(got, "cloudflared is Stopped") || !strings.Contains(got, "ghost has no instance") || strings.Contains(got, "aiostreams is") {
+		t.Fatalf("%q", got)
+	}
+	if notRunning(M{"services": []any{"a"}, "instances": M{"a-1": M{"service": "a", "status": "Running"}}}) != "" {
+		t.Fatal("nothing to report when everything runs")
+	}
+}
+
+func TestAppStartEnvUsesPendingValues(t *testing.T) {
+	if _, err := exec.LookPath("age-keygen"); err != nil {
+		t.Skip("age not installed")
+	}
+	useState(t)
+	dir := t.TempDir()
+	os.Chmod(dir, 0o700)
+	key := filepath.Join(dir, "projects.agekey")
+	if out, err := exec.Command("age-keygen", "-o", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	old := projectsIdentity
+	projectsIdentity = key
+	defer func() { projectsIdentity = old }()
+	if len(appStartEnv("web")) != 0 {
+		t.Fatal("an app without variables starts as before")
+	}
+	if err := sealDeployEnv("web", M{"TUNNEL_TOKEN": "t", "SECRET_KEY": "k"}); err != nil {
+		t.Fatal(err)
+	}
+	got := appStartEnv("web")
+	if got["TUNNEL_TOKEN"] != "t" || got["SECRET_KEY"] != "k" {
+		t.Fatalf("pending variables must be available before the first start: %v", got)
 	}
 }
