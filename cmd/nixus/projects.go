@@ -903,7 +903,7 @@ func (t *ProjectTransactions) write(id string, record M) error {
 }
 
 func (t *ProjectTransactions) rootState(deployment string) error {
-	if a := str(readObj(filepath.Join(t.state, "project-deploy-active.json"))["id"]); a != "" && a != deployment {
+	if a := activeProjectDeployment(t.state); a != "" && a != deployment {
 		return Public("Finish or recover the active project deployment")
 	}
 	if v, _ := readJSON(filepath.Join(t.state, "pending.json"), nil); v != nil && !equalJSON(v, M{}) {
@@ -1582,4 +1582,44 @@ func (t *ProjectTransactions) abandonDeployment(identity, reason string) error {
 		return M{}, nil
 	})
 	return err
+}
+
+var projectWorkerActive = func(identity string) bool {
+	res, err := run([]string{"systemctl", "is-active", "--quiet", "nixus-project-deploy-" + identity}, nil, 10*time.Second, nil, "")
+	// If systemd cannot be asked, assume the worker is alive.
+	return err != nil || (res.Code != 3 && res.Code != 4)
+}
+
+// activeProjectDeployment returns the deployment that holds the host, or "".
+// A deployment whose worker is gone (crash, timeout, reboot, Nixus update) can
+// never finish, so it is released instead of blocking every later change; its
+// journal is kept and marked superseded.
+func activeProjectDeployment(state string) string {
+	marker := filepath.Join(state, "project-deploy-active.json")
+	identity := str(readObj(marker)["id"])
+	if identity == "" {
+		return ""
+	}
+	dir, err := jobDirectory(filepath.Join(state, "project-transactions"), identity, "project transaction")
+	if err != nil {
+		// The marker names no deployment that could ever be resumed.
+		durableUnlink(marker)
+		return ""
+	}
+	path := filepath.Join(dir, "deployment.json")
+	journal := readObj(path)
+	updated, _ := num(journal["updatedAt"])
+	// A worker is started right after the journal is written; give it a moment.
+	if now()-updated < 60 || projectWorkerActive(identity) {
+		return identity
+	}
+	if str(journal["status"]) != "verified" {
+		journal["supersededFrom"] = journal["status"]
+		journal["status"], journal["supersededAt"], journal["supersededReason"] = "superseded", now(), "worker stopped"
+		writeJSON(path, journal)
+	}
+	durableUnlink(marker)
+	fmt.Fprintln(os.Stderr, "nixus: released project deployment", identity, "whose worker had stopped")
+	audit("project-deploy-superseded", M{"identity": identity, "reason": "worker stopped"})
+	return ""
 }
