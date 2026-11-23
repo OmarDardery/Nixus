@@ -502,11 +502,16 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	if err := a.up(str(approved["sourceProject"]), str(approved["project"]), str(approved["revision"])); err != nil {
 		return nil, err
 	}
-	verified, err := a.observe(str(approved["sourceProject"]), str(approved["project"]), str(approved["revision"]))
+	ok := func(r M) bool {
+		return str(r["action"]) == "noop" && (approved["lan"] == nil || str(approved["lan"]) == str(r["lanCurrent"]))
+	}
+	verified, err := settled(func() (M, error) {
+		return a.observe(str(approved["sourceProject"]), str(approved["project"]), str(approved["revision"]))
+	}, ok)
 	if err != nil {
 		return nil, err
 	}
-	if str(verified["action"]) != "noop" || (approved["lan"] != nil && str(approved["lan"]) != str(verified["lanCurrent"])) {
+	if !ok(verified) {
 		return nil, Public("Compose services are not all running the reviewed images" + notRunning(verified) +
 			startDetail(a.incus, str(approved["sourceProject"]), str(approved["project"]), verified))
 	}
@@ -712,9 +717,40 @@ func appOverride(services []byte, gateway string) []byte {
 	var doc M
 	json.Unmarshal(services, &doc)
 	for _, raw := range obj(doc["services"]) {
-		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus"}
+		// A container's address comes by DHCP after its program starts; a
+		// program that exits without network is restarted once it is up.
+		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus",
+			"boot.autorestart": "true", "boot.autostart": "true"}
 	}
 	doc["networks"] = M{"default": M{"x-incus": M{"ipv4.address": gateway + "/24", "ipv4.nat": "true", "ipv6.address": "none"}}}
 	b, _ := json.Marshal(doc)
 	return b
+}
+
+var settleSleep = time.Sleep
+
+// settled observes until the app has been running for three checks in a row
+// (services may restart while their network comes up), or 90 seconds pass,
+// and returns the last observation.
+func settled(observe func() (M, error), ok func(M) bool) (M, error) {
+	var last M
+	streak := 0
+	for i := 0; i < 30; i++ {
+		if i > 0 {
+			settleSleep(3 * time.Second)
+		}
+		r, err := observe()
+		if err != nil {
+			return nil, err
+		}
+		last = r
+		if ok(r) {
+			if streak++; streak == 3 {
+				return r, nil
+			}
+		} else {
+			streak = 0
+		}
+	}
+	return last, nil
 }
