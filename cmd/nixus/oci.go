@@ -1582,7 +1582,7 @@ func ociChildMain(args []string) int {
 		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
 			fmt.Fprintln(os.Stderr, "OCI-VM-CHILD-FAILURE:", err)
 		} else {
-			fmt.Fprintln(os.Stderr, "Isolated OCI operation refused; inspect the reviewed source and policy")
+			fmt.Fprintln(os.Stderr, "Isolated OCI operation refused: "+publicError(err))
 		}
 		return 1
 	}

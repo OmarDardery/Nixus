@@ -260,7 +260,13 @@ var ociRunSandbox = func(workspace, mode, identity string) error {
 			tail = tail[len(tail)-4000:]
 		}
 		os.Stderr.WriteString("nixus: OCI sandbox " + mode + " failed: " + tail + "\n")
-		return Public("Isolated OCI validation/build failed; source was not deployed")
+		reason := ""
+		if lines := strings.Split(strings.TrimSpace(tail), "\n"); len(lines) > 0 {
+			if last := strings.TrimSpace(lines[len(lines)-1]); strings.HasPrefix(last, "Isolated OCI operation refused: ") && len(last) < 300 {
+				reason = ": " + strings.TrimPrefix(last, "Isolated OCI operation refused: ")
+			}
+		}
+		return Public("Isolated OCI validation/build failed" + reason + "; source was not deployed")
 	}
 	return nil
 }
@@ -485,6 +491,32 @@ func (b *OCIBuilds) run(identity string) (M, error) {
 		}
 		record["status"], record["updatedAt"] = "building", now()
 		writeJSON(filepath.Join(dir, "job.json"), record)
+		built := false
+		for _, s := range list(record["services"]) {
+			built = built || isTrue(obj(s)["built"])
+		}
+		if !built {
+			// Prebuilt, digest-pinned images only: nothing to build, so skip the
+			// sandbox and just prepare the Incus project the deploy needs.
+			err := func() error {
+				project, err := incusProjectName(str(record["project"]))
+				if err != nil {
+					return err
+				}
+				return ensureComposeProject(project, b.incus)
+			}()
+			if err != nil {
+				record["status"], record["errorCode"] = "failed", "incus-import-failed"
+				record["errorDetail"] = publicError(err)
+				fmt.Fprintln(os.Stderr, "nixus: OCI project setup failed:", err)
+			} else {
+				record["status"], record["completedAt"], record["importedAt"], record["artifacts"] = "imported", now(), now(), []any{}
+				audit("oci-build-imported", M{"identity": identity, "project": record["project"], "imageCount": 0})
+			}
+			writeJSON(filepath.Join(dir, "job.json"), record)
+			durableUnlink(filepath.Join(b.state, "oci-build-active.json"))
+			return b.status(identity)
+		}
 		var scratch string
 		err = func() error {
 			var spec M
