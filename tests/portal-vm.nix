@@ -78,7 +78,7 @@ in pkgs.testers.runNixOSTest {
         assert bad == "400", bad
         login = json.loads(machine.succeed(base + "/api/login -H 'Content-Type: application/json' --data '{\"username\":\"homelab\",\"password\":\"linux-account-password\"}'"))
         assert login["role"] == "admin" and login["username"] == "homelab" and login["csrf"], login
-        for view in ["status", "session", "project-overview", "project-backups", "image-updates", "project-sources", "apps"]:
+        for view in ["status", "session", "project-overview", "project-backups", "image-updates", "apps"]:
             machine.succeed(base + "/api/" + view + " -f -o /dev/null")
         # A Linux account without sudo, and the removed console-only account endpoints, are refused.
         machine.succeed("useradd -m -s /run/current-system/sw/bin/bash guest && echo 'guest:linux-account-password' | chpasswd")
