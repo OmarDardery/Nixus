@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -139,22 +140,17 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 	}
 }
 
-// Variables must be set before the containers start, so a service that needs
-// them at startup does not exit and fail the deployment.
-func TestStartCommandOnlyStartsExistingInstances(t *testing.T) {
-	scratch := t.TempDir()
-	t.Setenv("NIXUS_OCI_BUILDAH_BIN", "/nix/store/x-buildah/bin/buildah")
-	built := M{"intentHash": "h", "services": []any{M{"service": "app", "built": true}}}
-	args, _, err := composeUpCommand("incus-compose", []string{"-p", "x"}, built, scratch)
-	if err != nil || !slices.Contains(args, "--build") {
-		t.Fatalf("the first run builds: %v %v", args, err)
+// An app's variables are part of the Compose model, so each container is
+// created with them; "$" must reach the container literally.
+func TestEnvOverrideGivesEveryServiceTheVariables(t *testing.T) {
+	var doc M
+	if err := json.Unmarshal(envOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}), &doc); err != nil {
+		t.Fatal(err)
 	}
-	start := startCommand(args)
-	if slices.Contains(start, "--build") || slices.Contains(start, "--builder") || slices.Contains(start, "/nix/store/x-buildah/bin/buildah") {
-		t.Fatalf("starting must not build: %v", start)
-	}
-	if !slices.Contains(start, "--no-build") || !slices.Contains(start, "--detach") || !slices.Contains(start, "up") {
-		t.Fatalf("starting still brings the project up detached: %v", start)
+	for _, s := range []string{"web", "tunnel"} {
+		if got := obj(obj(obj(doc["services"])[s])["environment"])["TUNNEL_TOKEN"]; got != "a$$b" {
+			t.Fatalf("%s: %v", s, got)
+		}
 	}
 }
 
@@ -184,14 +180,21 @@ func TestAppStartEnvUsesPendingValues(t *testing.T) {
 	old := projectsIdentity
 	projectsIdentity = key
 	defer func() { projectsIdentity = old }()
-	if len(appStartEnv("web")) != 0 {
+	if v, err := appStartEnv("web"); err != nil || len(v) != 0 {
 		t.Fatal("an app without variables starts as before")
 	}
 	if err := sealDeployEnv("web", M{"TUNNEL_TOKEN": "t", "SECRET_KEY": "k"}); err != nil {
 		t.Fatal(err)
 	}
-	got := appStartEnv("web")
+	got, err := appStartEnv("web")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got["TUNNEL_TOKEN"] != "t" || got["SECRET_KEY"] != "k" {
 		t.Fatalf("pending variables must be available before the first start: %v", got)
+	}
+	os.WriteFile(appEnvPath("web"), []byte("not age data"), 0o600)
+	if _, err := appStartEnv("web"); err == nil {
+		t.Fatal("an unreadable pending file must be an error, not an app started without its variables")
 	}
 }
