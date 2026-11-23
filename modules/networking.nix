@@ -46,6 +46,10 @@ in {
       '') site.connectivity.privateAccess}
       iifname { ${guestIfaces} } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
       iifname { ${guestIfaces} } oifname ${iface} meta nfproto ipv4 accept
+      # br_netfilter sends same-bridge traffic through this IPv4 chain too.
+      # Ask the kernel whether the destination routes back through the incoming
+      # app bridge; a route to another app's bridge does not match.
+      iifname "nxa-*" meta nfproto ipv4 fib daddr . iif oif exists accept
       # App networks reach the internet, not each other or the LAN.
       iifname "nxa-*" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
       iifname "nxa-*" oifname ${iface} meta nfproto ipv4 accept

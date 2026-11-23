@@ -207,3 +207,9 @@ The JSON describes the Nixus policy. Check custom firewall rules and actual
 socket state with `sudo nft list ruleset` and `sudo ss -ltn`.
 
 Bootstrap retains the installed firewall and interface-scoped portal ports.
+
+When bridge netfilter is enabled, same-bridge IPv4 traffic also traverses the
+host forward chain. The app rule uses the kernel's FIB lookup to accept only
+destinations routed back through the incoming app bridge. A destination on
+another app bridge still reaches the private-range deny rule. This preserves
+Incus bridge-netfilter features without hard-coding allocated app subnets.

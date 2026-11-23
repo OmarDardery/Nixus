@@ -77,6 +77,7 @@ in pkgs.testers.runNixOSTest {
     machine.start()
     machine.wait_for_unit("incus-preseed.service")
     machine.wait_for_unit("nftables.service")
+    assert machine.succeed("cat /proc/sys/net/bridge/bridge-nf-call-iptables").strip() == "1"
     machine.succeed("ip netns add edge; ip link add uplink type veth peer name edge0; ip link set edge0 netns edge")
     machine.succeed("ip address add 203.0.113.2/24 dev uplink; ip link set uplink up")
     machine.succeed("ip netns exec edge ip link set lo up; ip netns exec edge ip address add 203.0.113.1/24 dev edge0; ip netns exec edge ip link set edge0 up")
@@ -106,9 +107,12 @@ in pkgs.testers.runNixOSTest {
 
     client_ip = json.loads(machine.succeed("ip -n client -j -4 address show eth0"))[0]["addr_info"][0]["local"]
     machine.succeed("systemd-run --unit=client-echo ip netns exec client ${pkgs.python3}/bin/python3 ${echo}")
-    machine.wait_until_succeeds(f"ip netns exec peer python3 ${probe} tcp {client_ip} 7844")
+    machine.wait_for_unit("client-echo.service")
+    machine.wait_until_succeeds(f"ip netns exec peer python3 ${probe} tcp {client_ip} 7844", timeout=30)
+    machine.succeed(f"ip netns exec peer python3 ${probe} udp {client_ip} 7844")
 
     def check_egress():
+        machine.succeed(f"ip netns exec peer python3 ${probe} tcp {client_ip} 7844")
         for proto in ["tcp", "udp"]:
             machine.succeed(f"ip netns exec client python3 ${probe} {proto} 203.0.113.1 7844")
         gateway = gateways["nxa-testa"]
@@ -124,6 +128,7 @@ in pkgs.testers.runNixOSTest {
         machine.fail("ip netns exec client python3 ${probe} tcp 10.20.0.1 7844")
         machine.fail("ip netns exec client python3 ${probe} connect 203.0.113.2 9440")
         machine.fail(f"ip netns exec isolated python3 ${probe} connect {client_ip} 7844")
+        machine.fail(f"ip netns exec isolated python3 ${probe} udp {client_ip} 7844")
     with subtest("only the dedicated controller bridge reaches the authenticated Incus API"):
         machine.succeed("ip netns exec controller python3 ${probe} connect 203.0.113.2 8443")
         machine.fail("ip netns exec client python3 ${probe} connect 203.0.113.2 8443")
