@@ -377,12 +377,50 @@ func offHostBackup(policy M, paths []string) error {
 			return err
 		}
 	}
-	if err := resticRun(env, 12*time.Hour, append([]string{"backup", "--tag", "nixus-project", "--host", "nixus"}, paths...)...); err != nil {
+	host := backupHost()
+	if err := resticRun(env, 12*time.Hour, resticBackupArgs(host, paths)...); err != nil {
 		return err
 	}
 	r := obj(policy["retention"])
-	return resticRun(env, 2*time.Hour, "forget", "--tag", "nixus-project", "--prune",
-		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"]))
+	if err := resticRun(env, 2*time.Hour, resticForgetArgs(host, r)...); err != nil {
+		return err
+	}
+	// Snapshots from before installations had their own identity share one host
+	// name; apply the same retention to them so they do not accumulate.
+	return resticRun(env, 2*time.Hour, resticForgetArgs(legacyBackupHost, r)...)
+}
+
+// Retention groups snapshots by host and tags, never by path: every generation
+// is a new directory, so grouping by path made each snapshot its own group and
+// every one qualified for daily retention (#112). Each installation has its own
+// stable host name, so two installations sharing a repository expire
+// independently.
+const legacyBackupHost = "nixus"
+
+func resticBackupArgs(host string, paths []string) []string {
+	return append([]string{"backup", "--tag", "nixus-project", "--host", host}, paths...)
+}
+
+func resticForgetArgs(host string, r M) []string {
+	return []string{"forget", "--tag", "nixus-project", "--host", host, "--group-by", "host,tags", "--prune",
+		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"])}
+}
+
+// backupHost is this installation's stable restic host name. The id lives with
+// the other credentials, so it travels in the encrypted snapshot and a restored
+// host continues the same identity.
+func backupHost() string {
+	p := filepath.Join(backupSecretsDir, "installation-id")
+	if raw, err := os.ReadFile(p); err == nil {
+		if id := strings.TrimSpace(string(raw)); fullmatch(re(`[0-9a-f]{16}`), id) {
+			return "nixus-" + id
+		}
+	}
+	id := tokenHex(8)
+	if err := writeSecretFile(p, []byte(id+"\n")); err != nil {
+		return legacyBackupHost
+	}
+	return "nixus-" + id
 }
 
 func verifyOffHost(policy M) error {

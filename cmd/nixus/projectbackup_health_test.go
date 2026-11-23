@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBackupHealthUsesTheExplicitOutcome(t *testing.T) {
@@ -124,5 +127,56 @@ func TestScopedBackupRefusesASharedVolumeBeforeStoppingAnything(t *testing.T) {
 	// Selecting both is fine.
 	if _, err := scopeGroups(groups, map[string]bool{"a": true, "b": true}, namespaces); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Several days of backups, each from a new generation directory, must expire
+// down to the retention policy, and two installations sharing a repository must
+// not affect each other (#112). Uses the real restic when it is available.
+func TestRetentionExpiresGenerationsPerInstallation(t *testing.T) {
+	restic := "/nix/store/kglf8qzqjmf2jandyqxkr0l57jwiix2n-restic-0.18.1/bin/restic"
+	if _, err := os.Stat(restic); err != nil {
+		t.Skip("restic not available")
+	}
+	work := t.TempDir()
+	repo := filepath.Join(work, "repo")
+	env := []string{"PATH=" + filepath.Dir(restic) + ":/usr/bin:/bin", "HOME=" + work, "RESTIC_REPOSITORY=" + repo, "RESTIC_PASSWORD=test"}
+	run1 := func(args ...string) string {
+		res, err := run(append([]string{restic}, args...), nil, 2*time.Minute, env, "")
+		if err != nil || res.Code != 0 {
+			t.Fatalf("restic %v: %v %s", args, err, res.Stderr)
+		}
+		return string(res.Stdout)
+	}
+	run1("init")
+	day := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, host := range []string{"nixus-aaaaaaaaaaaaaaaa", "nixus-bbbbbbbbbbbbbbbb"} {
+		for d := 0; d < 6; d++ {
+			gen := filepath.Join(work, host, "generation-"+strconv.Itoa(d))
+			os.MkdirAll(gen, 0o700)
+			os.WriteFile(filepath.Join(gen, "file"), []byte(strconv.Itoa(d)), 0o600)
+			args := resticBackupArgs(host, []string{gen})
+			args = append(args, "--time", day.AddDate(0, 0, d).Format("2006-01-02 15:04:05"))
+			run1(args...)
+		}
+	}
+	count := func(host string) int {
+		var snaps []M
+		raw := run1("snapshots", "--json", "--host", host)
+		if err := json.Unmarshal([]byte(raw), &snaps); err != nil {
+			t.Fatal(err)
+		}
+		return len(snaps)
+	}
+	if count("nixus-aaaaaaaaaaaaaaaa") != 6 {
+		t.Fatal("fixture should hold six snapshots per installation")
+	}
+	policy := M{"daily": 2, "weekly": 0, "monthly": 0}
+	run1(resticForgetArgs("nixus-aaaaaaaaaaaaaaaa", policy)...)
+	if got := count("nixus-aaaaaaaaaaaaaaaa"); got != 2 {
+		t.Fatalf("installation a kept %d snapshots, want 2", got)
+	}
+	if got := count("nixus-bbbbbbbbbbbbbbbb"); got != 6 {
+		t.Fatalf("installation b lost snapshots: %d", got)
 	}
 }
