@@ -115,6 +115,38 @@ func publishedProjectPolicy(t *ProjectTransactions) (M, M, error) {
 	return policy, inventory, nil
 }
 
+// workspaceApproved returns the last published review and whether the live
+// workspace is exactly what that review approved.
+func workspaceApproved(t *ProjectTransactions) (string, bool) {
+	id := str(readObj(filepath.Join(t.state, "project-last.json"))["id"])
+	if id == "" {
+		return "", false
+	}
+	record, err := t.record(id)
+	if err != nil || str(record["status"]) != "published-source" {
+		return "", false
+	}
+	live, err := validateWorkspace(t.workspace, true)
+	return id, err == nil && str(live["sourceHash"]) == str(record["candidateHash"])
+}
+
+// adoptWorkspaceChange records the live workspace as the approved one. It is
+// used right after an approved change that does not go through a project
+// review (published secret ciphertext), so backups keep accepting the
+// workspace while unreviewed edits to it are still rejected (#108).
+func adoptWorkspaceChange(t *ProjectTransactions, id string) error {
+	record, err := t.record(id)
+	if err != nil {
+		return err
+	}
+	live, err := validateWorkspace(t.workspace, true)
+	if err != nil {
+		return err
+	}
+	record["candidateHash"] = live["sourceHash"]
+	return t.write(id, record)
+}
+
 func includedProjects(policy, inventory M) []string {
 	all := keys(obj(inventory["projects"]))
 	if str(policy["includeProjects"]) == "all" {

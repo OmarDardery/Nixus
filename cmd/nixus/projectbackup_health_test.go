@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestBackupHealthUsesTheExplicitOutcome(t *testing.T) {
 	const now = 1_000_000.0
@@ -28,5 +32,46 @@ func TestBackupHealthUsesTheExplicitOutcome(t *testing.T) {
 		if got := backupHealth(c.status, now); got != c.want {
 			t.Errorf("%s: got %s, want %s", name, got, c.want)
 		}
+	}
+}
+
+// Saving an app variable changes ciphertext in the live workspace without a
+// project review. Backups must still accept it, while an unreviewed edit to a
+// declaration is still rejected (#108).
+func TestApprovedSecretChangeKeepsTheWorkspaceAccepted(t *testing.T) {
+	state := useState(t)
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	writeFile(t, filepath.Join(workspace, "flake.nix"), "{ outputs = { self }: {}; }\n")
+	writeFile(t, filepath.Join(workspace, "flake.lock"), `{"nodes":{"root":{}},"root":"root","version":7}`)
+	writeFile(t, filepath.Join(workspace, "web", "default.nix"), "{ ... }: { }\n")
+	writeFile(t, filepath.Join(workspace, "web", "secrets.enc.yaml"), "one\n")
+	tx := NewProjectTransactions(workspace, state)
+	live, err := validateWorkspace(workspace, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := tokenHex(16)
+	dir := filepath.Join(tx.jobs, id)
+	os.MkdirAll(dir, 0o700)
+	writeJSON(filepath.Join(dir, "job.json"), M{"id": id, "status": "published-source", "candidateHash": live["sourceHash"]})
+	writeJSON(filepath.Join(state, "project-last.json"), M{"id": id})
+	if _, ok := workspaceApproved(tx); !ok {
+		t.Fatal("a freshly published workspace must be approved")
+	}
+	// An approved secret change: ciphertext differs, then the change is adopted.
+	writeFile(t, filepath.Join(workspace, "web", "secrets.enc.yaml"), "two\n")
+	if _, ok := workspaceApproved(tx); ok {
+		t.Fatal("the changed ciphertext is not yet recorded")
+	}
+	if err := adoptWorkspaceChange(tx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := workspaceApproved(tx); !ok {
+		t.Fatal("backups would reject a legitimate secret change")
+	}
+	// An unreviewed declaration edit is still caught.
+	writeFile(t, filepath.Join(workspace, "web", "default.nix"), "{ ... }: { evil = true; }\n")
+	if _, ok := workspaceApproved(tx); ok {
+		t.Fatal("an unreviewed declaration edit was accepted")
 	}
 }

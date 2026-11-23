@@ -8,6 +8,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -772,6 +773,14 @@ func (s *Secrets) publish(actor string, token any, acknowledge bool) (M, error) 
 	if lexists(pending) {
 		return nil, Public("Unrecovered secret publication; restore before retrying")
 	}
+	// Remember whether the workspace is exactly what was last approved, so the
+	// approved ciphertext change below does not make backups reject it.
+	var reviewed *ProjectTransactions
+	reviewID, wasApproved := "", false
+	if s.projects == projectsWorkspace {
+		reviewed = NewProjectTransactions("", "")
+		reviewID, wasApproved = workspaceApproved(reviewed)
+	}
 	writeJSON(pending, M{"project": project, "before": base, "after": record["revision"], "reviewId": token,
 		"beforeRecipients": strings2any(current), "afterRecipients": strings2any(next)})
 	if err := atomic(filepath.Join(projectDir, ".sops.yaml"), sopsPolicy(next), 0o644, ""); err != nil {
@@ -786,6 +795,11 @@ func (s *Secrets) publish(actor string, token any, acknowledge bool) (M, error) 
 		return nil, err
 	}
 	durableUnlink(pending)
+	if wasApproved {
+		if err := adoptWorkspaceChange(reviewed, reviewID); err != nil {
+			fmt.Fprintln(os.Stderr, "nixus: could not record the approved secret change for backups:", err)
+		}
+	}
 	audit("native-secret-ciphertext-published", M{"principal": actor, "project": project, "key": record["key"],
 		"operation": record["action"], "revision": record["revision"]})
 	notifyAppsRepo()
