@@ -14,7 +14,7 @@ Rules, checked before anything runs:
 - Images are pinned by digest: `image: ghcr.io/org/app@sha256:…`. Use
   **Pin** on the app page to turn tags into digests. `FROM` lines in
   Dockerfiles follow the same rule.
-- Builds run offline in a sandbox.
+- Images are pulled, and Dockerfiles are built, by `incus-compose` with Buildah on the server.
 - Named volumes (`volumes: { data: {} }`) become Incus volumes, are backed up
   and survive updates. Host paths are not allowed.
 - `ports:` publish on the server's address.

@@ -1,25 +1,17 @@
 package main
 
 // OCI source planning, Compose secret classification and model validation,
-// untrusted artifact verification, fingerprint-checked Incus image import and
-// the unprivileged builder child that runs *inside* the bubblewrap sandbox.
+// and the pinned incus-compose parse of a reviewed source.
 
 import (
-	"archive/tar"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -132,8 +124,6 @@ func sourcePlan(project, revision any, publisher *PublishedSources) (M, error) {
 	if unpinnedBases(lock) {
 		reasons = append(reasons, "dockerfile-base-image-must-be-pinned-by-digest")
 	}
-	reasons = append(reasons, "isolated-oci-builder-not-qualified", "source-qualified-image-import-not-qualified",
-		"incus-compose-owned-deployment-not-qualified")
 	return M{"format": 1, "project": p, "revision": attestation["revision"], "fileCount": attestation["fileCount"],
 		"bytes": attestation["bytes"], "sourceFiles": entriesAny(files), "mode": mode, "entrypoint": selected,
 		"generatedCompose": generated, "proposedImage": image, "composeSecretPolicy": policy, "buildContextHash": rev,
@@ -725,7 +715,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 		}
 		lines = append(lines, "  "+str(svc["service"])+":")
 		if isTrue(svc["built"]) {
-			lines = append(lines, "    image: "+jsonString(str(svc["image"])), "    build: !reset null")
+			lines = append(lines, "    image: "+jsonString(str(svc["image"])))
 		}
 		if len(devices) > 0 {
 			lines = append(lines, "    x-incus-compose:", "      devices:")
@@ -754,249 +744,11 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 		"note": "Intent only. Apply requires separate approval and exact Incus ownership checks."}, nil
 }
 
-// --- untrusted artifact verification -------------------------------------------
-
-const maxImageBytes = 1024 * 1024 * 1024
-const maxArchiveMembers = 4096
 const maxManifestJSON = 1024 * 1024
-const maxRootfsEntries = 262144
 
-var ociMediaTypes = map[string]bool{"application/vnd.oci.image.manifest.v1+json": true, "application/vnd.oci.image.config.v1+json": true,
-	"application/vnd.oci.image.layer.v1.tar+gzip": true, "application/vnd.oci.image.layer.v1.tar": true, "application/vnd.oci.image.layer.v1.tar+zstd": true}
-
-func ociRef(v any) (string, error) {
-	o := obj(v)
-	digest := str(o["digest"])
-	size, ok := intValue(o["size"])
-	if o == nil || !ociMediaTypes[str(o["mediaType"])] || !strings.HasPrefix(digest, "sha256:") || !fullmatch(hex64, digest[min(7, len(digest)):]) || !ok || size < 0 {
-		return "", Public("OCI image reference is malformed or unsupported")
-	}
-	return digest[7:], nil
-}
-
-func checkArtifactFile(p string, expectedSHA any, expectedBytes any) (int64, error) {
-	info, err := os.Lstat(p)
-	size, ok := intValue(expectedBytes)
-	if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Nlink != 1 || !ok || info.Size() != int64(size) ||
-		info.Size() <= 0 || info.Size() > maxImageBytes || !fullmatch(hex64, str(expectedSHA)) {
-		return 0, Public("Untrusted OCI artifact metadata")
-	}
-	digest, err := fileSHA256(p)
-	if err != nil || digest != str(expectedSHA) {
-		return 0, Public("OCI artifact hash differs from reviewed builder output")
-	}
-	return info.Size(), nil
-}
-
-// verifyArchive checks a single OCI tar and its reachable digest graph.
-func verifyArchive(p string, expectedSHA, expectedBytes any) (M, error) {
-	size, err := checkArtifactFile(p, expectedSHA, expectedBytes)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	blobs := map[string]int64{}
-	small := map[string][]byte{}
-	content := map[string][]byte{}
-	seen := map[string]bool{}
-	tr := tar.NewReader(f)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, Public("OCI archive is invalid")
-		}
-		if len(seen) >= maxArchiveMembers {
-			return nil, Public("OCI archive contains excessive members")
-		}
-		name := strings.TrimPrefix(h.Name, "./")
-		if seen[name] {
-			return nil, Public("Duplicate OCI archive entry")
-		}
-		seen[name] = true
-		if h.Typeflag == tar.TypeDir {
-			if n := strings.TrimRight(name, "/"); n != "blobs" && n != "blobs/sha256" {
-				return nil, Public("Unexpected OCI directory metadata")
-			}
-			continue
-		}
-		if h.Typeflag != tar.TypeReg {
-			return nil, Public("OCI archive contains symbolic/hard links or special files")
-		}
-		isBlob := strings.HasPrefix(name, "blobs/sha256/") && fullmatch(hex64, strings.TrimPrefix(name, "blobs/sha256/"))
-		if name != "oci-layout" && name != "index.json" && !isBlob {
-			return nil, Public("Unexpected OCI archive path or member type")
-		}
-		if h.Size < 0 || h.Size > maxImageBytes {
-			return nil, Public("OCI archive member exceeds budget")
-		}
-		hash := sha256.New()
-		var buf bytes.Buffer
-		w := io.Writer(hash)
-		if h.Size <= maxManifestJSON {
-			w = io.MultiWriter(hash, &buf)
-		}
-		n, err := io.Copy(w, tr)
-		if err != nil || n != h.Size {
-			return nil, Public("OCI archive member is truncated")
-		}
-		if isBlob {
-			ident := strings.TrimPrefix(name, "blobs/sha256/")
-			if ident != hex.EncodeToString(hash.Sum(nil)) {
-				return nil, Public("OCI blob content digest does not match path")
-			}
-			blobs[ident] = h.Size
-			if h.Size <= maxManifestJSON {
-				content[ident] = buf.Bytes()
-			}
-		} else if h.Size <= maxManifestJSON {
-			small[name] = buf.Bytes()
-		} else {
-			return nil, Public("OCI metadata exceeds size limit")
-		}
-	}
-	if len(small) != 2 || small["oci-layout"] == nil || small["index.json"] == nil {
-		return nil, Public("OCI archive lacks required descriptors")
-	}
-	layout, err := parseObject(small["oci-layout"])
-	if err != nil || len(layout) != 1 || str(layout["imageLayoutVersion"]) != "1.0.0" {
-		return nil, Public("Unsupported OCI image archive layout")
-	}
-	index, err := parseObject(small["index.json"])
-	manifests := list(index["manifests"])
-	if v, _ := num(index["schemaVersion"]); err != nil || v != 2 || len(manifests) != 1 {
-		return nil, Public("Only a single-image OCI manifest is supported")
-	}
-	manifestID, err := ociRef(manifests[0])
-	if err != nil {
-		return nil, err
-	}
-	wantSize, _ := intValue(obj(manifests[0])["size"])
-	if blobs[manifestID] != int64(wantSize) || content[manifestID] == nil {
-		return nil, Public("OCI top-level manifest blob is missing")
-	}
-	manifest, err := parseObject(content[manifestID])
-	layers := list(manifest["layers"])
-	if v, _ := num(manifest["schemaVersion"]); err != nil || v != 2 || manifest["layers"] == nil || len(layers) > 128 {
-		return nil, Public("Unsupported OCI image manifest")
-	}
-	for _, item := range append([]any{manifest["config"]}, layers...) {
-		ident, err := ociRef(item)
-		if err != nil {
-			return nil, err
-		}
-		s, _ := intValue(obj(item)["size"])
-		if got, ok := blobs[ident]; !ok || got != int64(s) {
-			return nil, Public("OCI image config or layer missing from archive")
-		}
-	}
-	configID, _ := ociRef(manifest["config"])
-	if content[configID] == nil {
-		return nil, Public("OCI image config is oversized")
-	}
-	image, err := parseObject(content[configID])
-	if err != nil || (image["config"] != nil && obj(image["config"]) == nil) || !isStr(image["architecture"]) {
-		return nil, Public("OCI image config is malformed")
-	}
-	config := obj(image["config"])
-	if config == nil {
-		config = M{}
-	}
-	return M{"sha256": expectedSHA, "bytes": size, "ociManifestDigest": manifestID, "blobs": len(blobs),
-		"architecture": image["architecture"], "config": config}, nil
-}
-
-func rootfsMemberName(name string) (string, error) {
-	if name == "." || name == "./" {
-		return ".", nil
-	}
-	if !strings.HasPrefix(name, "./") {
-		return "", Public("Rootfs member is not relative to the image root")
-	}
-	parts := strings.Split(strings.TrimRight(name[2:], "/"), "/")
-	for _, p := range parts {
-		if p == "" || p == "." || p == ".." {
-			return "", Public("Rootfs member path escapes or is not normalized")
-		}
-	}
-	return strings.Join(parts, "/"), nil
-}
-
-// verifyRootfs checks the sandbox's flattened rootfs tar without extracting it.
-func verifyRootfs(p string, expectedSHA, expectedBytes any) (M, error) {
-	if _, err := checkArtifactFile(p, expectedSHA, expectedBytes); err != nil {
-		if strings.Contains(publicError(err), "hash") {
-			return nil, Public("Rootfs hash differs from builder output")
-		}
-		return nil, Public("Untrusted rootfs artifact metadata")
-	}
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	seen := map[string]bool{}
-	accounts := map[string]string{}
-	tr := tar.NewReader(f)
-	for count := 0; ; count++ {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, Public("Rootfs archive is invalid")
-		}
-		if count >= maxRootfsEntries {
-			return nil, Public("Rootfs contains excessive members")
-		}
-		name, err := rootfsMemberName(h.Name)
-		if err != nil {
-			return nil, err
-		}
-		if seen[name] && h.Typeflag != tar.TypeDir {
-			return nil, Public("Duplicate rootfs member")
-		}
-		switch h.Typeflag {
-		case tar.TypeLink:
-			target, err := rootfsMemberName("./" + strings.TrimPrefix(h.Linkname, "./"))
-			if err != nil || !seen[target] {
-				return nil, Public("Rootfs hard link target is outside the archive")
-			}
-		case tar.TypeDir, tar.TypeReg, tar.TypeSymlink:
-		default:
-			return nil, Public("Rootfs contains device nodes, FIFOs or other special files")
-		}
-		if h.Mode&0o6000 != 0 && h.Uid != 0 {
-			return nil, Public("Rootfs contains set-ID files owned by an unprivileged user")
-		}
-		seen[name] = true
-		if (name == "etc/passwd" || name == "etc/group") && h.Typeflag == tar.TypeReg {
-			if h.Size > 65536 {
-				return nil, Public("Rootfs account database is oversized")
-			}
-			data, _ := io.ReadAll(tr)
-			accounts[name] = strings.ToValidUTF8(string(data), "�")
-		}
-	}
-	return M{"sha256": expectedSHA, "bytes": expectedBytes, "passwd": accounts["etc/passwd"], "group": accounts["etc/group"]}, nil
-}
-
-// --- Incus image import (#47) ------------------------------------------------
-
-const defaultImagePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 const imageOwnerKey = "user.nixus.owner"
 const imageBackendKey = "user.nixus.backend"
 const composeBackend = "incus-compose"
-
-var imageArchitectures = map[string]string{"amd64": "x86_64", "arm64": "aarch64"}
-var localImage = re(`localhost/(nixus-[a-z0-9-]{1,50}):([0-9a-f]{1,64})`)
-var envName = re(`[A-Za-z_][A-Za-z0-9_]*`)
 
 func incusProjectName(name string) (string, error) {
 	value := regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(strings.ToLower(name), "-")
@@ -1005,194 +757,6 @@ func incusProjectName(name string) (string, error) {
 		return "", Public("Project name has no Incus equivalent")
 	}
 	return value, nil
-}
-
-func aliasFor(image string) (string, error) {
-	m := localImage.FindStringSubmatch(image)
-	if m == nil || m[0] != image {
-		return "", Public("Only reviewed local Nixus image references can be imported")
-	}
-	return "local/" + m[1] + ":" + m[2], nil
-}
-
-type accountRow []string
-
-func accountRows(text string) []accountRow {
-	var rows []accountRow
-	for _, line := range strings.Split(text, "\n") {
-		f := strings.Split(line, ":")
-		if len(f) >= 3 && fullmatch(re(`[0-9]+`), f[2]) {
-			rows = append(rows, f)
-		}
-	}
-	return rows
-}
-
-func atoiSafe(s string) int64 {
-	var n int64
-	for _, c := range s {
-		n = n*10 + int64(c-'0')
-		if n > 1<<40 {
-			return n
-		}
-	}
-	return n
-}
-
-func imageIdentity(value string, rows []accountRow, kind string) (int64, error) {
-	var number int64
-	if fullmatch(re(`[0-9]+`), value) {
-		number = atoiSafe(value)
-	} else {
-		var found []int64
-		for _, r := range rows {
-			if r[0] == value {
-				found = append(found, atoiSafe(r[2]))
-			}
-		}
-		if len(found) != 1 {
-			return 0, Public("Image " + kind + " is not a number and is not defined in the image")
-		}
-		number = found[0]
-	}
-	if number > 0xFFFFFFFE {
-		return 0, Public("Image " + kind + " is out of range")
-	}
-	return number, nil
-}
-
-func imageStrings(v any, label string) ([]string, error) {
-	if v == nil {
-		return nil, nil
-	}
-	l, ok := anyStrings(v)
-	if !ok || len(l) > 256 {
-		return nil, Public("Image " + label + " must be a list of strings")
-	}
-	return l, nil
-}
-
-func runtimeSpec(config M, passwd, group string) ([]byte, error) {
-	if config == nil {
-		return nil, Public("Image config is malformed")
-	}
-	entry, err := imageStrings(config["Entrypoint"], "entrypoint")
-	if err != nil {
-		return nil, err
-	}
-	cmd, err := imageStrings(config["Cmd"], "command")
-	if err != nil {
-		return nil, err
-	}
-	args := append(entry, cmd...)
-	if len(args) == 0 {
-		return nil, Public("Image defines no ENTRYPOINT or CMD to run")
-	}
-	users, groups := accountRows(passwd), accountRows(group)
-	user, ok := config["User"].(string)
-	if config["User"] != nil && !ok {
-		return nil, Public("Image user is malformed")
-	}
-	name, groupName, _ := strings.Cut(user, ":")
-	var uid, gid int64
-	if name != "" {
-		if uid, err = imageIdentity(name, users, "user"); err != nil {
-			return nil, err
-		}
-	}
-	if groupName != "" {
-		if gid, err = imageIdentity(groupName, groups, "group"); err != nil {
-			return nil, err
-		}
-	} else {
-		for _, r := range users {
-			if atoiSafe(r[2]) == uid && len(r) > 3 && fullmatch(re(`[0-9]+`), r[3]) {
-				gid = atoiSafe(r[3])
-				break
-			}
-		}
-	}
-	env := []string{"PATH=" + defaultImagePath, "TERM=xterm"}
-	extra, err := imageStrings(config["Env"], "environment")
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range extra {
-		key, _, has := strings.Cut(e, "=")
-		if !has || !fullmatch(envName, key) {
-			return nil, Public("Image environment entry is malformed")
-		}
-		var kept []string
-		for _, x := range env {
-			if !strings.HasPrefix(x, key+"=") {
-				kept = append(kept, x)
-			}
-		}
-		env = append(kept, e)
-	}
-	hasHome := false
-	for _, e := range env {
-		hasHome = hasHome || strings.HasPrefix(e, "HOME=")
-	}
-	if !hasHome {
-		for _, r := range users {
-			if atoiSafe(r[2]) == uid && len(r) > 5 && r[5] != "" {
-				env = append(env, "HOME="+r[5])
-				break
-			}
-		}
-	}
-	cwd := "/"
-	if v, ok := config["WorkingDir"]; ok && v != nil && v != "" {
-		s, ok := v.(string)
-		if !ok || !strings.HasPrefix(s, "/") {
-			return nil, Public("Image working directory must be absolute")
-		}
-		cwd = s
-	}
-	spec := M{"ociVersion": "1.2.0", "process": M{"args": strings2any(args), "env": strings2any(env), "cwd": cwd,
-		"user": M{"uid": uid, "gid": gid}}}
-	return []byte(canonical(spec)), nil
-}
-
-func metadataTar(image, architecture string, created int64, configJSON []byte) ([]byte, error) {
-	arch, ok := imageArchitectures[architecture]
-	if !ok {
-		return nil, Public("Unsupported image architecture")
-	}
-	if created < 0 {
-		return nil, Public("Image creation time is malformed")
-	}
-	metadata := []byte(canonical(M{"architecture": arch, "creation_date": created,
-		"properties": M{"description": image + " (built by Nixus)", "type": "oci"}}))
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for _, f := range []struct {
-		name string
-		data []byte
-	}{{"metadata.yaml", metadata}, {"config.json", configJSON}} {
-		tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0o644, Size: int64(len(f.data)), ModTime: time.Unix(created, 0),
-			Typeflag: tar.TypeReg, Format: tar.FormatPAX})
-		tw.Write(f.data)
-	}
-	tw.Close()
-	return buf.Bytes(), nil
-}
-
-func imageFingerprint(metadataPath, rootfsPath string) (string, error) {
-	h := sha256.New()
-	for _, p := range []string{metadataPath, rootfsPath} {
-		f, err := os.Open(p)
-		if err != nil {
-			return "", err
-		}
-		_, err = io.Copy(h, f)
-		f.Close()
-		if err != nil {
-			return "", err
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 type incusFunc func(timeout time.Duration, args ...string) (string, error)
@@ -1236,61 +800,15 @@ func ensureComposeProject(project string, incus incusFunc) error {
 	return nil
 }
 
-var importedFingerprint = regexp.MustCompile(`fingerprint: ([0-9a-f]{64})`)
+// --- Compose model (parsed by the pinned incus-compose, then validated) --------
 
-func importImage(project, alias, expected, metadataPath, rootfsPath string, incus incusFunc) (M, error) {
-	if !fullmatch(hex64, expected) {
-		return nil, Public("Expected image fingerprint is malformed")
-	}
-	suffix := "?project=" + project
-	if incusQueryObj(incus, "/1.0/images/"+expected+suffix) == nil {
-		out, err := incus(1800*time.Second, "image", "import", metadataPath, rootfsPath, "--project", project)
-		if err != nil {
-			return nil, err
-		}
-		if m := importedFingerprint.FindStringSubmatch(out); m != nil && m[1] != expected {
-			incus(0, "image", "delete", m[1], "--project", project)
-			return nil, Public("Incus computed a different image fingerprint; the import was removed")
-		}
-		if incusQueryObj(incus, "/1.0/images/"+expected+suffix) == nil {
-			return nil, Public("Incus did not store the image under the expected fingerprint")
-		}
-	}
-	image := incusQueryObj(incus, "/1.0/images/"+expected+suffix)
-	if str(jget(image, "properties", "type")) != "oci" {
-		return nil, Public("Imported image is not marked as an OCI image")
-	}
-	current := incusQueryObj(incus, "/1.0/images/aliases/"+alias+suffix)
-	if current == nil {
-		if _, err := incus(0, "image", "alias", "create", alias, expected, "--project", project); err != nil {
-			return nil, err
-		}
-	} else if str(current["target"]) != expected {
-		return nil, Public("The image alias already points at different content; refusing to move it")
-	}
-	return M{"alias": alias, "fingerprint": expected, "incusProject": project}, nil
-}
-
-// --- builder child (runs inside bubblewrap as the unprivileged builder) -------
-
-const childContext = "/context"
-const childWork = "/work"
-const childOutput = "/out"
-const childPolicyPath = "/work/policy.json"
-
-var childPolicy = M{"default": []any{M{"type": "reject"}}, "transports": M{
-	"containers-storage": M{"": []any{M{"type": "insecureAcceptAnything"}}},
-	"oci-archive":        M{"": []any{M{"type": "insecureAcceptAnything"}}}}}
-
-func childExec(argv []string, timeout time.Duration, cwd string) ([]byte, error) {
-	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH"), "HOME=/work/home", "TMPDIR=/work/tmp", "XDG_RUNTIME_DIR=/work/run",
-		"XDG_CONFIG_HOME=/work/config", "CONTAINERS_STORAGE_CONF=/work/storage.conf", "BUILDAH_ISOLATION=chroot"}
-	res, err := run(argv, nil, timeout, env, cwd)
+// composeExec runs the pinned compose binary for parsing only; it never talks
+// to Incus and gets a minimal environment.
+func composeExec(argv []string, cwd string) ([]byte, error) {
+	res, err := run(argv, nil, 30*time.Second, []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH"), "HOME=" + cwd}, cwd)
 	if err != nil || res.Code != 0 {
-		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
-			fmt.Fprintln(os.Stderr, "OCI-VM-CHILD-TOOL:", strings.Join(argv, " "), string(res.Stderr))
-		}
-		return nil, Public("Isolated OCI tool refused the pinned build or Compose configuration")
+		fmt.Fprintln(os.Stderr, "nixus: compose parse failed:", string(res.Stderr))
+		return nil, Public("The Compose file could not be parsed: " + lastLine(string(res.Stderr)))
 	}
 	if len(res.Stdout) > maxManifestJSON {
 		return nil, Public("Compose validation result is too large")
@@ -1298,23 +816,36 @@ func childExec(argv []string, timeout time.Duration, cwd string) ([]byte, error)
 	return res.Stdout, nil
 }
 
-func childComposeJSON(spec M, extra string) (M, error) {
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if len(last) > 240 {
+		last = last[:240]
+	}
+	return last
+}
+
+// composeJSON renders the canonical model of the reviewed source in dir.
+func composeJSON(spec M, dir, scratch, extra string) (M, error) {
 	compose := os.Getenv("NIXUS_OCI_COMPOSE_BIN")
+	if compose == "" {
+		compose = "incus-compose"
+	}
 	var flags []string
 	if e := str(spec["entrypoint"]); e != "" {
-		flags = []string{"-f", childContext + "/" + e}
+		flags = []string{"-f", filepath.Join(dir, e)}
 	}
 	if g := str(spec["generatedCompose"]); g != "" {
 		original := path.Dir(str(spec["entrypoint"]))
-		relative, absolute := "./"+original, "/context/"+original
+		relative, absolute := "./"+original, dir+"/"+original
 		if original == "." {
-			relative, absolute = ".", "/context"
+			relative, absolute = ".", dir
 		}
 		expected := "context: " + jsonString(relative)
 		if strings.Count(g, expected) != 1 {
 			return nil, Public("Reviewed Dockerfile context differs from generated launch manifest")
 		}
-		generated := filepath.Join(childWork, "generated.yaml")
+		generated := filepath.Join(scratch, "generated.yaml")
 		if err := os.WriteFile(generated, []byte(strings.Replace(g, expected, "context: "+jsonString(absolute), 1)), 0o600); err != nil {
 			return nil, err
 		}
@@ -1323,11 +854,11 @@ func childComposeJSON(spec M, extra string) (M, error) {
 	if extra != "" {
 		flags = append(flags, "-f", extra)
 	}
-	base := append([]string{compose, "-p", str(spec["project"])}, flags...)
-	if _, err := childExec(append(append([]string{}, base...), "config", "--quiet"), 30*time.Second, childContext); err != nil {
+	base := append([]string{compose, "-p", str(spec["project"]), "-P", dir}, flags...)
+	if _, err := composeExec(append(append([]string{}, base...), "config", "--quiet"), dir); err != nil {
 		return nil, err
 	}
-	out, err := childExec(append(append([]string{}, base...), "config", "--format", "json"), 30*time.Second, childContext)
+	out, err := composeExec(append(append([]string{}, base...), "config", "--format", "json"), dir)
 	if err != nil {
 		return nil, err
 	}
@@ -1338,8 +869,9 @@ func childComposeJSON(spec M, extra string) (M, error) {
 	return m, nil
 }
 
-func childModel(spec M) (M, error) {
-	original, err := childComposeJSON(spec, "")
+// composeModel parses and validates the reviewed source materialised in dir.
+func composeModel(spec M, dir, scratch string) (M, error) {
+	original, err := composeJSON(spec, dir, scratch, "")
 	if err != nil {
 		return nil, err
 	}
@@ -1351,240 +883,5 @@ func childModel(spec M) (M, error) {
 	if composePath == "" {
 		composePath = "."
 	}
-	checked, err := validateComposeModel(original, str(spec["project"]), str(spec["revision"]), composePath, files)
-	if err != nil {
-		return nil, err
-	}
-	if override := str(checked["separateOverride"]); override != "" {
-		extra := filepath.Join(childWork, "generated-override.yaml")
-		os.WriteFile(extra, []byte(override), 0o600)
-		patched, err := childComposeJSON(spec, extra)
-		if err != nil {
-			return nil, err
-		}
-		services := obj(patched["services"])
-		for _, raw := range list(checked["services"]) {
-			item := obj(raw)
-			after := obj(services[str(item["service"])])
-			if isTrue(item["built"]) && (str(after["image"]) != str(item["image"]) || after["build"] != nil) {
-				return nil, Public("Compose override did not disable implicit builds")
-			}
-		}
-	}
-	return checked, nil
-}
-
-func childDigest(p string) (M, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(f, maxImageBytes+1))
-	if err != nil || n > maxImageBytes {
-		return nil, Public("OCI archive exceeds per-service artifact quota")
-	}
-	return M{"sha256": hex.EncodeToString(h.Sum(nil)), "bytes": n}, nil
-}
-
-// exportRootfs flattens the built image (vfs: mount is a plain directory) into
-// a deterministic tar: sorted members, root ownership, no special files.
-func exportRootfs(storage []string, image, name string) (string, error) {
-	container := "nixus-export-" + name
-	if _, err := childExec(append(append([]string{}, storage...), "from", "--signature-policy", childPolicyPath, "--pull=never",
-		"--name", container, image), 300*time.Second, childContext); err != nil {
-		return "", err
-	}
-	out, err := childExec(append(append([]string{}, storage...), "mount", container), 60*time.Second, childContext)
-	if err != nil {
-		return "", err
-	}
-	mount := strings.TrimSpace(string(out))
-	storageRoot := filepath.Join(childWork, "storage-"+name)
-	if !filepath.IsAbs(mount) || !strings.HasPrefix(mount, storageRoot+"/") || isSymlink(mount) {
-		return "", Public("Buildah returned an unexpected rootfs location")
-	}
-	archive := filepath.Join(childOutput, name+".rootfs.tar")
-	f, err := os.Create(archive)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	tw := tar.NewWriter(f)
-	inodes := map[uint64]string{}
-	walkErr := filepath.WalkDir(mount, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(mount, p)
-		name := "."
-		if rel != "." {
-			name = "./" + filepath.ToSlash(rel)
-		}
-		info, err := os.Lstat(p)
-		if err != nil {
-			return err
-		}
-		st := info.Sys().(*syscall.Stat_t)
-		h := &tar.Header{Name: name, Mode: int64(info.Mode().Perm() | info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky)>>0),
-			ModTime: info.ModTime(), Format: tar.FormatPAX}
-		h.Mode = int64(st.Mode & 0o7777)
-		switch {
-		case info.IsDir():
-			h.Typeflag = tar.TypeDir
-		case info.Mode()&os.ModeSymlink != 0:
-			h.Typeflag = tar.TypeSymlink
-			h.Linkname, _ = os.Readlink(p)
-		case info.Mode().IsRegular():
-			if st.Nlink > 1 {
-				if first, ok := inodes[st.Ino]; ok {
-					h.Typeflag, h.Linkname = tar.TypeLink, first
-					return tw.WriteHeader(h)
-				}
-				inodes[st.Ino] = name
-			}
-			h.Typeflag, h.Size = tar.TypeReg, info.Size()
-		default:
-			return Public("Built image contains device nodes, FIFOs or sockets")
-		}
-		if err := tw.WriteHeader(h); err != nil {
-			return err
-		}
-		if h.Typeflag == tar.TypeReg {
-			in, err := os.Open(p)
-			if err != nil {
-				return err
-			}
-			defer in.Close()
-			_, err = io.Copy(tw, in)
-			return err
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return "", walkErr
-	}
-	if err := tw.Close(); err != nil {
-		return "", err
-	}
-	return archive, nil
-}
-
-func childBuild(spec M) (M, error) {
-	checked, err := childModel(spec)
-	if err != nil {
-		return nil, err
-	}
-	if str(checked["intentHash"]) != str(spec["intentHash"]) {
-		return nil, Public("Source-qualified Compose review differs inside the sandbox")
-	}
-	raw, _ := json.Marshal(childPolicy)
-	os.WriteFile(childPolicyPath, raw, 0o600)
-	tool := os.Getenv("NIXUS_OCI_BUILDAH_BIN")
-	records := []any{}
-	for _, rawSvc := range list(checked["services"]) {
-		svc := obj(rawSvc)
-		if !isTrue(svc["built"]) {
-			continue
-		}
-		name := str(svc["service"])
-		if !fullmatch(composeServiceName, name) {
-			return nil, Public("Unsafe service identity")
-		}
-		storage := []string{tool, "--root", "/work/storage-" + name, "--runroot", "/work/run-" + name, "--storage-driver", "vfs"}
-		dockerfile := childContext + "/" + str(svc["dockerfile"])
-		if bases := list(spec["bases"]); len(bases) > 0 {
-			for _, rawBase := range bases {
-				b := obj(rawBase)
-				if !fullmatch(re(`/work/bases/[0-9a-f]{64}\.tar`), str(b["archive"])) || !fullmatch(re(`localhost/nixus-base-[0-9a-f]{16}:pinned`), str(b["local"])) {
-					return nil, Public("Invalid pinned base image record")
-				}
-				out, err := childExec(append(append([]string{}, storage...), "pull", "--signature-policy", childPolicyPath, "--quiet",
-					"oci-archive:"+str(b["archive"])), 600*time.Second, childContext)
-				if err != nil {
-					return nil, err
-				}
-				if _, err := childExec(append(append([]string{}, storage...), "tag", strings.TrimSpace(string(out)), str(b["local"])), 60*time.Second, childContext); err != nil {
-					return nil, err
-				}
-			}
-			original, err := os.ReadFile(dockerfile)
-			if err != nil {
-				return nil, Public("Reviewed Dockerfile is unreadable in the sandbox")
-			}
-			dockerfile = "/work/Dockerfile-" + name
-			if err := os.WriteFile(dockerfile, []byte(rewriteBases(string(original), bases)), 0o600); err != nil {
-				return nil, err
-			}
-		}
-		if _, err := childExec(append(append([]string{}, storage...), "bud", "--signature-policy", childPolicyPath, "--isolation", "chroot",
-			"--network=host", "--pull=never", "--layers=false", "-f", dockerfile, "--tag", str(svc["image"]),
-			childContext+"/"+str(svc["context"])), 1200*time.Second, childContext); err != nil {
-			return nil, err
-		}
-		archive := filepath.Join(childOutput, name+".oci.tar")
-		if _, err := childExec(append(append([]string{}, storage...), "push", "--signature-policy", childPolicyPath, "--format", "oci",
-			str(svc["image"]), "oci-archive:"+archive+":"+str(svc["image"])), 300*time.Second, childContext); err != nil {
-			return nil, err
-		}
-		record, err := childDigest(archive)
-		if err != nil {
-			return nil, err
-		}
-		flat, err := exportRootfs(storage, str(svc["image"]), name)
-		if err != nil {
-			return nil, err
-		}
-		rootfs, err := childDigest(flat)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, M{"service": name, "image": svc["image"], "artifact": name + ".oci.tar", "sha256": record["sha256"],
-			"bytes": record["bytes"], "rootfs": name + ".rootfs.tar", "rootfsSha256": rootfs["sha256"], "rootfsBytes": rootfs["bytes"]})
-	}
-	if len(records) == 0 {
-		return nil, Public("No locally built services in the reviewed source")
-	}
-	output := M{"format": 1, "project": spec["project"], "revision": spec["revision"], "intentHash": checked["intentHash"], "artifacts": records}
-	return output, os.WriteFile(filepath.Join(childOutput, "build-result.json"), []byte(canonicalSpaced(output)), 0o600)
-}
-
-// ociChildMain is `nixus oci-child {inspect|build} /work/intent.json`.
-func ociChildMain(args []string) int {
-	err := func() error {
-		if len(args) != 2 || (args[0] != "inspect" && args[0] != "build") {
-			return Public("Expected isolated OCI inspect or build operation")
-		}
-		raw, err := os.ReadFile(args[1])
-		if err != nil || len(raw) > maxManifestJSON {
-			return Public("OCI build intent exceeds bounded source quota")
-		}
-		spec, err := parseObject(raw)
-		if err != nil {
-			return err
-		}
-		if v, _ := num(spec["format"]); v != 1 || !fullmatch(composeServiceName, str(spec["project"])) ||
-			!fullmatch(hex64, str(spec["revision"])) || list(spec["sourceFiles"]) == nil {
-			return Public("Invalid immutable OCI source intent")
-		}
-		if args[0] == "inspect" {
-			plan, err := childModel(spec)
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(childOutput, "intent.json"), []byte(canonicalSpaced(plan)), 0o600)
-		}
-		_, err = childBuild(spec)
-		return err
-	}()
-	if err != nil {
-		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
-			fmt.Fprintln(os.Stderr, "OCI-VM-CHILD-FAILURE:", err)
-		} else {
-			fmt.Fprintln(os.Stderr, "Isolated OCI operation refused: "+publicError(err))
-		}
-		return 1
-	}
-	return 0
+	return validateComposeModel(original, str(spec["project"]), str(spec["revision"]), composePath, files)
 }

@@ -1,47 +1,33 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
-	"time"
 )
 
-// Apps made only of prebuilt images have nothing to build: the job must not
-// start the sandbox and must end up imported with no artifacts.
-func TestImageOnlyBuildSkipsSandbox(t *testing.T) {
-	state := useState(t)
-	oldSandbox := ociRunSandbox
-	ociRunSandbox = func(string, string, string) error { t.Fatal("sandbox must not run for image-only apps"); return nil }
-	t.Cleanup(func() { ociRunSandbox = oldSandbox })
-	b := NewOCIBuilds(state, nil)
-	var created []string
-	b.incus = func(_ time.Duration, args ...string) (string, error) {
-		if len(args) > 1 && args[0] == "project" && args[1] == "create" {
-			created = append(created, args[2])
-		}
-		if args[0] == "query" {
-			return "", os.ErrNotExist
-		}
-		return "", nil
-	}
-	id := tokenHex(16)
-	dir := filepath.Join(b.jobs, id)
-	if err := os.Mkdir(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	record := M{"id": id, "format": 1, "project": "aiostreams", "revision": strings.Repeat("a", 64), "status": "queued",
-		"services": []any{M{"service": "web", "image": "ghcr.io/x/y@sha256:" + strings.Repeat("b", 64), "built": false}}}
-	writeJSON(filepath.Join(dir, "job.json"), record)
-	out, err := b.run(id)
+func TestComposeUpCommand(t *testing.T) {
+	scratch := t.TempDir()
+	image := M{"intentHash": "new", "services": []any{M{"service": "web", "built": false}}}
+	args, _, err := composeUpCommand("incus-compose", []string{"-p", "x"}, image, "", scratch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if str(out["status"]) != "imported" {
-		t.Fatalf("status %v, detail %v", out["status"], out["errorDetail"])
+	if !slices.Contains(args, "--no-build") || slices.Contains(args, "--build") || slices.Contains(args, "--recreate") {
+		t.Fatalf("image-only first deploy: %v", args)
 	}
-	if len(created) != 1 {
-		t.Fatalf("incus project not prepared: %v", created)
+	args, _, _ = composeUpCommand("incus-compose", nil, image, "old", scratch)
+	if !slices.Contains(args, "--recreate") {
+		t.Fatalf("a new revision must recreate instances: %v", args)
+	}
+	args, _, _ = composeUpCommand("incus-compose", nil, image, "new", scratch)
+	if slices.Contains(args, "--recreate") {
+		t.Fatalf("an unchanged revision must not recreate: %v", args)
+	}
+	built := M{"intentHash": "new", "services": []any{M{"service": "app", "built": true}}}
+	t.Setenv("NIXUS_OCI_BUILDAH_BIN", "/nix/store/x-buildah/bin/buildah")
+	args, env, err := composeUpCommand("incus-compose", nil, built, "", scratch)
+	if err != nil || !slices.Contains(args, "--build") || slices.Contains(args, "--no-build") ||
+		args[slices.Index(args, "--builder")+1] != "/nix/store/x-buildah/bin/buildah" || !slices.Contains(env, "BUILDAH_ISOLATION=chroot") {
+		t.Fatalf("built service: %v %v %v", args, env, err)
 	}
 }

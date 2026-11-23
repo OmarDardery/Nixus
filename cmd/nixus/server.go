@@ -212,8 +212,6 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return linuxLogin(body["username"], body["password"])
 	case "/oci/review":
 		return NewOCIBuilds("", nil).review(body["project"], body["revision"], actor)
-	case "/oci/build":
-		return NewOCIBuilds("", nil).queue(body["id"], body["planHash"], ack(body["resume"]))
 	case "/project-import/prepare", "/project-import/chunk", "/project-import/finish", "/project-import/review", "/project-import/publish", "/project-import/plan":
 		return lockedValue(false, func() (any, error) {
 			staging, err := NewImportStaging("")

@@ -195,7 +195,8 @@ func stageFiles(actor, project string, entries []any, files []sourceEntry, conte
 
 var updatePoll = 3 * time.Second
 
-// buildRevision reviews, queues and waits for an imported OCI build.
+// buildRevision reviews a published revision so it can be deployed. Images are
+// pulled or built by incus-compose when the project is brought up.
 func buildRevision(actor, project, revision string) (string, error) {
 	builds := NewOCIBuilds("", nil)
 	if builds.imported(project, revision) != nil {
@@ -205,24 +206,7 @@ func buildRevision(actor, project, revision string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := builds.queue(review["id"], review["planHash"], false); err != nil {
-		return "", err
-	}
-	deadline := time.Now().Add(45 * time.Minute)
-	for time.Now().Before(deadline) {
-		status, err := builds.status(str(review["id"]))
-		if err != nil {
-			return "", err
-		}
-		switch str(status["status"]) {
-		case "imported":
-			return str(review["id"]), nil
-		case "failed", "interrupted", "cancelled":
-			return "", Public("The rebuilt image did not verify or import: " + str(status["errorDetail"]))
-		}
-		time.Sleep(updatePoll)
-	}
-	return "", Public("The image rebuild timed out")
+	return str(review["id"]), nil
 }
 
 // deployRevision binds the project to a published source revision through a

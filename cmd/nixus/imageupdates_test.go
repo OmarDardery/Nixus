@@ -110,41 +110,6 @@ func TestPrepareImageUpdateRequiresFreshCheck(t *testing.T) {
 	}
 }
 
-func TestBaseImagesAndBuildCopyRewrite(t *testing.T) {
-	plan := M{"imageLock": []any{
-		lockEntry("Dockerfile", "dockerfile-from", "debian:13@"+digestA),
-		lockEntry("Dockerfile", "dockerfile-from", "debian:13@"+digestA),
-		lockEntry("compose.yaml", "compose-image", "redis:7@"+digestB),
-		lockEntry("Dockerfile", "dockerfile-from", "alpine:3"),
-	}}
-	bases := baseImages(plan)
-	if len(bases) != 1 || bases[0]["archive"] != "/work/bases/"+strings.Repeat("a", 64)+".tar" ||
-		bases[0]["local"] != "localhost/nixus-base-"+strings.Repeat("a", 16)+":pinned" {
-		t.Fatalf("bases: %v", bases)
-	}
-	text := "# FROM debian:13@" + digestA + " stays a comment\nFROM --platform=linux/amd64 debian:13@" + digestA + " AS build\nRUN true\nFROM scratch\n"
-	out := rewriteBases(text, []any{bases[0]})
-	if !strings.Contains(out, "FROM --platform=linux/amd64 localhost/nixus-base-"+strings.Repeat("a", 16)+":pinned AS build") ||
-		!strings.Contains(out, "# FROM debian:13@"+digestA) || !strings.HasSuffix(out, "FROM scratch\n") {
-		t.Fatalf("rewrite:\n%s", out)
-	}
-}
-
-func TestFetchBaseImagesEnforcesQuotaAndPresence(t *testing.T) {
-	scratch := t.TempDir()
-	old := ociFetchBase
-	defer func() { ociFetchBase = old }()
-	ociFetchBase = func(base M, destination string) error { return nil }
-	bases := baseImages(M{"imageLock": []any{lockEntry("Dockerfile", "dockerfile-from", "debian:13@"+digestA)}})
-	if err := fetchBaseImages(scratch, bases); err == nil {
-		t.Fatal("missing archive accepted")
-	}
-	ociFetchBase = func(base M, destination string) error { return os.WriteFile(destination, []byte("x"), 0o600) }
-	if err := fetchBaseImages(scratch, bases); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestPinTextPinsOnlyUnpinnedExternalImages(t *testing.T) {
 	resolve := func(r imageRef) (string, error) {
 		if r.Tag == "" {
