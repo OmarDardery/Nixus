@@ -241,6 +241,7 @@
         nixus = self.packages.x86_64-linux.nixus;
         # Boots the Go broker and portal in a NixOS VM (needs KVM).
         portal = import ./tests/portal-vm.nix { inherit pkgs; };
+        networking = import ./tests/networking-vm.nix { inherit pkgs; };
         oci = import ./tests/oci-vm.nix { inherit pkgs; };
         admin = self.packages.x86_64-linux.admin;
         installer = self.packages.x86_64-linux.installer;

@@ -42,6 +42,7 @@ in {
       iifname { ${guestIfaces} } oifname { ${guestIfaces} } accept
       ${lib.concatMapStringsSep "\n" (rule: ''
         iifname { ${guestIfaces} } ip daddr ${rule.cidr} ${rule.protocol} dport { ${lib.concatMapStringsSep ", " toString rule.ports} } accept
+        iifname "nxa-*" ip daddr ${rule.cidr} ${rule.protocol} dport { ${lib.concatMapStringsSep ", " toString rule.ports} } accept
       '') site.connectivity.privateAccess}
       iifname { ${guestIfaces} } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
       iifname { ${guestIfaces} } oifname ${iface} meta nfproto ipv4 accept

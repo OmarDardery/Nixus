@@ -38,17 +38,18 @@ type group struct {
 
 var groups = []group{
 	{"GET STARTED", []item{{"index", "Overview"}, {"install", "Install & update"}, {"apps", "Apps"}, {"apps-repo", "Apps repository"}}},
-	{"USE YOUR SERVER", []item{{"secrets", "Env vars & secrets"}, {"backups", "Backups & restore"}, {"networking", "Networking"}, {"administration", "CLI"}}},
+	{"USE YOUR SERVER", []item{{"secrets", "Env vars & secrets"}, {"backups", "Backups & restore"}, {"networking", "Networking"}, {"cloudflare-tunnel", "Cloudflare Tunnel"}, {"administration", "CLI"}}},
 	{"WHEN THINGS HAPPEN", []item{{"troubleshooting", "Troubleshooting"}, {"credits", "Credits"}}},
 }
 
 var descriptions = map[string]string{
-	"index":           "Install, deploy apps, keep them in git, back everything up.",
-	"install":         "One command on an installed NixOS server, then everything else from the browser.",
-	"apps":            "Compose apps, VMs and containers, USB and serial devices, safe image updates.",
-	"apps-repo":       "Keep your apps in git: review remote changes, push console changes.",
-	"troubleshooting": "Symptoms, checks and recovery commands.",
-	"backups":         "Encrypted backups of apps, data and secrets; restore a whole server.",
+	"cloudflare-tunnel": "Run a tunnel beside an app; diagnose token, DNS, transport and origin failures.",
+	"index":             "Install, deploy apps, keep them in git, back everything up.",
+	"install":           "One command on an installed NixOS server, then everything else from the browser.",
+	"apps":              "Compose apps, VMs and containers, USB and serial devices, safe image updates.",
+	"apps-repo":         "Keep your apps in git: review remote changes, push console changes.",
+	"troubleshooting":   "Symptoms, checks and recovery commands.",
+	"backups":           "Encrypted backups of apps, data and secrets; restore a whole server.",
 }
 
 var root, source string

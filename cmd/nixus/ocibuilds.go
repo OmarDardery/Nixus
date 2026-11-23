@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"net"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
@@ -676,43 +676,58 @@ func notRunning(resource M) string {
 	return ": " + strings.Join(problems, ", ") + ". A container that stops right after starting usually needs a variable or a setting; check its logs"
 }
 
-// appGateway is the gateway of the app's own network: the address of the
-// existing one, or a free /24 in 10.120.0.0/16 chosen from the app's name.
-// Knowing it up front lets every container be created with it as its DNS
-// server (OCI containers read DNS settings only when they start).
+// appGateway asks Incus to allocate the bridge subnet, then reads its actual
+// gateway before OCI containers start. Existing networks keep their addresses.
 func appGateway(incus incusFunc, incusProject string) (string, error) {
-	out, err := incus(0, "query", "/1.0/networks?recursion=1")
+	name := appNetworkName(incusProject)
+	out, err := incus(0, "query", "/1.0/networks?recursion=1&project=default")
 	if err != nil {
-		return "", Failed("Could not list Incus networks", err)
+		return "", Public("Could not verify Incus networks; no app network was created")
 	}
-	nets, err := parseJSON([]byte(out))
-	if err != nil {
-		return "", Failed("Could not list Incus networks", err)
+	payload, err := parseJSON([]byte(out))
+	networks, ok := payload.([]any)
+	if err != nil || !ok {
+		return "", Public("Invalid Incus network inventory; no app network was created")
 	}
-	used := map[string]bool{}
-	for _, raw := range list(nets) {
+	var network M
+	for _, raw := range networks {
 		n := obj(raw)
-		gw, _, _ := strings.Cut(str(jget(n, "config", "ipv4.address")), "/")
-		if str(n["name"]) == appNetworkName(incusProject) && net.ParseIP(gw) != nil {
-			return gw, nil
+		if str(n["name"]) == "" {
+			return "", Public("Invalid Incus network inventory; no app network was created")
 		}
-		if ip := net.ParseIP(gw).To4(); ip != nil && ip[0] == 10 && ip[1] == 120 {
-			used[fmt.Sprint(ip[2])] = true
-		}
-	}
-	h := fnv.New32a()
-	h.Write([]byte(incusProject))
-	for i := uint32(0); i < 254; i++ {
-		third := fmt.Sprint((h.Sum32()+i)%254 + 1)
-		if !used[third] {
-			return "10.120." + third + ".1", nil
+		if str(n["name"]) == name {
+			network = n
 		}
 	}
-	return "", Public("No free private network left for this app (10.120.0.0/16 is full)")
+	if network == nil {
+		// Incus knows the host's routes and allocated networks. Keep one IPAM
+		// authority instead of probing a second, fixed private address pool.
+		if _, err := incus(0, "network", "create", name, "--project", "default", "--type=bridge",
+			"ipv4.address=auto", "ipv4.nat=true", "ipv6.address=none", projectNameKey+"="+incusProject); err != nil {
+			return "", Public("Incus could not allocate the app network; inspect Incus networking and retry")
+		}
+		out, err = incus(0, "query", "/1.0/networks/"+name+"?project=default")
+		if err != nil {
+			return "", Public("Could not read the allocated app network; retry deployment")
+		}
+		network, err = parseObject([]byte(out))
+		if err != nil {
+			return "", Public("Invalid allocated app network; retry deployment")
+		}
+	}
+	cfg := obj(network["config"])
+	gateway, err := netip.ParsePrefix(str(cfg["ipv4.address"]))
+	if err != nil || !gateway.Addr().Is4() || gateway.Addr().IsUnspecified() ||
+		str(network["type"]) != "bridge" || !isTrue(network["managed"]) ||
+		str(cfg["ipv4.nat"]) != "true" || str(cfg["ipv4.dhcp"]) == "false" ||
+		(str(cfg[projectNameKey]) != "" && str(cfg[projectNameKey]) != incusProject) {
+		return "", Public("The app network must be an owned managed IPv4 bridge with DHCP and NAT; inspect it in Incus")
+	}
+	return gateway.Addr().String(), nil
 }
 
-// appOverride adds the app network's address and, for every service, that
-// address as its DNS server (dnsmasq: service names, then upstream).
+// appOverride attaches the Incus-owned bridge and uses its gateway DNS.
+// Compose must not create, reconfigure or delete that shared runtime object.
 func appOverride(services []byte, gateway, network string) []byte {
 	var doc M
 	json.Unmarshal(services, &doc)
@@ -722,7 +737,7 @@ func appOverride(services []byte, gateway, network string) []byte {
 		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus",
 			"boot.autorestart": "true", "boot.autostart": "true"}
 	}
-	doc["networks"] = M{"default": M{"name": network, "x-incus": M{"ipv4.address": gateway + "/24", "ipv4.nat": "true", "ipv6.address": "none"}}}
+	doc["networks"] = M{"default": M{"name": network, "external": true}}
 	b, _ := json.Marshal(doc)
 	return b
 }

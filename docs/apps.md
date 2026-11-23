@@ -25,6 +25,8 @@ Rules, checked before anything runs:
 - No `privileged`, `cap_add`, `network_mode: host` or Docker secrets. Put
   secrets in the app's **Environment Variables** tab, or the box on New app.
 
+For a tunnel sidecar, follow [Cloudflare Tunnel](cloudflare-tunnel.md).
+
 ### Devices
 
 Serial ports (3D printers, Zigbee/Z-Wave sticks) and USB devices can be passed
@@ -71,7 +73,8 @@ CPU, memory, disk and USB devices. In Nix (`default.nix`):
 
 Nixus checks registries for new digests. **Update all apps** (Overview) or
 **Update image** (app page) updates them. Before each update Nixus snapshots
-the app's volumes, then deploys and waits for it to be healthy. On failure it
+the app's volumes, then deploys and waits for its instances to remain running. A running process
+is not proof that an app is ready or a tunnel is connected. On failure it
 rolls back and holds the broken digest. Set
 `updates.policy = "auto"` in an app's `default.nix` to do this unattended.
 
