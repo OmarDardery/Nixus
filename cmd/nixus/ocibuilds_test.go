@@ -289,3 +289,26 @@ func TestAppGatewayAndOverride(t *testing.T) {
 		t.Fatalf("%v", doc)
 	}
 }
+
+func TestSettledWaitsForStableRunning(t *testing.T) {
+	old := settleSleep
+	defer func() { settleSleep = old }()
+	settleSleep = func(time.Duration) {}
+	seq := []string{"compose-up", "noop", "noop", "noop"}
+	n := 0
+	r, _ := settled(func() (M, error) { s := seq[min(n, len(seq)-1)]; n++; return M{"action": s}, nil },
+		func(r M) bool { return r["action"] == "noop" })
+	if r["action"] != "noop" || n != 4 {
+		t.Fatalf("%v after %d", r, n)
+	}
+	n = 0
+	r, _ = settled(func() (M, error) { n++; return M{"action": "compose-up"}, nil }, func(r M) bool { return r["action"] == "noop" })
+	if r["action"] == "noop" || n != 30 {
+		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
+	}
+	var doc M
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1"), &doc)
+	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart")) != "true" {
+		t.Fatalf("%v", doc)
+	}
+}
