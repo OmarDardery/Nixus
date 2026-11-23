@@ -11,7 +11,6 @@ import (
 	"hash/fnv"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -517,8 +516,6 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	}
 	return M{"status": "verified", "newEtag": verified["etag"], "health": "Running"}, nil
 }
-
-var _ = path.Base
 
 // appStartEnv returns the variables an app needs before its containers start:
 // the ones already saved as encrypted secrets, overridden by those entered with

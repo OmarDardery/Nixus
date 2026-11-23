@@ -11,11 +11,13 @@ async function api(path, body, csrf = state.csrf) {
     options.body = JSON.stringify(body);
   }
   const r = await fetch("/api/" + path, options);
-  const result = await r.json();
+  if (r.status === 401 && path !== "login")
+    login("Sign in again to continue.");
+  let result;
+  try { result = await r.json(); }
+  catch { throw Error("Host returned an unreadable response. Check the connection and refresh status before retrying."); }
   if (!r.ok) {
-    if (r.status === 401 && path !== "login")
-      login("Sign in again to continue.");
-    throw Error(result.error || "Request failed");
+    throw Error(result?.error || "Request failed (HTTP " + r.status + ")");
   }
   return result;
 }

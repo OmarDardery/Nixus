@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -22,7 +21,7 @@ func sha256str(s string) string { return sha256hex([]byte(s)) }
 const pamService = "nixus-enrollment"
 
 var hostProofSlots = make(chan struct{}, 2)
-var hostUser = re(`[a-z_][a-z0-9_-]{0,31}`)
+var hostUser = portalUser
 
 type passwdEntry struct {
 	name  string
@@ -117,8 +116,7 @@ func hostProofVerify(username, password any) (string, error) {
 }
 
 // linuxLogin checks a Linux account for portal sign-in: the PAM password and
-// sudo rights (the same proof as first-run enrollment). Sudo users are
-// portal administrators; others use portal-only accounts.
+// sudo rights (the same proof as first-run enrollment).
 func linuxLogin(username, password any) (M, error) {
 	name, err := hostProofVerify(username, password)
 	if err != nil {
@@ -181,5 +179,3 @@ func cockpitAccounts() []string {
 	sort.Strings(accounts)
 	return accounts
 }
-
-var _ = sync.Mutex{}

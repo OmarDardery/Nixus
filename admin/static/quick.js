@@ -2,7 +2,7 @@
 
 // Overview: the next setup step and one-click server/app updates and backups.
 
-const quick = { loaded: false, loading: false, busy: "", phase: "", message: "", error: "", apps: null, updates: null, backups: null };
+const quick = { loaded: false, loading: false, busy: "", phase: "", message: "", loadError: "", error: "", apps: null, updates: null, backups: null };
 
 async function refreshQuick() {
   if (quick.loading || !administrator()) return;
@@ -10,10 +10,12 @@ async function refreshQuick() {
   try {
     const [apps, updates, backups] = await Promise.all([api("project-overview"), api("image-updates"), api("project-backups")]);
     Object.assign(quick, { apps, updates, backups, loaded: true });
+    quick.loadError = "";
   } catch (error) {
-    quick.error = error.message || "Status unavailable.";
+    quick.loadError = error.message || "Status unavailable.";
   } finally {
     quick.loading = false;
+    quick.loaded = true;
     if (state.page === "overview") shell();
   }
 }
@@ -29,7 +31,7 @@ function nextStep() {
     const item = progress.items.find(i => i.required && !i.done) || progress.items.find(i => !i.done);
     if (item) return [item.title, item.page];
   }
-  if (!quick.loaded) return null;
+  if (!quick.loaded || quick.loadError) return null;
   if (!(quick.apps?.projects || []).length) return ["Add your first app", "projects"];
   if (!quick.backups?.lastSuccess) return ["Set up backups", "operations"];
   return null;
@@ -50,14 +52,15 @@ function quickActions() {
     '<div><button type="button" id="quick-update-nixus"' + busy + '>Update Nixus</button><small>' +
       esc(release.version || "") + " <code>" + esc((release.revision || "").slice(0, 12)) + "</code></small></div>" +
     '<div><button type="button" id="quick-update-apps"' + busy + (appUpdates ? "" : " disabled") + '>Update all apps</button><small>' +
-      (appUpdates ? esc(appUpdates) + " with updates" : "Up to date") + "</small></div>" +
+      (!quick.loaded || quick.loadError ? "Status unavailable" : appUpdates ? esc(appUpdates) + " with updates" : "Up to date") + "</small></div>" +
     "<div>" + (typeof gated === "function" ? gated("backup", "Set up backups first.", '<button type="button" id="quick-backup"' + busy + ">Back up now</button>")
       : '<button type="button" id="quick-backup"' + busy + ">Back up now</button>") + "<small>Last: " + esc(lastBackup) + "</small></div>" +
     '<label class="field quick-password"><span>Password</span><input id="quick-password" type="password" autocomplete="current-password"></label>' +
     "</div>" +
     (quick.phase ? '<p role="status">' + esc(quick.phase) + "</p>" : "") +
     (quick.message ? '<p role="status">' + esc(quick.message) + "</p>" : "") +
-    (quick.error ? '<p class="error" role="alert">' + esc(quick.error) + "</p>" : "") + "</section>";
+    (quick.error ? '<p class="error" role="alert">' + esc(quick.error) + '</p>' : "") +
+    (quick.loadError ? '<p class="error" role="alert">' + esc(quick.loadError) + '</p><button type="button" id="quick-refresh">Retry status</button>' : "") + "</section>";
 }
 
 function quickPassword() {
@@ -86,8 +89,8 @@ async function waitForJob(test, minutes) {
 }
 
 // updateNixus builds the latest main with a package refresh, activates it and
-// confirms access from this browser. If this browser cannot reach the portal
-// after activation, nothing confirms and the host rolls back on its own.
+// requires a fresh login to confirm access. An existing session must never
+// confirm a new generation; the host rolls back if access is not confirmed.
 async function updateNixus(current) {
   if (stagedCount()) throw Error("Apply or discard staged changes first.");
   const active = state.status.job;
@@ -112,10 +115,9 @@ async function updateNixus(current) {
   await api("apply", { id: job.id });
   job = await waitForJob(j => ["awaiting-confirmation", "confirmed", "failed", "rolled-back", "cancelled"].includes(j.status), 20);
   if (job.status === "awaiting-confirmation") {
-    quick.phase = "Confirming access…"; shell();
-    await api("confirm", { id: job.id });
-    state.status = await api("status");
-    job = state.status.job || job;
+    quick.message = "Activated. Sign out, reconnect to the management address and sign in again, then confirm access in Changes before recovery expires.";
+    navigateTo("review");
+    return;
   }
   if (job.status !== "confirmed") throw Error(job.error || "Update did not complete (" + job.status + ").");
   quick.message = "Updated to " + main.revision.slice(0, 12) + "." + (job.rebootRequired ? " Reboot to use the new kernel." : "");
@@ -140,6 +142,7 @@ async function quickRun(name, run) {
 
 function bindQuickActions() {
   const on = (id, handler) => document.querySelector(id)?.addEventListener("click", handler);
+  on("#quick-refresh", () => void refreshQuick());
   on("#quick-update-nixus", () => void quickRun("nixus", updateNixus));
   on("#quick-update-apps", () => void quickRun("apps", async current => {
     const result = await api("image-updates/apply-all", { current });

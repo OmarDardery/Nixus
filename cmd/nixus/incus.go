@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -44,12 +43,15 @@ func incusCLI(args ...string) (string, error) {
 	return string(res.Stdout), nil
 }
 
+var incusTransport = &http.Transport{
+	DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", incusSocket)
+	}, IdleConnTimeout: 30 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 8,
+}
+
 func incusHTTP(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", incusSocket)
-		}}}
+	return &http.Client{Timeout: timeout, Transport: incusTransport}
 }
 
 // incusAPI performs one local API request and returns the decoded payload.
@@ -899,5 +901,3 @@ func guestNetworkInventory() (M, error) {
 	result["bridgeTopologyAvailable"] = true
 	return result, nil
 }
-
-var _ = syscall.Getpid

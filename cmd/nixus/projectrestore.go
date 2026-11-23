@@ -212,16 +212,6 @@ func restoreSources(config string, manifest M) (M, error) {
 	return restored, nil
 }
 
-// restoreIncus recreates Incus projects, then imports custom volumes and
-// instances from one verified export generation.
-func restoreIncus(incus incusFunc, generation string) (M, error) {
-	inventory, err := restoreIncusPreflight(incus, generation, nil)
-	if err != nil {
-		return nil, err
-	}
-	return restoreIncusApply(incus, generation, inventory, nil)
-}
-
 // restoreIncusPreflight verifies the export and refuses every collision before
 // anything is changed. Resources an earlier attempt of the same restore already
 // created (recorded in the journal) are not collisions.

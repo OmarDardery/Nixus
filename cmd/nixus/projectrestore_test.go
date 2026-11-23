@@ -70,14 +70,14 @@ func TestRestoreIncusRefusesCollisionsBeforeChanging(t *testing.T) {
 		mutations = append(mutations, strings.Join(args, " "))
 		return "", nil
 	}
-	if _, err := restoreIncus(fake, generation); err == nil || !strings.Contains(publicError(err), "already exists") {
+	if _, err := restoreIncusPreflight(fake, generation, nil); err == nil || !strings.Contains(publicError(err), "already exists") {
 		t.Fatalf("restored over an existing instance: %v", err)
 	}
 	if len(mutations) != 0 {
 		t.Fatalf("changed Incus before refusing: %v", mutations)
 	}
 	os.WriteFile(filepath.Join(generation, name), []byte("tampered"), 0o600)
-	if _, err := restoreIncus(fake, generation); err == nil || !strings.Contains(publicError(err), "damaged") {
+	if _, err := restoreIncusPreflight(fake, generation, nil); err == nil || !strings.Contains(publicError(err), "damaged") {
 		t.Fatalf("accepted a damaged archive: %v", err)
 	}
 }

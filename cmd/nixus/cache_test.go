@@ -1,11 +1,44 @@
 package main
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	syncatomic "sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestIncusRequestsReuseConnections(t *testing.T) {
+	var connections syncatomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"type":"sync","metadata":{}}`))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	previous := incusTransport
+	incusTransport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}}
+	defer func() { incusTransport.CloseIdleConnections(); incusTransport = previous }()
+	for range 3 {
+		if _, _, _, err := incusAPI("GET", "/1.0", nil, "", time.Second, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if connections.Load() != 1 {
+		t.Fatalf("opened %d connections for repeated Incus requests", connections.Load())
+	}
+}
 
 func TestSettingsCacheKeyedOnInputs(t *testing.T) {
 	root := t.TempDir()
