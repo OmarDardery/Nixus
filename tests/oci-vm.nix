@@ -420,6 +420,18 @@ in pkgs.testers.runNixOSTest {
         assert len(rrun) == 1 and rrun[0]["status"] == "Running", rrun
         assert machine.succeed("incus config get " + rrun[0]["name"] + " environment.REQUIRED --project needsenv").strip() == "present"
 
+    with subtest("delete app removes the Incus project and every Nixus record"):
+        machine.fail("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
+                     "--data '{\"project\": \"needsenv\", \"confirm\": \"wrong\", \"_actor\": \"admin\"}' http://localhost/apps/delete")
+        deleted = broker("/apps/delete", {"project": "needsenv", "confirm": "needsenv"})
+        assert deleted["deleted"] == "needsenv", deleted
+        machine.fail("incus project show needsenv")
+        assert "needsenv" not in broker("/apps"), broker("/apps")
+        assert all(p.get("name") != "needsenv" for p in broker("/project-overview").get("projects", [])), "app still listed"
+        machine.fail("ls -d /var/lib/nixus-admin/app-deploy-needsenv.json")
+        # Deleting again is a no-op, so a half-failed delete can be retried.
+        broker("/apps/delete", {"project": "needsenv", "confirm": "needsenv"})
+
     with subtest("one-step app deploy, as the Apps page does it"):
         notes = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode()}
         nentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in notes.items()]

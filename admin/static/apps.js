@@ -202,7 +202,8 @@ function appsList() {
     '<div class="apps-actions"><button type="button" class="primary icon-button" data-app-new>' + icon("plus") + '<span class="label">Add app</span></button>' +
     '<button type="button" class="icon-button" data-import="repo">' + icon("git") + '<span class="label">From Git</span></button>' +
     '<button type="button" class="icon-button" data-import="backup">' + icon("archive") + '<span class="label">From a backup</span></button></div></div>';
-  return head + (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") + tools + draftsCard() +
+  return head + (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
+    (appView.message ? '<p role="status" class="notice">' + esc(appView.message) + "</p>" : "") + tools + draftsCard() +
     (projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
       : all.length ? '<p class="apps-none">No apps match “' + esc(appView.filter) + "”.</p>" : empty);
 }
@@ -388,7 +389,18 @@ function settingsTab(p) {
       '<button type="button" id="import-start">Import</button></div>' +
       (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
       (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : "")) : "") +
-    devicesCard(p);
+    devicesCard(p) + deleteCard(p);
+}
+
+// deleteCard removes the app with everything it has on this server.
+function deleteCard(p) {
+  return '<section class="danger-zone"><h2>Delete app</h2>' +
+    "<p>Deletes <b>" + esc(p.name) + "</b> from this server: its containers or VMs, their data volumes and snapshots, images, variables, " +
+    "files and deployment history. This cannot be undone. Existing off-host backups are kept until your retention policy removes them.</p>" +
+    '<label class="field"><span>Type <b>' + esc(p.name) + '</b> to confirm</span><input id="delete-confirm" type="text" spellcheck="false" autocomplete="off"></label>' +
+    '<div class="toolbar"><input id="delete-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+    '<button type="button" class="danger" id="app-delete"' + (appView.busy ? " disabled" : "") + ">Delete app</button></div>" +
+    (appView.deleteError ? '<p class="error" role="alert">' + esc(appView.deleteError) + "</p>" : "") + "</section>";
 }
 
 // Detected host serial/USB devices with the line that passes each through.
@@ -661,6 +673,29 @@ async function saveNix(name) {
   void refreshApps();
 }
 
+async function deleteApp(name) {
+  const confirmInput = document.querySelector("#delete-confirm");
+  const passwordInput = document.querySelector("#delete-password");
+  const confirm = confirmInput?.value.trim() || "";
+  const current = passwordInput?.value || "";
+  if (passwordInput) passwordInput.value = "";
+  appView.deleteError = "";
+  try {
+    if (confirm !== name) throw Error("Type " + name + " to confirm.");
+    if (!current) throw Error("Enter your password.");
+    appView.busy = true;
+    rerender();
+    const result = await api("apps/delete", { project: name, confirm, current });
+    Object.assign(appView, { view: "list", tab: "deployments", log: null, error: "", message: "Deleted " + name + "." + (result?.note ? " " + result.note : "") });
+    delete appView.jobs[name];
+  } catch (error) {
+    appView.deleteError = error.message || "Could not delete the app.";
+  } finally {
+    appView.busy = false;
+    void refreshApps();
+  }
+}
+
 async function loadEnvNames(name) {
   appView.env.names = [];
   try { appView.env.names = (await api("apps/env?project=" + encodeURIComponent(name))).keys || []; }
@@ -825,6 +860,7 @@ function bindApps() {
   each("[data-app-tab]", el => { appView.tab = el.dataset.appTab; appView.error = appView.message = ""; rerender(); });
   on("#app-deploy", () => void deployApp());
   on("#app-save-nix", () => void saveNix(appView.view));
+  on("#app-delete", () => void deleteApp(appView.view));
   on("#app-add-file", () => { syncForm(); appView.entries.push({ path: "", text: "" }); rerender(); });
   on("#app-pin", () => void pinApp());
   on("#app-draft-save", () => void saveDraftApp());

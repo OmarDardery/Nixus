@@ -148,3 +148,26 @@ console.log("Apps page verified");
   assert.match(steps, /<li class="failed">Start containers/);
   console.log("Replace, variables and steps verified");
 })().catch(e => { console.error(e); process.exitCode = 1; });
+
+// Delete app: needs the typed name and the password, then returns to the list.
+(async () => {
+  const sent = [];
+  let confirmValue = "web", passwordValue = "pw";
+  const ctx4 = vm.createContext({ setTimeout: () => 0, state: { page: "projects" }, shell: () => {}, File, console, esc: context.esc, card: context.card, title: context.title,
+    api: async (r, b) => { sent.push([r, b]); return r === "apps/delete" ? { deleted: "web" } : {}; },
+    document: { querySelector: id => id === "#delete-confirm" ? { value: confirmValue } : id === "#delete-password" ? { value: passwordValue } : null, querySelectorAll: () => [] } });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx4);
+  vm.runInContext('Object.assign(appView, { view: "web", tab: "settings", nixLoaded: "web", overview: { projects: [{ name: "web", backend: "incus-compose", incusProject: "web", instances: [] }] } })', ctx4);
+  assert.match(vm.runInContext("appsPage()", ctx4), /id="app-delete"/);
+  confirmValue = "wbe";
+  await vm.runInContext('deleteApp("web")', ctx4);
+  assert.ok(!sent.some(([r]) => r === "apps/delete"), "nothing sent without the typed name");
+  assert.match(vm.runInContext("appView.deleteError", ctx4), /Type web/);
+  confirmValue = "web";
+  await vm.runInContext('deleteApp("web")', ctx4);
+  const call = sent.find(([r]) => r === "apps/delete");
+  assert.deepEqual(JSON.parse(JSON.stringify(call[1])), { project: "web", confirm: "web", current: "pw" });
+  assert.equal(vm.runInContext("appView.view", ctx4), "list");
+  assert.match(vm.runInContext("appView.message", ctx4), /Deleted web/);
+  console.log("Delete app verified");
+})().catch(e => { console.error(e); process.exitCode = 1; });
