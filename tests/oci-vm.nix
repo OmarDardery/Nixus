@@ -4,6 +4,7 @@
 # sandbox builds it, and the verified image is imported into Incus.
 { pkgs }:
 let
+  healthdImage = import ./healthd-image.nix { inherit pkgs; };
   defaults = import ../site-defaults.nix;
   settings = defaults // {
     hostName = "nixus-test"; cpuVendor = "intel";
@@ -41,7 +42,7 @@ let
   hostNode = withRegistry: { lib, pkgs, ... }: {
       # The bootstrap role has neither the hypervisor modules nor AppArmor; the
       # gzip rule is the production module, with AppArmor enforcing as on a host.
-      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ];
+      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ../modules/compose-runtime.nix ];
       security.apparmor.enable = true;
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
@@ -57,7 +58,7 @@ let
         enable = true;
         preseed = {
           # As on real hosts (modules/incus.nix); incus-compose requires a listener.
-          config."core.https_address" = "127.0.0.1:8443";
+          config."core.https_address" = "0.0.0.0:8443";
           storage_pools = [ { name = "default"; driver = "dir"; } ];
           networks = [ { name = "incusbr0"; type = "bridge";
             config = { "ipv4.address" = "10.0.100.1/24"; "ipv4.nat" = "true"; "ipv6.address" = "none"; }; } ];
@@ -69,7 +70,7 @@ let
       };
       networking.nftables.enable = true;
       # Surface isolated builder diagnostics in the journal.
-      systemd.services.nixus-admin-backend.environment.NIXUS_OCI_VM_TEST = "1";
+      systemd.services.nixus-admin-backend.environment = { NIXUS_OCI_VM_TEST = "1"; NIXUS_COMPOSE_HEALTHD_IMAGE = "localhost:5000/nixus/healthd:1"; };
       systemd.services.nixus-test-fixture = {
         wantedBy = [ "multi-user.target" ];
         after = [ "systemd-tmpfiles-setup.service" ];
@@ -124,6 +125,7 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${baseImage} docker://localhost:5000/nixus/base:1")
         digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${healthdImage} docker://localhost:5000/nixus/healthd:1")
 
     with subtest("pin: unpinned references resolve to the registry's digest"):
         pinned = broker("/image-updates/pin", {"files": [{"path": "Dockerfile", "text": "FROM localhost:5000/nixus/base:1\nCOPY a /a\n"}]})
@@ -422,7 +424,7 @@ in pkgs.testers.runNixOSTest {
 
     with subtest("services in one app reach each other by name, with no published ports"):
         dockerfile = ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sh\", \"-c\", \"mkdir -p /www && echo reached-by-name > /www/index.html && exec httpd -f -p 8080 -h /www\"]\n").encode()
-        compose = b"services:\n  web:\n    build: .\n  client:\n    build: .\n    command: [\"/bin/sleep\", \"86400\"]\n"
+        compose = b"services:\n  web:\n    build: .\n    restart: unless-stopped\n    healthcheck:\n      test: [\"CMD\", \"/bin/test\", \"-f\", \"/etc/base-marker\"]\n      interval: 2s\n      timeout: 1s\n      retries: 3\n  client:\n    build: .\n    command: [\"/bin/sleep\", \"86400\"]\n"
         dfiles = {"Dockerfile": dockerfile, "compose.yaml": compose}
         dentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in dfiles.items()]
         dp = broker("/project-import/prepare", {"project": "dnsapp", "files": dentries})
@@ -446,6 +448,16 @@ in pkgs.testers.runNixOSTest {
         assert "nameserver " + gateway in resolv, resolv
         machine.wait_until_succeeds("incus exec client --project dnsapp -- ip -4 addr show eth0 | grep -q 'inet '", timeout=120)
         machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
+
+    with subtest("upstream healthd owns health checks and honors an intentional Stop"):
+        machine.wait_until_succeeds("test \"$(incus config get web user.healthcheck.status --project dnsapp)\" = healthy", timeout=120)
+        machine.succeed("incus stop web --project dnsapp --force")
+        machine.wait_until_succeeds("incus list web --project dnsapp --format=json | jq -e '.[0].status == \"Running\"'", timeout=120)
+        broker("/apps/power", {"project": "dnsapp", "action": "stop"})
+        machine.succeed("sleep 5")
+        assert all(i["status"] == "Stopped" for i in json.loads(machine.succeed("incus list --project dnsapp --format=json")))
+        broker("/apps/power", {"project": "dnsapp", "action": "start"})
+        machine.wait_until_succeeds("test \"$(incus config get web user.healthcheck.status --project dnsapp)\" = healthy", timeout=120)
 
     with subtest("a service gets its own LAN address when the app asks for it"):
         broker("/apps/deploy", {"project": "dnsapp", "kind": "network", "lan": ["web"]})

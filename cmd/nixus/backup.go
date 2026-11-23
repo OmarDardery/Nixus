@@ -67,7 +67,8 @@ func saveRestartPending(pending []any) error {
 }
 
 func instanceIdentity(guest M) M {
-	return M{"project": guest["project"], "name": guest["name"], "uuid": jget(guest, "config", "volatile.uuid")}
+	return M{"project": guest["project"], "name": guest["name"], "uuid": jget(guest, "config", "volatile.uuid"),
+		"compose": str(jget(guest, "config", composeServiceLabel)) != "", "healthStopped": jget(guest, "config", composeStoppedKey)}
 }
 
 func verifyIdentity(guest M) error {
@@ -104,12 +105,14 @@ func backupRecover() error {
 			}
 			switch str(state["status"]) {
 			case "Stopped":
-				_, err = backupIncus(0, "start", str(guest["name"]), "--project", str(guest["project"]))
-				return err
+				if _, err = backupIncus(0, "start", str(guest["name"]), "--project", str(guest["project"])); err != nil {
+					return err
+				}
 			case "Running":
-				return nil
+			default:
+				return Hidden("Guest is neither stopped nor running")
 			}
-			return Hidden("Guest is neither stopped nor running")
+			return restoreComposeStopped(backupIncus, guest)
 		}()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Recovery failed for %s/%s: %v\n", str(guest["project"]), str(guest["name"]), err)
@@ -834,6 +837,11 @@ func backupGroups(selected []M, destination, generation string) ([]any, error) {
 				g := obj(raw)
 				if err := verifyIdentity(g); err != nil {
 					return err
+				}
+				if isTrue(g["compose"]) {
+					if err := setComposeStopped(backupIncus, str(g["project"]), str(g["name"]), true); err != nil {
+						return err
+					}
 				}
 				if _, err := backupIncus(0, "stop", str(g["name"]), "--project", str(g["project"]), "--timeout", "180"); err != nil {
 					return err

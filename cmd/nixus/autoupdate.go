@@ -288,7 +288,14 @@ func restoreVolumes(incus incusFunc, project string, snaps []volumeSnapshot) err
 		return nil
 	}
 	for _, inst := range appInstances(incus, project) {
-		incus(0, "stop", str(inst["name"]), "--project", project, "--force")
+		if err := setComposeStopped(incus, project, str(inst["name"]), true); err != nil {
+			return err
+		}
+		if str(inst["status"]) == "Running" {
+			if _, err := incus(0, "stop", str(inst["name"]), "--project", project, "--force"); err != nil {
+				return Public("Could not stop the app before restoring its volumes")
+			}
+		}
 	}
 	for _, s := range snaps {
 		if _, err := incus(0, "storage", "volume", "snapshot", "restore", s.Pool, s.Volume, s.Name, "--project", project); err != nil {

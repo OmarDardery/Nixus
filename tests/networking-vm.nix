@@ -75,7 +75,7 @@ in pkgs.testers.runNixOSTest {
     import json
     machine.start()
     machine.wait_for_unit("incus-preseed.service")
-    machine.wait_for_unit("firewall.service")
+    machine.wait_for_unit("nftables.service")
     machine.succeed("ip netns add edge; ip link add uplink type veth peer name edge0; ip link set edge0 netns edge")
     machine.succeed("ip address add 203.0.113.2/24 dev uplink; ip link set uplink up")
     machine.succeed("ip netns exec edge ip link set lo up; ip netns exec edge ip address add 203.0.113.1/24 dev edge0; ip netns exec edge ip link set edge0 up")
@@ -122,7 +122,7 @@ in pkgs.testers.runNixOSTest {
         machine.fail("ip netns exec client python3 ${probe} connect 203.0.113.2 9440")
         machine.fail(f"ip netns exec isolated python3 ${probe} connect {client_ip} 7844")
     with subtest("firewall reload preserves Incus NAT and app connectivity"):
-        machine.succeed("systemctl restart firewall.service")
+        machine.succeed("systemctl restart nftables.service")
         check_egress()
   '';
 }

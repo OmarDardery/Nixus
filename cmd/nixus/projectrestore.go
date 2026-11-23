@@ -314,6 +314,9 @@ func restoreIncusApply(incus incusFunc, generation string, inventory M, j *resto
 	}
 	for _, raw := range list(inventory["guests"]) {
 		g := obj(raw)
+		if err := restoreComposeStopped(incus, instanceIdentity(g)); err != nil {
+			return nil, Public("Could not restore the app's restart intent")
+		}
 		if str(g["status"]) != "Running" {
 			continue
 		}

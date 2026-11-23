@@ -1462,7 +1462,7 @@ func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M,
 		if pinErr == nil {
 			_, runErr = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-deploy-" + identity,
 				"--property=RuntimeMaxSec=3600", "--setenv=NIXUS_STATE=" + t.state, "--setenv=NIXUS_PROJECTS=" + t.workspace,
-				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
+				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 				adminLauncher(), "admin", "project-deploy-job", identity}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {

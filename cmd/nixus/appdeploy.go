@@ -226,7 +226,7 @@ func startAppDeploy(actor string, body M) (M, error) {
 		return nil, err
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-app-deploy-" + project,
-		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "apps", "deploy", project}, nil, 20*time.Second); err != nil {
 		job["status"], job["error"] = "failed", "Could not start the deployment worker"
@@ -440,7 +440,7 @@ func saveBackupPolicy(actor string, text any) (M, error) {
 // startProjectBackup runs the published backup policy now in a worker unit.
 func startProjectBackup(actor string) (M, error) {
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-backup-now",
-		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
 		adminLauncher(), "admin", "project-backup", "run"}, nil, 20*time.Second); err != nil {
 		return nil, Public("A backup is already running")
 	}
@@ -466,6 +466,11 @@ func appPower(actor string, body M) (M, error) {
 	}
 	for _, inst := range instances {
 		running := str(inst["status"]) == "Running"
+		if str(p["backend"]) == composeBackend {
+			if err := setComposeStopped(updateIncus, incusProject, str(inst["name"]), action == "stop"); err != nil {
+				return nil, Public("Could not update the app's stop intent")
+			}
+		}
 		if (action == "start" && running) || (action == "stop" && !running) {
 			continue
 		}

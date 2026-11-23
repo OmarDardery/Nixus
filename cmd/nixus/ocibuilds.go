@@ -179,7 +179,16 @@ const composeServiceLabel = "user.label.incus-compose.service"
 // version, pinned by digest. It lets an app's services reach each other by
 // name, as with docker compose. NIXUS_COMPOSE_DNS_IMAGE overrides it (tests,
 // hosts with their own registry mirror).
+const defaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:1.4.1@sha256:abb8261776b7a5eb966ca8db698e53dd7bf825ba1a630e2e6ebdbf1088f3d84b"
+
 const defaultDNSImage = "ghcr.io/lxc/incus-compose/ic-dns:1.4.1@sha256:854d0f70b643e7699e5abe39f86de30d58d148c5865489be67e7ea9b32d695a0"
+
+func composeHealthdImage() string {
+	if v := os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"); v != "" {
+		return v
+	}
+	return defaultHealthdImage
+}
 
 func composeDNSImage() string {
 	if v := os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"); v != "" {
@@ -191,6 +200,30 @@ func composeDNSImage() string {
 // isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
 // the project; it belongs to the project, not to any of the app's services.
 func isDNSSidecar(incusProject, name string) bool { return name == incusProject+"-ic-dns" }
+
+const composeStoppedKey = "user.healthcheck.stopped"
+
+// setComposeStopped uses the upstream controller's intent marker: stopping an
+// instance for backup or by request must not trigger its restart policy.
+func setComposeStopped(incus incusFunc, project, instance string, stopped bool) error {
+	_, err := incus(0, "config", "set", instance, composeStoppedKey+"="+fmt.Sprint(stopped), "--project", project)
+	return err
+}
+
+func restoreComposeStopped(incus incusFunc, guest M) error {
+	if !isTrue(guest["compose"]) {
+		return nil
+	}
+	args := []string{"config", "unset", str(guest["name"]), composeStoppedKey, "--project", str(guest["project"])}
+	if value, ok := guest["healthStopped"].(string); ok {
+		args = []string{"config", "set", str(guest["name"]), composeStoppedKey + "=" + value, "--project", str(guest["project"])}
+	}
+	_, err := incus(0, args...)
+	return err
+}
+
+const composeRuntimeKey = "user.nixus.compose-runtime"
+const composeRuntimeVersion = "2"
 
 const composeIntentKey = "user.nixus.compose-intent"
 
@@ -248,12 +281,6 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 	if project == nil || str(config[imageOwnerKey]) != "true" || str(config[imageBackendKey]) != composeBackend {
 		return nil, Public("The Incus project is not owned by Nixus for Compose")
 	}
-	built := map[string]bool{}
-	for _, raw := range list(build["services"]) {
-		if item := obj(raw); isTrue(item["built"]) {
-			built[str(item["service"])] = true
-		}
-	}
 	var services []string
 	for _, s := range list(build["services"]) {
 		services = append(services, str(obj(s)["service"]))
@@ -279,9 +306,9 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			return nil, Public("An instance not managed by incus-compose is inside the Compose project")
 		}
 		observed[str(instance["name"])] = M{"service": service, "status": truncate(str(instance["status"]), 32),
-			"image": str(settings["volatile.base_image"])}
+			"image": str(settings["volatile.base_image"]), "health": str(settings["user.healthcheck.status"])}
 	}
-	current := str(config[composeIntentKey]) == str(build["intentHash"])
+	current := str(config[composeIntentKey]) == str(build["intentHash"]) && str(config[composeRuntimeKey]) == composeRuntimeVersion
 	var recreates []string
 	for _, s := range services {
 		count := 0
@@ -291,7 +318,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 				continue
 			}
 			count++
-			if str(om["status"]) != "Running" {
+			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || str(om["health"]) == "starting" {
 				current = false
 			}
 		}
@@ -299,11 +326,8 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			current = false
 		}
 	}
-	if !current && str(config[composeIntentKey]) != str(build["intentHash"]) {
-		// A new revision rebuilds its own services; incus-compose recreates them.
-		for s := range built {
-			recreates = append(recreates, s)
-		}
+	if !current && (str(config[composeIntentKey]) != str(build["intentHash"]) || str(config[composeRuntimeKey]) != composeRuntimeVersion) {
+		recreates = append(recreates, services...)
 	}
 	recreates = uniqueSorted(recreates)
 	before := map[string]bool{}
@@ -398,6 +422,14 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if a.lan != nil {
 		wantLAN = *a.lan
 	}
+	inventory, err := liveInventory()
+	if err != nil {
+		return Public("Could not verify the app environment scope")
+	}
+	declared := obj(obj(inventory["projects"])[sourceProject])
+	if declared == nil {
+		return Public("Publish the app declaration before deploying its environment")
+	}
 	values, err := appStartEnv(sourceProject)
 	if err != nil {
 		return Failed("Could not read the variables entered for this app", err)
@@ -425,7 +457,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		return err
 	}
 	override := filepath.Join(scratch, "nixus-services.yaml")
-	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic), gateway, appNetworkName(incusProject)), 0o600, ""); err != nil {
+	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic, declared), gateway, appNetworkName(incusProject)), 0o600, ""); err != nil {
 		return err
 	}
 	flags = append(flags, "-f", override)
@@ -440,16 +472,11 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err != nil {
 		return err
 	}
-	if previous != "" && (previous != str(build["intentHash"]) || storedLAN != wantLAN) {
-		// A new revision replaces the running instances so the new images are
-		// used. incus-compose's own --recreate also tears down shared DNS wiring
-		// and fails when there is none, so remove them here; named volumes
-		// keep their data.
-		for _, inst := range appInstances(a.incus, incusProject) {
-			if _, err := a.incus(0, "delete", str(inst["name"]), "--project", incusProject, "--force"); err != nil {
-				return Failed("Could not replace the running app", err)
-			}
-		}
+	if previous != "" && (previous != str(build["intentHash"]) || storedLAN != wantLAN || str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion) {
+		// Name the services so upstream recreates instances while retaining
+		// external networking and the shared controller. Volumes stay intact.
+		args = append(args, "--recreate")
+		args = append(args, names...)
 	}
 	if msg := portConflicts(a.incus, incusProject, composeHostPorts(list(build["services"]))); msg != "" {
 		return Public(msg)
@@ -475,7 +502,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err := runUp(args); err != nil {
 		return err
 	}
-	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN)
+	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN, composeRuntimeKey+"="+composeRuntimeVersion)
 	return err
 }
 
@@ -554,14 +581,15 @@ func appStartEnv(project string) (M, error) {
 //     LAN.
 //
 // JSON is valid YAML.
-func serviceOverride(services []string, values M, lanFor map[string]bool, nic M) []byte {
-	env := map[string]string{}
-	for k, v := range values {
-		env[k] = strings.ReplaceAll(str(v), "$", "$$")
-	}
+func serviceOverride(services []string, values M, lanFor map[string]bool, nic M, project M) []byte {
 	out := M{}
 	for _, name := range services {
-		svc := M{"container_name": instanceNameFor(name)}
+		scoped := envValuesFor(project, values, M{"service": name, "name": instanceNameFor(name)})
+		env := map[string]string{}
+		for k, v := range scoped {
+			env[k] = strings.ReplaceAll(str(v), "$", "$$")
+		}
+		svc := M{"container_name": instanceNameFor(name), "x-incus": M{envKeysConfig: strings.Join(keys(scoped), ",")}}
 		if len(env) > 0 {
 			svc["environment"] = env
 		}
@@ -611,9 +639,9 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 		}
 	}
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
-	args = append(append(args, buildFlags...), "--pull", "missing", "--no-healthd", "--no-dns")
+	args = append(append(args, buildFlags...), "--pull", "missing", "--healthd-scope", "global", "--no-dns")
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
-		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_DNS_IMAGE=" + composeDNSImage()}
+		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_DNS_IMAGE=" + composeDNSImage(), "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeHealthdImage()}
 	return args, env, nil
 }
 
@@ -729,10 +757,12 @@ func appOverride(services []byte, gateway, network string) []byte {
 	var doc M
 	json.Unmarshal(services, &doc)
 	for _, raw := range obj(doc["services"]) {
-		// A container's address comes by DHCP after its program starts; a
-		// program that exits without network is restarted once it is up.
-		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus",
-			"boot.autorestart": "true", "boot.autostart": "true"}
+		cfg := obj(obj(raw)["x-incus"])
+		if cfg == nil {
+			cfg = M{}
+		}
+		cfg["oci.dns.nameservers"], cfg["oci.dns.search"] = gateway, "incus"
+		obj(raw)["x-incus"] = cfg
 	}
 	doc["networks"] = M{"default": M{"name": network, "external": true}}
 	b, _ := json.Marshal(doc)

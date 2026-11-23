@@ -144,7 +144,7 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 // created with them; "$" must reach the container literally.
 func TestServiceOverrideNamesContainersAfterServices(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"web", "my_db"}, nil, nil, nil), &doc); err != nil {
+	if err := json.Unmarshal(serviceOverride([]string{"web", "my_db"}, nil, nil, nil, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	if got := obj(obj(doc["services"])["web"]); str(got["container_name"]) != "web" || got["environment"] != nil {
@@ -157,7 +157,7 @@ func TestServiceOverrideNamesContainersAfterServices(t *testing.T) {
 
 func TestEnvOverrideGivesEveryServiceTheVariables(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, nil), &doc); err != nil {
+	if err := json.Unmarshal(serviceOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, nil, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"web", "tunnel"} {
@@ -236,7 +236,7 @@ func TestStartDetailNamesVariablesAndLogTail(t *testing.T) {
 func TestServiceOverrideLANCard(t *testing.T) {
 	nic := M{"type": "nic", "nictype": "macvlan", "parent": "enp2s0", "name": "eth1"}
 	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, nic), &doc); err != nil {
+	if err := json.Unmarshal(serviceOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, nic, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	dev := obj(obj(jget(obj(obj(doc["services"])["aiostreams"]), "x-incus-compose", "devices"))["lan"])
@@ -304,7 +304,7 @@ func TestAppGatewayAndOverride(t *testing.T) {
 		t.Fatalf("allocated network changed: %q %v", again, err)
 	}
 	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
 	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "oci.dns.nameservers")) != "10.120.9.1" ||
 		!isTrue(jget(doc, "networks", "default", "external")) ||
 		!strings.HasPrefix(str(jget(doc, "networks", "default", "name")), "nxa-") || len(appNetworkName("a-very-long-app-name-here")) != 12 {
@@ -329,8 +329,8 @@ func TestSettledWaitsForStableRunning(t *testing.T) {
 		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
 	}
 	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
-	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart")) != "true" {
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
+	if jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart") != nil || jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autostart") != nil {
 		t.Fatalf("%v", doc)
 	}
 }
