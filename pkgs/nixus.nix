@@ -1,7 +1,7 @@
 # The single Go program behind every Nixus command (cmd/nixus) plus the
 # documentation website builder (cmd/website).
 { pkgs }:
-pkgs.buildGoModule {
+(pkgs.buildGoModule.override { go = import ./go.nix { inherit pkgs; }; }) {
   pname = "nixus";
   version = pkgs.lib.removeSuffix "\n" (builtins.readFile ../VERSION);
   src = pkgs.lib.fileset.toSource {

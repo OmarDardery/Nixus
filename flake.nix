@@ -251,7 +251,8 @@
       };
       devShells.x86_64-linux = {
         default = pkgs.mkShell {
-          packages = with pkgs; [ go gopls nixfmt shellcheck incus-lts.client sops age ];
+          packages = [ (import ./pkgs/go.nix { inherit pkgs; }) ]
+            ++ (with pkgs; [ gopls nixfmt shellcheck incus-lts.client sops age ]);
         };
       };
     };

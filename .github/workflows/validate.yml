@@ -27,6 +27,8 @@ jobs:
       - name: Go formatting, vet and unit tests
         run: |
           nix develop -c bash -c 'test -z "$(gofmt -l cmd)" && go vet ./... && go test ./...'
+      - name: Check reachable Go vulnerabilities
+        run: nix develop -c go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Fetch the pinned upstream health controller fixture
         run: nix build .#checks.x86_64-linux.healthd-image --no-link -L
       - name: Build Go runtime and run its packaged tests
