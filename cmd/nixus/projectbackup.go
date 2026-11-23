@@ -147,6 +147,18 @@ func adoptWorkspaceChange(t *ProjectTransactions, id string) error {
 	return t.write(id, record)
 }
 
+// incusProjectsOf maps the selected source projects to their Incus projects.
+// It is never nil, so an empty selection backs up nothing.
+func incusProjectsOf(policy, inventory M) []string {
+	out := []string{}
+	for _, name := range includedProjects(policy, inventory) {
+		if p := str(obj(obj(inventory["projects"])[name])["incusProject"]); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func includedProjects(policy, inventory M) []string {
 	all := keys(obj(inventory["projects"]))
 	if str(policy["includeProjects"]) == "all" {
@@ -443,7 +455,7 @@ func runProjectBackup(force bool) (M, error) {
 				return err
 			}
 			defer release()
-			return runBackup()
+			return runBackup(incusProjectsOf(policy, inventory))
 		}()
 		if err != nil {
 			ok = false

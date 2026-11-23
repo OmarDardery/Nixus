@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,55 @@ func TestApprovedSecretChangeKeepsTheWorkspaceAccepted(t *testing.T) {
 	writeFile(t, filepath.Join(workspace, "web", "default.nix"), "{ ... }: { evil = true; }\n")
 	if _, ok := workspaceApproved(tx); ok {
 		t.Fatal("an unreviewed declaration edit was accepted")
+	}
+}
+
+func backupGuest(project, name string, devices M) M {
+	return M{"project": project, "name": name, "expanded_devices": devices}
+}
+
+func diskDevice(source string) M {
+	return M{"data": M{"type": "disk", "path": "/data", "pool": "default", "source": source}}
+}
+
+// Backing up one project must not stop or export another one's guests (#109).
+func TestScopedBackupLeavesOtherProjectsAlone(t *testing.T) {
+	guests := []M{backupGuest("a", "a1", diskDevice("custom/va")), backupGuest("b", "b1", diskDevice("custom/vb"))}
+	volumes := []M{{"project": "a", "pool": "default", "name": "va"}, {"project": "b", "pool": "default", "name": "vb"}}
+	namespaces := map[string]string{"a": "a", "b": "b"}
+	groups, err := consistencyGroups(guests, volumes, nil, namespaces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := scopeGroups(groups, map[string]bool{"a": true}, namespaces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || len(list(kept[0]["guests"])) != 1 || str(obj(list(kept[0]["guests"])[0])["name"]) != "a1" {
+		t.Fatalf("only a1 may be selected: %v", kept)
+	}
+	for _, v := range list(kept[0]["volumes"]) {
+		if str(obj(v)["project"]) == "b" {
+			t.Fatal("the excluded project's volume leaked in")
+		}
+	}
+}
+
+func TestScopedBackupRefusesASharedVolumeBeforeStoppingAnything(t *testing.T) {
+	// Both projects use the shared (default-namespace) volume "shared".
+	guests := []M{backupGuest("a", "a1", diskDevice("custom/shared")), backupGuest("b", "b1", diskDevice("custom/shared"))}
+	volumes := []M{{"project": "default", "pool": "default", "name": "shared"}}
+	namespaces := map[string]string{"a": "default", "b": "default"}
+	groups, err := consistencyGroups(guests, volumes, nil, namespaces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = scopeGroups(groups, map[string]bool{"a": true}, namespaces)
+	if err == nil || !strings.Contains(publicError(err), "share a writable volume") || !strings.Contains(publicError(err), "b/b1") {
+		t.Fatalf("a shared volume with an unselected guest must be refused: %v", err)
+	}
+	// Selecting both is fine.
+	if _, err := scopeGroups(groups, map[string]bool{"a": true, "b": true}, namespaces); err != nil {
+		t.Fatal(err)
 	}
 }

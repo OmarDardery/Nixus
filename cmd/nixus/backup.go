@@ -469,7 +469,55 @@ func fileSHA256(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runBackup() error {
+// scopeGroups keeps only the consistency groups that belong to the selected
+// Incus projects. A group that mixes selected and unselected guests (a shared
+// writable volume) is refused before anything is stopped (#109).
+func scopeGroups(groups []M, only map[string]bool, namespaces map[string]string) ([]M, error) {
+	selectedNS := map[string]bool{}
+	for project := range only {
+		ns, ok := namespaces[project]
+		if !ok {
+			ns = project
+		}
+		selectedNS[ns] = true
+	}
+	var kept []M
+	for _, group := range groups {
+		inside, outside := []string{}, []string{}
+		for _, raw := range list(group["guests"]) {
+			g := obj(raw)
+			name := str(g["project"]) + "/" + str(g["name"])
+			if only[str(g["project"])] {
+				inside = append(inside, name)
+			} else {
+				outside = append(outside, name)
+			}
+		}
+		switch {
+		case len(inside) > 0 && len(outside) > 0:
+			return nil, Public("These guests share a writable volume, but only some are selected for backup: " +
+				strings.Join(append(inside, outside...), ", ") + ". Select all of them or none.")
+		case len(inside) > 0:
+			kept = append(kept, group)
+		case len(outside) == 0:
+			// Standalone volumes: keep those in the selected namespaces.
+			var vols []any
+			for _, raw := range list(group["volumes"]) {
+				if selectedNS[str(obj(raw)["project"])] {
+					vols = append(vols, raw)
+				}
+			}
+			if len(vols) > 0 {
+				kept = append(kept, M{"guests": []any{}, "volumes": vols})
+			}
+		}
+	}
+	return kept, nil
+}
+
+// runBackup stages exports of every guest and volume, or only those of the
+// given Incus projects when only is not nil.
+func runBackup(only []string) error {
 	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
 		return err
 	}
@@ -560,6 +608,15 @@ func runBackup() error {
 	groups, err := consistencyGroups(guests, volumes, nil, namespaces)
 	if err != nil {
 		return err
+	}
+	if only != nil {
+		wanted := map[string]bool{}
+		for _, p := range only {
+			wanted[p] = true
+		}
+		if groups, err = scopeGroups(groups, wanted, namespaces); err != nil {
+			return err
+		}
 	}
 	skipped := []any{}
 	var selected []M
@@ -743,7 +800,7 @@ func backupMain(args []string) int {
 		if recoverOnly {
 			done <- backupRecover()
 		} else {
-			done <- runBackup()
+			done <- runBackup(nil)
 		}
 	}()
 	select {
