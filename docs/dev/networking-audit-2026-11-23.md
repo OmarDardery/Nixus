@@ -73,6 +73,7 @@ References and the diagnostic sequence are in [Cloudflare Tunnel](../cloudflare-
 Go race tests, Go vet, all JavaScript checks and the documentation website's
 internal link/asset checks pass locally. Native Nix evaluation is available via
 a relocated store; KVM execution is delegated to GitHub Actions. The validation
-workflow runs source/contracts/packages first, then independently requires the
-portal, production-networking, OCI/cold-restore VM tests and host build. See the
+workflow runs source/contracts/packages and the independent portal,
+production-networking, OCI/cold-restore VM tests and host build in parallel.
+The final validation gate requires every job. See the
 linked PR's final check runs for executed integration evidence.

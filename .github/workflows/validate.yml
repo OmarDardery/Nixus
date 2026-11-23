@@ -72,7 +72,6 @@ jobs:
           nix build '.#nixosConfigurations.validation-notifications.config.systemd.units."nixus-notify@.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
   integration:
-    needs: source
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
