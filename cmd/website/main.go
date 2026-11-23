@@ -24,7 +24,6 @@ import (
 	"github.com/yuin/goldmark/parser"
 	ghtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
 )
 
 const domain = "https://nixus.dardery.work"
@@ -382,7 +381,9 @@ func build(output, base string) error {
 	}
 	body := "<p>Start with a plain installed NixOS server. The default installer configures Incus, Cockpit and the Nixus console, then verifies the enabled interfaces.</p><div class=\"docs-intro-grid\">" + cards.String() + "</div>"
 	for _, g := range groups[1:] {
-		body += "<h2>" + html.EscapeString(strings.Title(strings.ToLower(g.title))) + "</h2><ul>"
+		// Group titles are fixed, nonempty ASCII labels; use sentence case.
+		heading := strings.ToLower(g.title)
+		body += "<h2>" + html.EscapeString(strings.ToUpper(heading[:1])+heading[1:]) + "</h2><ul>"
 		for _, it := range g.items {
 			body += `<li><a href="` + docURL(base, it.slug) + `">` + html.EscapeString(it.label) + "</a></li>"
 		}
@@ -559,5 +560,3 @@ func main() {
 		}
 	}
 }
-
-var _ = util.Prioritized

@@ -132,7 +132,7 @@ async function nativeSecretsRefresh() {
   } finally {
     v.loaded = true;
     v.loading = false;
-    if (state.page === "operations") shell();
+    if (state.page === "operations" && !(typeof typing === "function" && typing())) shell();
   }
 }
 

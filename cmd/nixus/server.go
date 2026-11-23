@@ -31,7 +31,7 @@ var brokerSocket = envPath("NIXUS_SOCKET", "/run/nixus-admin/backend.sock")
 
 const maxBody = 262144
 
-var actorName = re(`[a-z][a-z0-9_-]{0,31}`)
+var actorName = hostUser
 
 const csp = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
 
@@ -502,19 +502,28 @@ func (a *Auth) login(password any, address, username string) (string, string, er
 	// Linux (PAM) check takes a moment and must not stall other sessions.
 	a.mu.Lock()
 	nowT := time.Now()
-	var attempts []time.Time
-	for _, t := range a.failures[address] {
-		if nowT.Sub(t) < 5*time.Minute {
-			attempts = append(attempts, t)
+	// Expire unused identities as well as the address making this request.
+	for addr, times := range a.failures {
+		kept := times[:0]
+		for _, t := range times {
+			if nowT.Sub(t) < 5*time.Minute {
+				kept = append(kept, t)
+			}
+		}
+		if len(kept) == 0 {
+			delete(a.failures, addr)
+		} else {
+			a.failures[addr] = kept
 		}
 	}
-	a.failures[address] = attempts
-	// Count this attempt up front so parallel guesses share the limit.
-	a.failures[address] = append(attempts, nowT)
-	a.mu.Unlock()
-	if len(attempts) >= 5 {
+	attempts := a.failures[address]
+	if len(attempts) >= 5 || (len(attempts) == 0 && len(a.failures) >= 1024) {
+		a.mu.Unlock()
 		return "", "", Public("Too many sign-in attempts; wait five minutes")
 	}
+	// Rejected attempts neither grow the slice nor extend the lockout.
+	a.failures[address] = append(attempts, nowT)
+	a.mu.Unlock()
 	// Single-user console: a Linux account with sudo, checked by the root
 	// broker through PAM.
 	if _, err := linuxVerify(username, password); err != nil {
@@ -524,8 +533,19 @@ func (a *Auth) login(password any, address, username string) (string, string, er
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.failures, address)
-	if len(a.sessions) > 128 {
-		a.sessions = map[string]*session{}
+	for token, s := range a.sessions {
+		if nowT.Sub(s.used) > 30*time.Minute || nowT.Sub(s.created) > 8*time.Hour {
+			delete(a.sessions, token)
+		}
+	}
+	if len(a.sessions) >= 128 {
+		oldest := ""
+		for token, s := range a.sessions {
+			if oldest == "" || s.used.Before(a.sessions[oldest].used) {
+				oldest = token
+			}
+		}
+		delete(a.sessions, oldest)
 	}
 	token, csrf := tokenURLSafe(32), tokenURLSafe(32)
 	a.sessions[token] = &session{csrf: csrf, username: username, role: role, identity: identity,
@@ -869,7 +889,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		reply(w, 200, M{"csrf": csrf, "username": username, "role": p.auth.get("nixus_session=" + token).role}, "",
+		reply(w, 200, M{"csrf": csrf, "username": username, "role": "admin"}, "",
 			header{"Set-Cookie", "nixus_session=" + token + sessionCookie + "28800"})
 		return nil
 	}
@@ -971,7 +991,11 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	case "/api/logout":
 		p.auth.mu.Lock()
 		s.download = nil
-		s.created = time.Time{}
+		for token, item := range p.auth.sessions {
+			if item == s {
+				delete(p.auth.sessions, token)
+			}
+		}
 		p.auth.mu.Unlock()
 		reply(w, 200, M{"ok": true}, "", header{"Set-Cookie", "nixus_session=" + sessionCookie + "0"})
 		return nil
@@ -1031,7 +1055,7 @@ func (p *portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Header.Get("Expect") != "" {
 		w.Header().Set("Connection", "close")
-		http.Error(w, "Expectation Failed", 417)
+		http.Error(w, "Expectation Failed", http.StatusExpectationFailed)
 		return
 	}
 	var err error
@@ -1049,7 +1073,7 @@ func (p *portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		w.Header().Set("Connection", "close")
-		http.Error(w, "Method Not Allowed", 405)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 

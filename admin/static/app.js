@@ -39,6 +39,7 @@ function navigateTo(id, replace = false) {
   if (window.history) window.history[replace ? "replaceState" : "pushState"](null, "", "#" + id);
   shell();
   window.scrollTo(0, 0);
+  document.querySelector("#main")?.focus({preventScroll: true});
 }
 const esc = (v) =>
   String(v ?? "").replace(
@@ -198,16 +199,6 @@ function settingsTabs() {
     `<button type="button" class="small${state.page === id ? " active" : ""}" data-go="${id}"${state.page === id ? ' aria-current="page"' : ""}>${esc(pages.find(([key]) => key === id)[1])}</button>`).join("")}</nav>`;
 }
 function bindUiChrome() {
-  const sidebar = document.querySelector("#ui-sidebar");
-  const shade = document.querySelector("#ui-shade");
-  const navToggle = document.querySelector("#ui-nav-toggle");
-  const closeNav = () => { sidebar?.classList.remove("open"); shade?.classList.remove("open"); navToggle?.setAttribute("aria-expanded", "false"); };
-  navToggle?.addEventListener("click", () => {
-    const open = sidebar.classList.toggle("open");
-    shade.classList.toggle("open", open);
-    navToggle.setAttribute("aria-expanded", String(open));
-  });
-  shade?.addEventListener("click", closeNav);
   const dialog = document.querySelector("#ui-jump");
   const search = dialog?.querySelector("#ui-search-input");
   const openSearch = () => { if (!dialog.open) dialog.showModal(); search.value = ""; search.dispatchEvent(new Event("input")); search.focus(); };
@@ -229,7 +220,6 @@ function bindUiChrome() {
   });
   // A per-render handler is used so detached dialogs do not retain listeners.
   document.onkeydown = event => {
-    if (event.key === "Escape") closeNav();
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k" && !event.repeat) {
       event.preventDefault(); openSearch();
     }
@@ -481,6 +471,8 @@ async function load() {
 }
 let lastOverviewHealthPoll = 0;
 let overviewLoading = false;
+let pollLoading = false;
+let pollRenderPending = false;
 async function refreshOverview() {
   if (overviewLoading) return;
   overviewLoading = true;
@@ -493,11 +485,13 @@ async function refreshOverview() {
   } finally { overviewLoading = false; }
 }
 async function poll() {
+  if (pollLoading || document.querySelector("#login-form")) return;
+  pollLoading = true;
   try {
     if (state.page === "setup" || setupIncomplete()) {
       const before = JSON.stringify(setupView.progress);
       await refreshSetupProgress();
-      if (state.page === "setup" && before !== JSON.stringify(setupView.progress)) shell();
+      if (state.page === "setup" && before !== JSON.stringify(setupView.progress)) pollRenderPending = true;
     }
     let healthChanged = false;
     if (["overview","guests","system"].includes(state.page) && Date.now() - lastOverviewHealthPoll >= 30000) {
@@ -507,16 +501,16 @@ async function poll() {
     }
     const before = JSON.stringify(state.status?.job);
     state.status = await api("status");
-    if (state.page === "review" && before !== JSON.stringify(state.status.job))
-      shell();
-    else if (["overview","guests","system"].includes(state.page) && healthChanged) shell();
+    if (state.page === "review" && before !== JSON.stringify(state.status.job) ||
+        ["overview","system"].includes(state.page) && healthChanged) pollRenderPending = true;
+    if (pollRenderPending && !typing()) { pollRenderPending = false; shell(); }
     countdown();
   } catch (err) {
     if (!document.querySelector("#login-form"))
       toast(
         "Connection changed. Open the new management address and sign in to confirm.",
       );
-  }
+  } finally { pollLoading = false; }
 }
 function countdown() {
   const el = document.querySelector("#countdown");
