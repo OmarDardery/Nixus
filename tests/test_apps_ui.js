@@ -61,11 +61,11 @@ vm.runInContext('Object.assign(appView, { tab: "env" }); Object.assign(appView.e
 html = render();
 assert.match(html, /API_TOKEN/);
 assert.match(html, /id="env-reveal"/);
-assert.doesNotMatch(html, /data-env-value/);
+assert.doesNotMatch(html, /data-var-value/);
 vm.runInContext('appView.env.rows = [{ key: "API_TOKEN", value: "<s3cret>", show: false }]', context);
 html = render();
-assert.match(html, /data-env-value="0" type="password" value="&lt;s3cret&gt;"/, "values masked and escaped");
-assert.match(html, /id="env-paste-toggle"/);
+assert.match(html, /data-var-value="env:0" type="password" value="&lt;s3cret&gt;"/, "values masked and escaped");
+assert.match(html, /data-var-paste="env"/);
 assert.match(html, /id="env-save"/);
 
 // .env parsing: comments, export, quotes, inline comments.
@@ -124,6 +124,27 @@ console.log("Apps page verified");
   vm.runInContext('Object.assign(appView, { view: "new", name: "web", mode: "nix", nix: "{}", overview: { projects: [{ name: "web", instances: [] }] } })', ctx3);
   await vm.runInContext("deployApp()", ctx3);
   assert.match(vm.runInContext("appView.error", ctx3), /already exists/);
-  assert.ok(!calls.includes("apps/deploy"), "nothing is sent before the second confirmation");
-  console.log("Replace confirmation verified");
+  assert.ok(!calls.includes("apps/deploy"), "nothing is sent before Replace is ticked");
+  assert.match(vm.runInContext("addAppCard()", ctx3), /id="app-replace-ok"/, "the form offers Replace for an existing name");
+
+  // Variables typed as rows are sent as an object; bad names are refused before sending.
+  let body;
+  vm.runInContext("api = async (r, b) => { if (r === 'apps/deploy') this.sent = b; return { id: 'x', manifestHash: 'y' }; }", ctx3);
+  vm.runInContext('Object.assign(appView, { replaceOk: true, newVars: [{ key: "TUNNEL_TOKEN", value: "t=1$x" }, { key: "SECRET_KEY", value: "k" }, { key: "", value: "" }] })', ctx3);
+  await vm.runInContext("deployApp()", ctx3);
+  body = vm.runInContext("this.sent", ctx3);
+  assert.deepEqual(JSON.parse(JSON.stringify(body.env)), { TUNNEL_TOKEN: "t=1$x", SECRET_KEY: "k" });
+  assert.equal(vm.runInContext("appView.newVars.length", ctx3), 1, "the form is cleared after a deploy starts");
+  vm.runInContext('this.sent = null; Object.assign(appView, { view: "new", replaceOk: true, newVars: [{ key: "1BAD", value: "x" }] })', ctx3);
+  await vm.runInContext("deployApp()", ctx3);
+  assert.equal(vm.runInContext("this.sent", ctx3), null);
+  assert.match(vm.runInContext("appView.error", ctx3), /Invalid variable name: 1BAD/);
+  assert.match(vm.runInContext("varsEditor('new', appView.newVars, false)", ctx3), /aria-invalid="true"/);
+
+  // Deployment steps: where it is, and where it stopped.
+  let steps = vm.runInContext('deploySteps({ status: "building" })', ctx3);
+  assert.match(steps, /<li class="done">Publish files<\/li><li class="current">Build images/);
+  steps = vm.runInContext('deploySteps({ status: "failed", failedStep: "deploying" })', ctx3);
+  assert.match(steps, /<li class="failed">Start containers/);
+  console.log("Replace, variables and steps verified");
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -23,7 +23,7 @@ const run = code => vm.runInContext(code, context);
 (async () => {
   // Fill the New app form, then save it as a draft.
   run(`Object.assign(appView, { view: "new", name: "notes", mode: "files", entries: [{ path: "compose.yaml", text: "services: {}\\n" }],
-    newEnv: "GREETING=hello\\nTOKEN=abc", nix: "" })`);
+    newVars: [{ key: "GREETING", value: "hello" }, { key: "TOKEN", value: "abc" }], nix: "" })`);
   assert.match(run("appsPage()"), /id="app-draft-save"/);
   await run("saveDraftApp()");
   const saved = calls.find(c => c.route === "apps/draft-save").body;
@@ -40,12 +40,12 @@ const run = code => vm.runInContext(code, context);
   assert.match(html, /data-draft-delete="notes"/);
 
   // Resuming restores the form, including the variables.
-  run('Object.assign(appView, { name: "", entries: [{ path: "Dockerfile", text: "" }], newEnv: "" })');
+  run('Object.assign(appView, { name: "", entries: [{ path: "Dockerfile", text: "" }], newVars: [{ key: "", value: "" }] })');
   await run('resumeDraft("notes")');
   assert.equal(run("appView.view"), "new");
   assert.equal(run("appView.name"), "notes");
   assert.equal(run("appView.entries[0].path"), "compose.yaml");
-  assert.equal(run("appView.newEnv"), "GREETING=hello\nTOKEN=abc");
+  assert.equal(run("JSON.stringify(appView.newVars.map(r => [r.key, r.value]))"), JSON.stringify([["GREETING", "hello"], ["TOKEN", "abc"]]));
 
   // Drafts with saved variables need the password to open them.
   run('appView.drafts = [{ name: "notes", updatedAt: 1, envCount: 2 }]');

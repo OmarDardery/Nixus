@@ -197,7 +197,14 @@ func startAppDeploy(actor string, body M) (M, error) {
 	}
 	os.Remove(appEnvPath(project))
 	if vars != nil {
-		if err := sealDeployEnv(project, vars); err != nil {
+		// An existing app gets the variables now, so they show in its
+		// Environment Variables tab and every later deploy uses them. A new app
+		// does not exist yet; its variables wait sealed until it does.
+		if _, perr := NewSecrets("", "", "").project(project); perr == nil {
+			if err := applyDeployEnv(actor, project, vars); err != nil {
+				return nil, Public("Could not save the variables: " + publicError(err))
+			}
+		} else if err := sealDeployEnv(project, vars); err != nil {
 			return nil, err
 		}
 		job["envKeys"] = strings2any(keys(vars))
@@ -315,7 +322,7 @@ func runAppDeploy(project string) error {
 			// Release a stopped deployment so the app can be fixed and redeployed.
 			NewProjectTransactions("", "").abandonDeployment(deploymentID, "app deployment failed")
 		}
-		save("failed", M{"error": publicError(err), "completedAt": now()})
+		save("failed", M{"error": publicError(err), "completedAt": now(), "failedStep": job["status"]})
 		audit("app-deploy-failed", M{"project": project})
 		return err
 	}
