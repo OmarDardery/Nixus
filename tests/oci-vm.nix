@@ -397,6 +397,29 @@ in pkgs.testers.runNixOSTest {
         if denied:
             print("other AppArmor denials during the run:\n" + denied)
 
+    with subtest("variables entered with the first deploy are set before the containers start"):
+        # The container exits at once unless REQUIRED is set when it starts, as a
+        # tunnel client does without its token. Setting variables after the
+        # deployment is verified made such an app fail verification.
+        rq = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sh\", \"-c\", \"test -n \\\"$REQUIRED\\\" && exec /bin/sleep 86400\"]\n").encode()}
+        rentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in rq.items()]
+        rp = broker("/project-import/prepare", {"project": "needsenv", "files": rentries})
+        broker("/project-import/chunk", {"id": rp["id"], "path": "Dockerfile", "offset": 0, "data": base64.b64encode(rq["Dockerfile"]).decode()})
+        rs = broker("/project-import/finish", {"id": rp["id"], "manifestHash": rp["manifestHash"]})
+        broker("/apps/deploy", {"project": "needsenv", "kind": "source", "stagingId": rs["id"], "manifestHash": rs["manifestHash"],
+                                "env": {"REQUIRED": "present"}})
+        deadline = time.time() + 900
+        while broker("/apps")["needsenv"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        rjob = broker("/apps")["needsenv"]
+        if rjob["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
+        assert rjob["status"] == "deployed", rjob
+        rrun = json.loads(machine.succeed("incus list --project needsenv --format=json"))
+        assert len(rrun) == 1 and rrun[0]["status"] == "Running", rrun
+        assert machine.succeed("incus config get " + rrun[0]["name"] + " environment.REQUIRED --project needsenv").strip() == "present"
+
     with subtest("one-step app deploy, as the Apps page does it"):
         notes = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode()}
         nentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in notes.items()]

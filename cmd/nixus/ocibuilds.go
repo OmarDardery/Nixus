@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -363,17 +364,38 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			}
 		}
 	}
-	res, err := run(args, nil, 1800*time.Second, env, source)
-	if err != nil || res.Code != 0 {
-		tail := string(res.Stderr)
-		if len(tail) > 3000 {
-			tail = tail[len(tail)-3000:]
+	runUp := func(args []string) error {
+		res, err := run(args, nil, 1800*time.Second, env, source)
+		if err != nil || res.Code != 0 {
+			tail := string(res.Stderr)
+			if len(tail) > 3000 {
+				tail = tail[len(tail)-3000:]
+			}
+			fmt.Fprintln(os.Stderr, "nixus: incus-compose up failed:", tail)
+			if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
+				os.Stdout.WriteString("COMPOSE-VM-STDERR: " + tail + "\n")
+			}
+			return Public("incus-compose could not bring the project up: " + lastLine(tail))
 		}
-		fmt.Fprintln(os.Stderr, "nixus: incus-compose up failed:", tail)
-		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
-			os.Stdout.WriteString("COMPOSE-VM-STDERR: " + tail + "\n")
+		return nil
+	}
+	// An app with variables must have them before its containers start: a
+	// service that needs a token or key at startup would otherwise exit and the
+	// deployment would fail verification. Create the instances stopped, set
+	// the variables, then start them.
+	if values := appStartEnv(sourceProject); len(values) > 0 {
+		if err := runUp(append(append([]string{}, args...), "--no-start")); err != nil {
+			return err
 		}
-		return Public("incus-compose could not bring the project up: " + lastLine(tail))
+		for _, inst := range appInstances(a.incus, incusProject) {
+			if _, err := injectEnv(incusProject, str(inst["name"]), values); err != nil {
+				return Failed("Could not set the app's variables before starting it", err)
+			}
+		}
+		args = startCommand(args)
+	}
+	if err := runUp(args); err != nil {
+		return err
 	}
 	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]))
 	return err
@@ -401,12 +423,54 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 		return nil, err
 	}
 	if str(verified["action"]) != "noop" {
-		return nil, Public("Compose services are not all running the reviewed images")
+		return nil, Public("Compose services are not all running the reviewed images" + notRunning(verified))
 	}
 	return M{"status": "verified", "newEtag": verified["etag"], "health": "Running"}, nil
 }
 
 var _ = path.Base
+
+// appStartEnv returns the variables an app needs before its containers start:
+// the ones already saved as encrypted secrets, overridden by those entered with
+// the deploy that has not applied them yet.
+func appStartEnv(project string) M {
+	values := M{}
+	s := NewSecrets("", "", "")
+	if ciphertext, err := s.cipher(filepath.Join(s.projects, project)); err == nil && ciphertext != nil {
+		if saved, err := s.decode(ciphertext, ""); err == nil {
+			for k, v := range saved {
+				values[k] = v
+			}
+		}
+	}
+	if isFile(appEnvPath(project)) {
+		if pending, err := openDeployEnv(project); err == nil {
+			for k, v := range pending {
+				values[k] = v
+			}
+		}
+	}
+	return values
+}
+
+// startCommand turns an `up` invocation into one that only starts instances
+// that already exist: no build, nothing new to create.
+func startCommand(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--build":
+			continue
+		case "--builder":
+			i++
+			continue
+		case "--no-build":
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return append(out, "--no-build")
+}
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah.
@@ -443,4 +507,28 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
 		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch}
 	return args, env, nil
+}
+
+// notRunning names the services that are not running after a deployment, with
+// their state, so a failure says which container to look at.
+func notRunning(resource M) string {
+	byService := map[string]string{}
+	for _, raw := range obj(resource["instances"]) {
+		inst := obj(raw)
+		byService[str(inst["service"])] = str(inst["status"])
+	}
+	var problems []string
+	for _, raw := range list(resource["services"]) {
+		name := str(raw)
+		switch state, ok := byService[name]; {
+		case !ok:
+			problems = append(problems, name+" has no instance")
+		case state != "Running":
+			problems = append(problems, name+" is "+state)
+		}
+	}
+	if len(problems) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(problems, ", ") + ". A container that stops right after starting usually needs a variable or a setting; check its logs"
 }
