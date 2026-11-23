@@ -832,3 +832,8 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
 .danger-zone p { font-size: 13px; }
 button.danger { background: transparent; color: var(--red); border-color: var(--red); }
 button.danger:hover:not(:disabled) { background: var(--red); color: #fff; }
+
+/* Network mode */
+.net-modes { display: grid; gap: 8px; margin: 0 0 12px; }
+.net-modes .check, .net-services .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.net-services { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); }

@@ -47,6 +47,12 @@ in {
     ];
     # During bootstrap retain the existing firewall implementation. The HTTPS process
     # also enforces source CIDRs; after conversion the host uses nftables.
+    # Where an app's "own IP on your router" network card attaches: the host's
+    # LAN interface, bridged when it is a Linux bridge, macvlan otherwise.
+    environment.etc."nixus/lan.json".text = let
+      parent = if site.ready then site.management.interface else install.interface;
+    in builtins.toJSON { inherit parent;
+      nictype = if lib.any (b: b.name == parent) site.connectivity.bridges then "bridged" else "macvlan"; };
     networking.firewall.interfaces."${if site.ready then site.management.interface else install.interface}".allowedTCPPorts =
       lib.mkIf (!config.nixus.managementPolicy.enforceFirewall) [ 80 site.setup.port ];
     # Port 80 is an entry point only. Authenticate over the existing private

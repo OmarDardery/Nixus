@@ -442,6 +442,27 @@ in pkgs.testers.runNixOSTest {
         assert names == ["client", "web"], names
         machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
 
+    with subtest("a service gets its own LAN address when the app asks for it"):
+        broker("/apps/deploy", {"project": "dnsapp", "kind": "network", "lan": ["web"]})
+        deadline = time.time() + 900
+        time.sleep(3)
+        while broker("/apps")["dnsapp"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        ljob = broker("/apps")["dnsapp"]
+        if ljob["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
+        assert ljob["status"] == "deployed", ljob
+        assert "lan" in machine.succeed("incus config device list web --project dnsapp"), "web has a LAN card"
+        assert "lan" not in machine.succeed("incus config device list client --project dnsapp"), "client stays private"
+        assert machine.succeed("incus config device get web lan nictype --project dnsapp").strip() == "macvlan"
+        # The LAN (the VM's eth0) hands it an address by DHCP, and names still work.
+        machine.wait_until_succeeds("incus exec web --project dnsapp -- ip -4 addr show eth1 | grep -q 'inet '", timeout=120)
+        machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
+        lan = [i for i in broker("/project-overview")["projects"] if i["name"] == "dnsapp"][0]
+        assert lan["lan"] == ["web"], lan
+        assert any(i.get("lanAddress") for i in lan["instances"] if i["name"] == "web"), lan["instances"]
+
     with subtest("delete app removes the Incus project and every Nixus record"):
         machine.fail("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
                      "--data '{\"project\": \"needsenv\", \"confirm\": \"wrong\", \"_actor\": \"admin\"}' http://localhost/apps/delete")

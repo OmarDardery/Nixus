@@ -71,6 +71,11 @@ let
         description = "Stable managed project identity.";
       };
       enable = mkOption { type = types.bool; default = true; };
+      network.lan.services = mkOption {
+        type = types.listOf (types.strMatching "[a-z][a-z0-9_-]{0,62}");
+        default = [ ];
+        description = "Compose services that also get their own address on the LAN (DHCP from your router).";
+      };
       backend = mkOption {
         type = types.enum [ "incus-native" "incus-compose" ];
         default = "incus-native";
@@ -277,7 +282,7 @@ let
       fail "Project ${directoryName} exceeds 256 Nix module files"
     else {
       name = p.name;
-      inherit (p) enable backend incusProject resources secrets backup storagePool volumes instances updates;
+      inherit (p) enable backend incusProject resources secrets backup storagePool volumes instances updates network;
       claims = lib.unique (p.claims ++ map (name: "instance/${name}") (sorted (builtins.attrNames p.instances)));
       source = directoryName;
       modules = map (path:

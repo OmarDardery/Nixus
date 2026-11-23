@@ -34,13 +34,14 @@ func lastProjectJob(t *ProjectTransactions) (M, M, M) {
 
 func runtimeInstances(incusProject string) []any {
 	out := []any{}
-	for _, raw := range incusQueryList(nativeIncus, "/1.0/instances?recursion=1&project="+url.QueryEscape(incusProject)) {
+	for _, raw := range incusQueryList(nativeIncus, "/1.0/instances?recursion=2&project="+url.QueryEscape(incusProject)) {
 		i := obj(raw)
 		if isDNSSidecar(incusProject, str(i["name"])) {
 			continue
 		}
 		out = append(out, M{"name": i["name"], "type": i["type"], "status": truncate(str(i["status"]), 32),
 			"owned": str(jget(i, "config", OWNER)) == "true", "compose": str(jget(i, "config", composeServiceLabel)) != "",
+			"service": str(jget(i, "config", composeServiceLabel)), "lanAddress": lanAddress(i),
 			"ports": publishedPorts(obj(i["devices"]))})
 	}
 	return out
@@ -86,7 +87,7 @@ func projectOverview() M {
 	for _, name := range keys(all) {
 		p := obj(all[name])
 		incusProject := str(p["incusProject"])
-		entry := M{"name": name, "backend": p["backend"], "enable": p["enable"], "incusProject": incusProject,
+		entry := M{"name": name, "backend": p["backend"], "enable": p["enable"], "incusProject": incusProject, "lan": jget(p, "network", "lan", "services"),
 			"resources": p["resources"], "declaredInstances": strings2any(keys(obj(p["instances"]))),
 			"declaredVolumes": strings2any(keys(obj(p["volumes"]))), "claims": p["claims"],
 			"backup": p["backup"], "backupCoverage": coverage[name], "retained": retained[incusProject]}
@@ -156,4 +157,14 @@ func projectLog(incusProject, instance string) (M, error) {
 		text, truncated = text[len(text)-65536:], true
 	}
 	return M{"project": incusProject, "instance": instance, "log": text, "truncated": truncated}, nil
+}
+
+// lanAddress is the IPv4 address the router gave an app's LAN card (eth1).
+func lanAddress(instance M) string {
+	for _, a := range list(jget(instance, "state", "network", "eth1", "addresses")) {
+		if am := obj(a); str(am["family"]) == "inet" && str(am["scope"]) == "global" {
+			return str(am["address"])
+		}
+	}
+	return ""
 }
