@@ -348,9 +348,20 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		binary = "incus-compose"
 	}
 	previous := str(obj(incusQueryObj(a.incus, "/1.0/projects/"+incusProject)["config"])[composeIntentKey])
-	args, env, err := composeUpCommand(binary, flags, build, previous, scratch)
+	args, env, err := composeUpCommand(binary, flags, build, scratch)
 	if err != nil {
 		return err
+	}
+	if previous != "" && previous != str(build["intentHash"]) {
+		// A new revision replaces the running instances so the new images are
+		// used. incus-compose's own --recreate also tears down shared DNS wiring
+		// and fails when there is none, so remove them here; named volumes
+		// keep their data.
+		for _, inst := range appInstances(a.incus, incusProject) {
+			if _, err := a.incus(0, "delete", str(inst["name"]), "--project", incusProject, "--force"); err != nil {
+				return Failed("Could not replace the running app", err)
+			}
+		}
 	}
 	res, err := run(args, nil, 1800*time.Second, env, source)
 	if err != nil || res.Code != 0 {
@@ -398,10 +409,8 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 var _ = path.Base
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
-// pulled; services with a Dockerfile are built with buildah. A new revision of
-// an existing project recreates its instances so the new images are used;
-// named volumes keep their data.
-func composeUpCommand(binary string, flags []string, build M, previousIntent, scratch string) ([]string, []string, error) {
+// pulled; services with a Dockerfile are built with buildah.
+func composeUpCommand(binary string, flags []string, build M, scratch string) ([]string, []string, error) {
 	needsBuild := false
 	for _, raw := range list(build["services"]) {
 		needsBuild = needsBuild || isTrue(obj(raw)["built"])
@@ -431,9 +440,6 @@ func composeUpCommand(binary string, flags []string, build M, previousIntent, sc
 	}
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing", "--no-healthd", "--no-dns")
-	if previousIntent != "" && previousIntent != str(build["intentHash"]) {
-		args = append(args, "--recreate")
-	}
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
 		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch}
 	return args, env, nil

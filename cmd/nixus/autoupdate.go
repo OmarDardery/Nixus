@@ -287,12 +287,8 @@ func restoreVolumes(incus incusFunc, project string, snaps []volumeSnapshot) err
 	if len(snaps) == 0 {
 		return nil
 	}
-	out, err := incus(0, "query", "/1.0/instances?project="+project)
-	if err == nil {
-		for _, raw := range list(must(parseJSON([]byte(out)))) {
-			name := filepath.Base(str(raw))
-			incus(0, "stop", name, "--project", project, "--force")
-		}
+	for _, inst := range appInstances(incus, project) {
+		incus(0, "stop", str(inst["name"]), "--project", project, "--force")
 	}
 	for _, s := range snaps {
 		if _, err := incus(0, "storage", "volume", "snapshot", "restore", s.Pool, s.Volume, s.Name, "--project", project); err != nil {

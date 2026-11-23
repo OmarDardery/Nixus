@@ -54,7 +54,7 @@ func isTerminal() bool {
 func hostRun(args ...string) ([]byte, error) {
 	out, err := check(args, nil, 2*time.Hour)
 	if err != nil {
-		return nil, Public("Installer host command failed")
+		return nil, Failed("Installer host command failed", err)
 	}
 	return out, nil
 }

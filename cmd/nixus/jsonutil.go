@@ -16,7 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -36,6 +38,22 @@ func (e *PublicError) Error() string { return e.msg }
 
 // Public returns an error whose message is safe to show to the browser.
 func Public(msg string) error { return &PublicError{msg} }
+
+// Failed keeps a public message and appends the cause's last line, so a failed
+// tool says why. Use it only where the cause cannot carry secrets.
+func Failed(msg string, cause error) error {
+	if cause == nil {
+		return Public(msg)
+	}
+	detail := lastLine(cause.Error())
+	if p := (*PublicError)(nil); errors.As(cause, &p) {
+		detail = p.msg
+	}
+	if detail == "" {
+		return Public(msg)
+	}
+	return Public(msg + ": " + detail)
+}
 
 // Publicf formats a reviewed public message.
 func Publicf(format string, args ...any) error { return &PublicError{fmt.Sprintf(format, args...)} }
@@ -320,7 +338,15 @@ func check(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
 		return nil, err
 	}
 	if res.Code != 0 {
-		return res.Stdout, fmt.Errorf("%s exited with status %d", argv[0], res.Code)
+		tail := strings.TrimSpace(string(res.Stderr))
+		if len(tail) > 2000 {
+			tail = tail[len(tail)-2000:]
+		}
+		fmt.Fprintf(os.Stderr, "nixus: %s exited with status %d: %s\n", filepath.Base(argv[0]), res.Code, tail)
+		if line := lastLine(tail); line != "" {
+			return res.Stdout, fmt.Errorf("%s exited with status %d: %s", filepath.Base(argv[0]), res.Code, line)
+		}
+		return res.Stdout, fmt.Errorf("%s exited with status %d", filepath.Base(argv[0]), res.Code)
 	}
 	return res.Stdout, nil
 }
