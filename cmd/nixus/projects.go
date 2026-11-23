@@ -317,9 +317,23 @@ func validateInventory(raw M) (M, error) {
 		if !fullmatch(projectName, name) || p == nil {
 			return nil, Public("Invalid declarative project identity")
 		}
-		if !exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances") &&
-			!exactKeys(p, "name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances", "updates") {
-			return nil, Public("Unknown project inventory field")
+		// "updates" and "network" were added later; inventories from older
+		// evaluators lack them.
+		known := map[string]bool{"name": true, "enable": true, "backend": true, "incusProject": true, "resources": true, "secrets": true,
+			"backup": true, "claims": true, "source": true, "modules": true, "storagePool": true, "volumes": true, "instances": true,
+			"updates": true, "network": true}
+		for k := range p {
+			if !known[k] {
+				return nil, Public("Unknown project inventory field")
+			}
+		}
+		for _, k := range []string{"name", "enable", "backend", "incusProject", "resources", "secrets", "backup", "claims", "source", "modules", "storagePool", "volumes", "instances"} {
+			if _, ok := p[k]; !ok {
+				return nil, Public("Unknown project inventory field")
+			}
+		}
+		if err := validateProjectNetwork(p["network"]); err != nil {
+			return nil, err
 		}
 		if err := validateUpdatePolicy(p["updates"]); err != nil {
 			return nil, err
@@ -1637,4 +1651,27 @@ func activeProjectDeployment(state string) string {
 	fmt.Fprintln(os.Stderr, "nixus: released project deployment", identity, "whose worker had stopped")
 	audit("project-deploy-superseded", M{"identity": identity, "reason": "worker stopped"})
 	return ""
+}
+
+// validateProjectNetwork checks the app's network setting: which Compose
+// services also get their own LAN address.
+func validateProjectNetwork(raw any) error {
+	if raw == nil {
+		return nil
+	}
+	n := obj(raw)
+	lan := obj(n["lan"])
+	if n == nil || !exactKeys(n, "lan") || lan == nil || !exactKeys(lan, "services") {
+		return Public("Invalid project network setting")
+	}
+	names, ok := anyStrings(lan["services"])
+	if !ok || len(names) > 16 {
+		return Public("Invalid project network setting")
+	}
+	for _, s := range names {
+		if !fullmatch(composeServiceName, s) {
+			return Public("Invalid project network setting")
+		}
+	}
+	return nil
 }

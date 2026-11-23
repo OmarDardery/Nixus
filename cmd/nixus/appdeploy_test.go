@@ -87,3 +87,22 @@ func TestLANModule(t *testing.T) {
 		t.Fatalf("the module is a valid project edit: %v", err)
 	}
 }
+
+// The inventory carries the network setting; older inventories without it,
+// and without "updates", stay valid.
+func TestProjectNetworkValidation(t *testing.T) {
+	if err := validateProjectNetwork(M{"lan": M{"services": []any{}}}); err != nil {
+		t.Fatal("the default (private) is valid:", err)
+	}
+	if err := validateProjectNetwork(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProjectNetwork(M{"lan": M{"services": []any{"aiostreams"}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []any{M{"lan": M{"services": []any{"Bad Name"}}}, M{"lan": M{"services": []any{}}, "extra": true}, M{}} {
+		if validateProjectNetwork(bad) == nil {
+			t.Fatalf("%v accepted", bad)
+		}
+	}
+}
