@@ -551,36 +551,6 @@ func (p *PublishedSources) attestOpts(projectArg, revisionArg any, requireCurren
 	return M{"revision": revision, "fileCount": len(files), "bytes": total}, nil
 }
 
-func (p *PublishedSources) inventory() (M, error) {
-	if !lexists(p.root) {
-		return M{"projects": []any{}}, nil
-	}
-	if err := ownedPrivateDir(p.root, true); err != nil {
-		return nil, err
-	}
-	entries, _ := os.ReadDir(p.root)
-	projects := []any{}
-	for _, e := range entries {
-		if !fullmatch(projectName, e.Name()) {
-			return nil, Public("Invalid published source project directory")
-		}
-		if err := ownedPrivateDir(filepath.Join(p.root, e.Name()), true); err != nil {
-			return nil, err
-		}
-		record, err := p.current(e.Name())
-		if err != nil {
-			return nil, err
-		}
-		if record != nil {
-			projects = append(projects, M{"project": e.Name(), "revision": record["revision"], "publishedAt": record["publishedAt"]})
-		}
-		if len(projects) > 128 {
-			return nil, Public("Too many published source projects")
-		}
-	}
-	return M{"projects": projects}, nil
-}
-
 func (p *PublishedSources) review(s *ImportStaging, identity any, actor string, manifestHash any) (M, error) {
 	directory, record, err := s.record(identity, actor)
 	if err != nil {

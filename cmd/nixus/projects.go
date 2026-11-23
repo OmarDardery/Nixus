@@ -209,34 +209,6 @@ func validateWorkspace(root string, requireLock bool) (M, error) {
 	return M{"schemaVersion": 1, "sourceHash": digestJSON(files), "bytes": total, "files": files, "projects": discovered}, nil
 }
 
-func projectsOverview(root string) M {
-	if root == "" {
-		root = projectsWorkspace
-	}
-	if !lexists(root) {
-		return M{"available": false, "reason": "not-configured", "projects": []any{}}
-	}
-	invalid := M{"available": false, "reason": "invalid-workspace", "projects": []any{}}
-	for _, p := range []string{filepath.Dir(root), root} {
-		info, err := os.Lstat(p)
-		if err != nil || !info.IsDir() || int(info.Sys().(*syscall.Stat_t).Uid) != os.Geteuid() || info.Mode().Perm()&0o022 != 0 {
-			return invalid
-		}
-	}
-	manifest, err := validateWorkspace(root, true)
-	if err != nil {
-		return invalid
-	}
-	projects := []any{}
-	all := obj(manifest["projects"])
-	for _, name := range keys(all) {
-		detail := obj(all[name])
-		projects = append(projects, M{"name": name, "entrypoint": detail["default"], "moduleCount": len(list(detail["modules"]))})
-	}
-	return M{"available": true, "sourceHash": manifest["sourceHash"], "projects": projects,
-		"fileCount": len(obj(manifest["files"])), "bytes": manifest["bytes"]}
-}
-
 // --- restricted evaluation and typed inventory --------------------------------
 
 var storeSource = re(`/nix/store/[0-9a-z]{32}-[A-Za-z0-9+._?=-]+`)

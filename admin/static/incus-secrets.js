@@ -4,8 +4,16 @@
 // inputs until a reauthenticated POST, never in browser-visible JS state.
 const nativeSecretsView = {
   loaded: false, loading: false, busy: false, data: null, selected: "",
-  error: "", message: "", review: null, editKey: "",
+  error: "", message: "", review: null,
+  choice: "create", haveVia: "key", kit: "export",
 };
+
+// A row of buttons that picks which single form is shown below it.
+function nativeChoice(name, current, options) {
+  return '<nav class="tabs" role="group">' + options.map(([id, label]) =>
+    '<button type="button" class="' + (current === id ? "active" : "") + '" data-native-' + name + '="' + id + '"' +
+    (current === id ? ' aria-pressed="true"' : ' aria-pressed="false"') + ">" + label + "</button>").join("") + "</nav>";
+}
 
 function nativeSecretProject() {
   const projects = nativeSecretsView.data?.projects || [];
@@ -20,62 +28,38 @@ function nativeSecretsPanel() {
     return card("Project secrets", "<p>Loading metadata-only SOPS secret inventory…</p>");
   const identity = v.data?.identity || {};
   const status = identity.configured && identity.healthy
-    ? '<p>Age recipient: <code>' + esc(identity.recipient) +
-      '</code></p>'
+    ? '<p>Your encryption key is ready.</p><details><summary>Details</summary><p>Public recipient (age): <code>' +
+      esc(identity.recipient) + '</code></p></details>'
     : identity.configured
-      ? '<p role="alert" class="error">Installed age identity is unhealthy. Never regenerate over it; restore the original identity safely.</p>'
-      : '<p>No age identity. Generate or restore one first.</p>';
+      ? '<p role="alert" class="error">The installed encryption key is unhealthy. Never create a new one over it; restore the original safely.</p>'
+      : '<p>No encryption key yet. You need one to keep environment variables and other app secrets.</p>';
+  const password = (id, label) => '<label class="field"><span>' + label + '</span><input type="password" id="' + id +
+    '" autocomplete="current-password"></label>';
+  const keyForm = mode => '<p>' + (mode === "restore"
+      ? "Paste the key you saved earlier. It starts with AGE-SECRET-KEY-1."
+      : "Nixus creates the key on this server. Afterwards, download a recovery kit and keep it off this server.") + '</p>' +
+    (mode === "restore"
+      ? '<label class="field"><span>Your key</span><textarea id="native-age-restore" rows="3" autocomplete="off" spellcheck="false" placeholder="AGE-SECRET-KEY-1…"></textarea></label>'
+      : "") +
+    password("native-age-password", "Your password") +
+    '<label><input id="native-age-ack" type="checkbox"> I will back this key up separately; Nixus never replaces it silently</label>' +
+    '<button type="button" id="native-age-enroll"' + (v.busy ? " disabled" : "") + ">" +
+    (mode === "restore" ? "Use this key" : "Create key") + "</button>";
+  const kitFile = '<label class="field"><span>Recovery kit file</span><input id="native-recovery-kit-file" type="file" accept=".json,application/json"></label>' +
+    '<label class="field"><span>Recovery passphrase</span><input id="native-recovery-import-passphrase" type="password" autocomplete="off"></label>' +
+    password("native-recovery-import-admin", "Your password");
+  const kitRestore = kitFile +
+    '<label><input type="checkbox" id="native-recovery-import-ack"> I understand this restores this server\'s protected key and credentials</label>' +
+    '<button type="button" id="native-recovery-restore"' + (v.busy || identity.configured ? " disabled" : "") + ">Restore from recovery kit</button>";
   const setup = !identity.configured
-    ? '<fieldset><legend>Initialize project age identity once</legend>' +
-      '<label class="field"><span>Identity action</span><select id="native-age-mode">' +
-      '<option value="generate">Generate a new persistent identity</option>' +
-      '<option value="restore">Restore an existing identity</option></select></label>' +
-      '<label class="field"><span>Recovery key (only for restore)</span>' +
-      '<textarea id="native-age-restore" rows="3" autocomplete="off" spellcheck="false" placeholder="AGE-SECRET-KEY-1…"></textarea></label>' +
-      '<p>Export a recovery kit after generating.</p>' +
-      '<label class="field"><span>Current administrator password</span>' +
-      '<input type="password" id="native-age-password" autocomplete="current-password"></label>' +
-      '<label><input id="native-age-ack" type="checkbox"> I understand the identity must be backed up separately and never silently replaced</label>' +
-      '<button type="button" id="native-age-enroll"' + (v.busy ? " disabled" : "") +
-      '>Enroll age identity</button></fieldset>' : "";
+    ? '<fieldset><legend>Set up the encryption key</legend>' +
+      nativeChoice("choice", v.choice, [["create", "Create a key"], ["have", "I already have a key"]]) +
+      (v.choice === "have"
+        ? nativeChoice("have", v.haveVia, [["key", "Paste my key"], ["kit", "Use a recovery kit"]]) +
+          (v.haveVia === "kit" ? kitRestore : keyForm("restore"))
+        : keyForm("generate")) + '</fieldset>'
+    : "";
   const project = nativeSecretProject();
-  const projects = v.data?.projects || [];
-  const choose = projects.length
-    ? '<label class="field"><span>Project</span><select id="native-secret-project">' +
-      projects.map(item => '<option value="' + esc(item.project) + '"' +
-        (project?.project === item.project ? " selected" : "") + '>' +
-        esc(item.project) + '</option>').join("") + '</select></label>'
-    : '<p>No apps yet.</p>';
-  const summary = project
-    ? '<p>Encrypted revision: <code>' + esc(project.revision || "none") + '</code> · ' +
-      esc(project.secretCount) + ' keys · ' +
-      (project.indexed ? "Metadata synchronized" : "Metadata/revision drift; resolve before editing") +
-      '</p>' +
-      (project.keys.length
-        ? '<div class="table-wrap"><table><thead><tr><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody>' +
-          project.keys.map(key => '<tr><td><code>' + esc(key) +
-            '</code></td><td>Encrypted; value never returned</td><td>' +
-            '<button type="button" data-native-secret-rotate="' + esc(key) + '"' +
-            (v.busy || !identity.healthy ? " disabled" : "") + '>Update</button></td></tr>').join("") +
-          '</tbody></table></div>'
-        : '<p>No encrypted environment keys yet.</p>')
-    : "";
-  const form = identity.healthy && project && !v.review
-    ? '<fieldset><legend>Review a write-only secret change</legend>' +
-      '<label class="field"><span>Variable name</span><input id="native-secret-key" maxlength="128" ' +
-      'pattern="[A-Za-z_][A-Za-z0-9_]*" autocomplete="off" value="' + esc(v.editKey) +
-      '" placeholder="API_TOKEN"></label>' +
-      '<label class="field"><span>Change type</span><select id="native-secret-action">' +
-      '<option value="set">Add or replace encrypted value</option>' +
-      '<option value="delete">Delete encrypted value</option></select></label>' +
-      '<label class="field"><span>New secret (for add/replace only)</span>' +
-      '<input id="native-secret-value" type="password" autocomplete="new-password" maxlength="8192"></label>' +
-      '<label class="field"><span>Current administrator password</span>' +
-      '<input id="native-secret-review-password" type="password" autocomplete="current-password"></label>' +
-      '<button type="button" id="native-secret-review"' + (v.busy || !project.indexed ? ' disabled' : '') +
-      '>Prepare encrypted review</button>' +
-      '</fieldset>'
-    : "";
   const recipientsPanel = identity.healthy && project && project.revision && !v.review
     ? '<fieldset><legend>Rotate SOPS/age recipients</legend>' +
       '<p>Current public recipients: <code>' +
@@ -87,14 +71,6 @@ function nativeSecretsPanel() {
       '<label class="field"><span>Administrator password</span><input type="password" id="native-recipient-password" autocomplete="current-password"></label>' +
       '<button type="button" id="native-recipient-review"' + (v.busy || !project.indexed ? ' disabled' : '') +
       '>Review recipient rekey</button></fieldset>'
-    : "";
-  const importPanel = identity.healthy && project && !v.review
-    ? '<fieldset><legend>Import .env values directly into SOPS</legend>' +
-      '' +
-      '<label class="field"><span>Local .env file</span><input id="native-env-import-file" type="file" accept=".env,.txt,text/plain"></label>' +
-      '<label class="field"><span>Current administrator password</span><input id="native-env-import-password" type="password" autocomplete="current-password"></label>' +
-      '<button type="button" id="native-env-import-review"' + (v.busy || !project.indexed ? " disabled" : "") +
-      '>Encrypt and review imported values</button></fieldset>'
     : "";
   const review = v.review
     ? '<fieldset><legend>Approve ciphertext-only publication</legend>' +
@@ -110,25 +86,18 @@ function nativeSecretsPanel() {
       '<button id="native-secret-publish" type="button"' + (v.busy ? " disabled" : "") +
       '>Publish encrypted secrets</button></fieldset>'
     : "";
-  const recoveryPanel = '<fieldset><legend>Offline encrypted recovery</legend>' +
-    '<p>Store the recovery kit offline.</p>' +
-    (identity.healthy
-      ? '<label class="field"><span>Recovery passphrase (16+ characters)</span><input id="native-recovery-export-passphrase" type="password" autocomplete="new-password"></label>' +
-        '<label class="field"><span>Repeat passphrase</span><input id="native-recovery-export-confirm" type="password" autocomplete="new-password"></label>' +
-        '<label><input type="checkbox" id="native-recovery-backup" checked> Include present restic unlock/remote credential files (recommended for independent restore)</label>' +
-        '<label class="field"><span>Administrator password</span><input id="native-recovery-export-admin" type="password" autocomplete="current-password"></label>' +
-        '<button type="button" id="native-recovery-export"' + (v.busy ? " disabled" : "") +
-        '>Download encrypted recovery kit</button>'
-      : '') +
-    '' +
-    '<label class="field"><span>Encrypted recovery kit</span><input id="native-recovery-kit-file" type="file" accept=".json,application/json"></label>' +
-    '<label class="field"><span>Recovery passphrase</span><input id="native-recovery-import-passphrase" type="password" autocomplete="off"></label>' +
-    '<label class="field"><span>Administrator password</span><input id="native-recovery-import-admin" type="password" autocomplete="current-password"></label>' +
-    '<label><input type="checkbox" id="native-recovery-import-ack"> I understand restoring changes protected machine identity/credentials</label>' +
-    '<button type="button" id="native-recovery-verify"' + (v.busy ? " disabled" : "") +
-    '>Verify kit without changes</button> ' +
-    '<button type="button" id="native-recovery-restore"' +
-    (v.busy || identity.configured ? ' disabled' : '') + '>Restore kit on new host</button></fieldset>';
+  const exportForm = '<label class="field"><span>Recovery passphrase (16+ characters)</span><input id="native-recovery-export-passphrase" type="password" autocomplete="new-password"></label>' +
+    '<label class="field"><span>Repeat passphrase</span><input id="native-recovery-export-confirm" type="password" autocomplete="new-password"></label>' +
+    '<label><input type="checkbox" id="native-recovery-backup" checked> Include the backup repository credentials (recommended for restoring on new hardware)</label>' +
+    password("native-recovery-export-admin", "Your password") +
+    '<button type="button" id="native-recovery-export"' + (v.busy ? " disabled" : "") + '>Download encrypted recovery kit</button>';
+  const verifyForm = '<p>Checks that a saved kit opens with its passphrase. Nothing on this server changes.</p>' + kitFile +
+    '<button type="button" id="native-recovery-verify"' + (v.busy ? " disabled" : "") + ">Verify kit</button>";
+  const recoveryPanel = identity.healthy
+    ? '<fieldset><legend>Recovery kit</legend><p>Store the kit off this server. You need it to restore your secrets on new hardware.</p>' +
+      nativeChoice("kit", v.kit, [["export", "Download kit"], ["verify", "Verify kit"]]) +
+      (v.kit === "verify" ? verifyForm : exportForm) + '</fieldset>'
+    : "";
   const reindexPanel = project && !project.indexed
     ? '<fieldset><legend>Reconcile restored ciphertext</legend>' +
       '<p>The encrypted file differs from its index.</p>' +
@@ -140,7 +109,12 @@ function nativeSecretsPanel() {
                  (v.message ? '<p role="status">' + esc(v.message) + '</p>' : '');
   // Per-app values are edited on each app's Environment Variables tab; this
   // panel keeps the encryption key, its recipients and the recovery kit.
-  return card("Encryption key & recovery kit", status + setup + recipientsPanel + review + reindexPanel + recoveryPanel + errors);
+  const advanced = recipientsPanel
+    ? '<details class="advanced"' + (v.review ? " open" : "") + '><summary>Advanced</summary>' +
+      '<p class="hint">Rotate the recipients that can decrypt a project. App variables are set on each app\'s own page.</p>' +
+      recipientsPanel + '</details>'
+    : "";
+  return card("Encryption key & recovery kit", status + setup + review + reindexPanel + recoveryPanel + advanced + errors);
 }
 
 async function nativeSecretsRefresh() {
@@ -165,7 +139,7 @@ async function nativeSecretsRefresh() {
 async function nativeEnrollIdentity() {
   const v = nativeSecretsView;
   if (v.busy) return;
-  const mode = document.getElementById("native-age-mode")?.value;
+  const mode = v.choice === "have" ? "restore" : "generate";
   const privateEl = document.getElementById("native-age-restore");
   const passwordEl = document.getElementById("native-age-password");
   const privateKey = privateEl?.value || "";
@@ -184,38 +158,6 @@ async function nativeEnrollIdentity() {
     await nativeSecretsRefresh();
   } catch (error) {
     v.error = error.message || "Age identity enrollment failed.";
-  } finally {
-    v.busy = false;
-    if (state.page === "operations") shell();
-  }
-}
-
-async function nativeSecretReview() {
-  const v = nativeSecretsView, project = nativeSecretProject();
-  if (v.busy || !project || v.review) return;
-  const key = document.getElementById("native-secret-key")?.value?.trim();
-  const action = document.getElementById("native-secret-action")?.value;
-  const valueEl = document.getElementById("native-secret-value");
-  const passwordEl = document.getElementById("native-secret-review-password");
-  const value = valueEl?.value;
-  const current = passwordEl?.value;
-  if (valueEl) valueEl.value = "";
-  if (passwordEl) passwordEl.value = "";
-  v.busy = true; v.error = ""; v.message = "";
-  try {
-    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(key || "")) throw Error("Invalid variable name.");
-    if (!current) throw Error("Administrator password is required.");
-    if (action === "set" && (!value || new TextEncoder().encode(value).length > 8192))
-      throw Error("Enter a secret of at most 8192 UTF-8 bytes.");
-    v.review = await api("project-secrets/review", {
-      project: project.project, key, action,
-      value: action === "set" ? value : null,
-      expectedRevision: project.revision, current,
-    });
-    v.editKey = "";
-    v.message = "Encrypted review prepared. No running workload changed.";
-  } catch (error) {
-    v.error = error.message || "Encrypted review failed.";
   } finally {
     v.busy = false;
     if (state.page === "operations") shell();
@@ -272,64 +214,6 @@ async function nativeSecretPublish() {
     v.error = error.message || "Secret publication failed. Refresh metadata before retry.";
     v.review = null; // never reuse a possibly stale approved review
     await nativeSecretsRefresh();
-  } finally {
-    v.busy = false;
-    if (state.page === "operations") shell();
-  }
-}
-
-function nativeParseEnv(text) {
-  if (typeof text !== "string" || text.length > 64 * 1024)
-    throw Error(".env import exceeds the 64 KiB limit.");
-  const values = Object.create(null);
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith("#")) continue;
-    const match = line.match(/^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*)$/);
-    if (!match) throw Error("Unsupported .env syntax at line " + (i + 1) + ".");
-    const key = match[1];
-    if (Object.hasOwn(values, key)) throw Error("Duplicate secret name at line " + (i + 1) + ".");
-    let value = match[2];
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    } else if (value.startsWith('"') || value.startsWith("'")) {
-      throw Error("Unclosed .env quoted value at line " + (i + 1) + ".");
-    }
-    if (/[\u0000-\u001f]/.test(value) || value.includes("$" + "{") ||
-        value.includes("$(") || value.includes(String.fromCharCode(96)))
-      throw Error("Unsupported control characters or interpolation at line " + (i + 1) + ".");
-    if (new TextEncoder().encode(value).length > 8192)
-      throw Error("A secret value exceeds 8192 bytes.");
-    values[key] = value;
-    if (Object.keys(values).length > 64) throw Error("Import limit is 64 variables.");
-  }
-  if (!Object.keys(values).length) throw Error("The .env file has no importable variables.");
-  return values;
-}
-
-async function nativeEnvImportReview() {
-  const v = nativeSecretsView, project = nativeSecretProject();
-  if (v.busy || !project || v.review) return;
-  const fileInput = document.getElementById("native-env-import-file");
-  const file = fileInput?.files?.[0];
-  const password = document.getElementById("native-env-import-password");
-  const current = password?.value;
-  if (password) password.value = "";
-  if (fileInput) fileInput.value = "";
-  v.busy = true; v.error = ""; v.message = "";
-  try {
-    if (!file || file.size > 64 * 1024 || !current)
-      throw Error("Select a .env file of at most 64 KiB and enter the administrator password.");
-    const values = nativeParseEnv(await file.text());
-    v.review = await api("project-secrets/review", {
-      project: project.project, action: "import", key: null, value: values,
-      expectedRevision: project.revision, current,
-    });
-    v.message = "Environment values encrypted in a review; the original .env was not stored.";
-  } catch (error) {
-    v.error = error.message || "Environment import failed.";
   } finally {
     v.busy = false;
     if (state.page === "operations") shell();
@@ -427,14 +311,18 @@ async function nativeSecretsReindex() {
 function bindNativeSecrets() {
   if (state.principal?.role !== "admin") return;
   if (!nativeSecretsView.loaded && !nativeSecretsView.loading) void nativeSecretsRefresh();
+  for (const [name, key] of [["choice", "choice"], ["have", "haveVia"], ["kit", "kit"]])
+    for (const button of document.querySelectorAll("[data-native-" + name + "]"))
+      button.addEventListener("click", () => {
+        nativeSecretsView[key] = button.dataset["native" + name[0].toUpperCase() + name.slice(1)];
+        nativeSecretsView.error = nativeSecretsView.message = "";
+        shell();
+      });
   document.querySelector("#native-age-enroll")?.addEventListener("click", () => {
     void nativeEnrollIdentity();
   });
   document.querySelector("#native-recovery-export")?.addEventListener("click", () => {
     void nativeRecoveryExport();
-  });
-  document.querySelector("#native-env-import-review")?.addEventListener("click", () => {
-    void nativeEnvImportReview();
   });
   document.querySelector("#native-recovery-verify")?.addEventListener("click", () => {
     void nativeRecoveryImport("verify");
@@ -444,23 +332,6 @@ function bindNativeSecrets() {
   });
   document.querySelector("#native-secret-reindex")?.addEventListener("click", () => {
     void nativeSecretsReindex();
-  });
-  document.querySelector("#native-secret-project")?.addEventListener("change", event => {
-    nativeSecretsView.selected = event.currentTarget.value;
-    nativeSecretsView.editKey = "";
-    nativeSecretsView.review = null;
-    nativeSecretsView.error = "";
-    shell();
-  });
-  for (const button of document.querySelectorAll("[data-native-secret-rotate]")) {
-    button.addEventListener("click", () => {
-      nativeSecretsView.editKey = button.dataset.nativeSecretRotate;
-      nativeSecretsView.review = null;
-      shell();
-    });
-  }
-  document.querySelector("#native-secret-review")?.addEventListener("click", () => {
-    void nativeSecretReview();
   });
   document.querySelector("#native-recipient-review")?.addEventListener("click", () => {
     void nativeRecipientReview();

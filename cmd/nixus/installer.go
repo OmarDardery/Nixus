@@ -54,7 +54,7 @@ func isTerminal() bool {
 func hostRun(args ...string) ([]byte, error) {
 	out, err := check(args, nil, 2*time.Hour)
 	if err != nil {
-		return nil, Public("Installer host command failed")
+		return nil, Failed("Installer host command failed", err)
 	}
 	return out, nil
 }
@@ -459,7 +459,7 @@ func stageUpdate(root, incoming, stage, baseline string) (bool, []string, error)
 				}
 				data, err := check([]string{"git", "-C", root, "show", "HEAD:" + name}, nil, 30*time.Second)
 				if err != nil {
-					return false, nil, Public("Cannot read the platform baseline")
+					return false, nil, Failed("Cannot read the platform baseline", err)
 				}
 				known[name] = sha256hex(data)
 			}
@@ -533,7 +533,7 @@ func incusAdoptionInventory() (M, error) {
 	query := func(p string) (any, error) {
 		out, err := check([]string{"incus", "--force-local", "query", p}, nil, 30*time.Second)
 		if err != nil {
-			return nil, Public("Incus inventory query failed")
+			return nil, Failed("Incus inventory query failed", err)
 		}
 		return parseJSON(out)
 	}
@@ -628,7 +628,7 @@ func adoptionBackup(data M, directory string) error {
 		temporary := filepath.Join(directory, project, name+".tar.partial")
 		os.Remove(temporary)
 		if _, err := check([]string{"incus", "--force-local", "export", name, temporary, "--project", project, "--compression", "gzip"}, nil, 2*time.Hour); err != nil {
-			return Public("Incus export failed for " + project + "/" + name)
+			return Failed("Incus export failed for "+project+"/"+name, err)
 		}
 		if info, err := os.Stat(temporary); err != nil || info.Size() == 0 {
 			return Public("Incus export produced no backup for " + project + "/" + name)
@@ -658,7 +658,7 @@ func adoptionBackup(data M, directory string) error {
 			os.Remove(temporary)
 			if _, err := check([]string{"incus", "--force-local", "storage", "volume", "export", pool, name, temporary,
 				"--project", project, "--compression", "gzip"}, nil, 2*time.Hour); err != nil {
-				return Public("Custom volume export failed: " + pool + "/" + name)
+				return Failed("Custom volume export failed: "+pool+"/"+name, err)
 			}
 			if info, err := os.Stat(temporary); err != nil || info.Size() == 0 {
 				return Public("Custom volume export produced no backup: " + pool + "/" + name)
@@ -1140,9 +1140,17 @@ func installMain(argv []string) int {
 		}
 		return 2
 	}
+	if os.Geteuid() != 0 {
+		fmt.Fprintln(os.Stderr, "nixus-install: run it with sudo, for example: sudo nix --extra-experimental-features 'nix-command flakes' run github:OmarDardery/Nixus#install")
+		return 2
+	}
 	release, err := lockFile("/run/lock/nixus-install.lock", false)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Another Nixus installer is already running")
+		if err.Error() == (BusyError{}).Error() {
+			fmt.Fprintln(os.Stderr, "Another Nixus installer is already running")
+		} else {
+			fmt.Fprintln(os.Stderr, "Could not take the installer lock:", err)
+		}
 		return 1
 	}
 	defer release()
@@ -1944,7 +1952,7 @@ var profileName = re(`[A-Za-z0-9_.-]+`)
 func repairRun(timeout time.Duration, args ...string) (string, error) {
 	res, err := run(args, nil, timeout, append(os.Environ(), "LC_ALL=C"), "")
 	if err != nil || res.Code != 0 {
-		return "", Public("Network recovery command failed: " + args[0])
+		return "", cmdFailed("Network recovery command failed: "+args[0], res, err)
 	}
 	return string(res.Stdout), nil
 }

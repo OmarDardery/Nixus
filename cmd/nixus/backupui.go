@@ -27,7 +27,7 @@ func backupSnapshots() (M, error) {
 	}
 	res, err := run([]string{"restic", "snapshots", "--json", "--tag", "nixus-project"}, nil, 2*time.Minute, env, "")
 	if err != nil || res.Code != 0 {
-		return nil, Public("Could not list snapshots; check the destination and credentials")
+		return nil, cmdFailed("Could not list snapshots; check the destination and credentials", res, err)
 	}
 	out := []any{}
 	for _, raw := range list(must(parseJSON(res.Stdout))) {
@@ -87,7 +87,7 @@ func startRestore(actor string, body M) (M, error) {
 		adminLauncher(), "admin", "project-backup", "restore"}, args...)
 	if _, err := check(cmd, nil, 20*time.Second); err != nil {
 		writeJSONMode(restoreReportPath(), M{"format": 1, "status": "failed", "error": "Could not start the restore"}, 0o640, "")
-		return nil, Public("Could not start the restore")
+		return nil, Failed("Could not start the restore", err)
 	}
 	audit("project-restore-requested", M{"principal": actor})
 	return M{"started": true}, nil

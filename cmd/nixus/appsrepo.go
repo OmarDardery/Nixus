@@ -109,7 +109,7 @@ func ensureAppsRepoKey() (M, error) {
 	if !isFile(appsRepoKeyPath) {
 		os.MkdirAll(filepath.Dir(appsRepoKeyPath), 0o700)
 		if _, err := check([]string{"ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "nixus-apps-repo", "-f", appsRepoKeyPath}, nil, 30*time.Second); err != nil {
-			return nil, Public("Could not create the deploy key")
+			return nil, Failed("Could not create the deploy key", err)
 		}
 		os.Chmod(appsRepoKeyPath, 0o600)
 	}

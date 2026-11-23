@@ -8,8 +8,6 @@ package main
 // matching @sha256 digests replaced, for the normal review and deployment.
 
 import (
-	"bytes"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -168,99 +166,27 @@ func unpinnedBases(lock []any) bool {
 
 // --- registry digest lookup -----------------------------------------------------
 
-var registryClient = &http.Client{Timeout: 30 * time.Second}
-var registryScheme = "https"
-
-const manifestAccept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, " +
-	"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
-
-func registryHost(registry string) string {
-	if registry == "docker.io" {
-		return "registry-1.docker.io"
-	}
-	return registry
+// loopbackRegistry reports a registry on this machine, which may use plain HTTP.
+func loopbackRegistry(registry string) bool {
+	return strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:")
 }
 
-var bearerParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
-
-// anonymousToken follows a registry's Bearer challenge without credentials.
-func anonymousToken(challenge string) (string, error) {
-	if !strings.HasPrefix(strings.ToLower(challenge), "bearer ") {
-		return "", Public("Registry requires unsupported authentication")
-	}
-	params := map[string]string{}
-	for _, m := range bearerParam.FindAllStringSubmatch(challenge, -1) {
-		params[strings.ToLower(m[1])] = m[2]
-	}
-	realm := params["realm"]
-	if !strings.HasPrefix(realm, "https://") && !(registryScheme == "http" && strings.HasPrefix(realm, "http://")) {
-		return "", Public("Registry token endpoint must use HTTPS")
-	}
-	req, _ := http.NewRequest("GET", realm, nil)
-	q := req.URL.Query()
-	for _, k := range []string{"service", "scope"} {
-		if params[k] != "" {
-			q.Set(k, params[k])
-		}
-	}
-	req.URL.RawQuery = q.Encode()
-	resp, err := registryClient.Do(req)
-	if err != nil {
-		return "", Public("Registry token request failed")
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(http.MaxBytesReader(nil, resp.Body, 1<<20))
-	body, err := parseObject(buf.Bytes())
-	if err != nil || resp.StatusCode != 200 {
-		return "", Public("Registry token request was refused")
-	}
-	token := str(body["token"])
-	if token == "" {
-		token = str(body["access_token"])
-	}
-	return token, nil
-}
-
-// registryDigest returns the manifest digest a tag currently points to.
-// registrySchemeFor uses plain HTTP only for loopback registries (as Docker
-// and containers/image do); every other registry must use HTTPS.
-func registrySchemeFor(registry string) string {
-	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
-		return "http"
-	}
-	return registryScheme
-}
-
+// registryDigest returns the manifest digest a tag currently points to. skopeo
+// does the registry protocol and authentication.
 var registryDigest = func(r imageRef) (string, error) {
-	url := registrySchemeFor(r.Registry) + "://" + registryHost(r.Registry) + "/v2/" + r.Repository + "/manifests/" + r.Tag
-	head := func(token string) (*http.Response, error) {
-		req, _ := http.NewRequest("HEAD", url, nil)
-		req.Header.Set("Accept", manifestAccept)
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		return registryClient.Do(req)
+	argv := []string{"skopeo", "--insecure-policy", "inspect", "--format", "{{.Digest}}"}
+	if loopbackRegistry(r.Registry) {
+		argv = append(argv, "--tls-verify=false")
 	}
-	resp, err := head("")
+	res, err := run(append(argv, "docker://"+r.Registry+"/"+r.Repository+":"+r.Tag), nil, 60*time.Second,
+		[]string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}, "")
 	if err != nil {
 		return "", Public("Registry unreachable")
 	}
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		token, err := anonymousToken(resp.Header.Get("WWW-Authenticate"))
-		if err != nil {
-			return "", err
-		}
-		if resp, err = head(token); err != nil {
-			return "", Public("Registry unreachable")
-		}
-		resp.Body.Close()
-	}
-	if resp.StatusCode != http.StatusOK {
+	if res.Code != 0 {
 		return "", Public("Registry has no manifest for this tag")
 	}
-	digest := resp.Header.Get("Docker-Content-Digest")
+	digest := strings.TrimSpace(string(res.Stdout))
 	if !digestRe.MatchString(digest) {
 		return "", Public("Registry returned no usable digest")
 	}
@@ -449,100 +375,6 @@ func imageUpdatesCLI(args []string) error {
 		return err
 	}
 	return Public("usage: nixus-admin image-updates {check|status|auto|apply PROJECT|apply-all|hold PROJECT DIGEST|unhold PROJECT DIGEST}")
-}
-
-// --- pinned base images for the offline builder ------------------------------------
-
-const maxBaseBytes = 4 << 30
-
-// baseImages returns the distinct digest-pinned Dockerfile bases of a plan.
-func baseImages(plan M) []M {
-	seen := map[string]bool{}
-	var out []M
-	for _, raw := range list(plan["imageLock"]) {
-		e := obj(raw)
-		if str(e["kind"]) != "dockerfile-from" || !isTrue(e["pinned"]) || seen[str(e["ref"])] {
-			continue
-		}
-		seen[str(e["ref"])] = true
-		hex := strings.TrimPrefix(str(e["digest"]), "sha256:")
-		out = append(out, M{"ref": e["ref"], "registry": e["registry"], "repository": e["repository"], "digest": e["digest"],
-			"archive": "/work/bases/" + hex + ".tar", "local": "localhost/nixus-base-" + hex[:16] + ":pinned"})
-	}
-	return out
-}
-
-const skopeoPolicy = `{"default":[{"type":"reject"}],"transports":{"docker":{"":[{"type":"insecureAcceptAnything"}]}}}`
-
-// ociFetchBase copies one digest-pinned image into an OCI archive. The digest
-// reference makes the registry content self-verifying.
-var ociFetchBase = func(base M, destination string) error {
-	policy := destination + ".policy.json"
-	if err := os.WriteFile(policy, []byte(skopeoPolicy), 0o600); err != nil {
-		return err
-	}
-	defer os.Remove(policy)
-	source := "docker://" + str(base["registry"]) + "/" + str(base["repository"]) + "@" + str(base["digest"])
-	res, err := run([]string{"skopeo", "--policy", policy, "--override-os", "linux", "--override-arch", "amd64", "copy",
-		"--retry-times", "3", source, "oci-archive:" + destination + ":base"}, nil, 30*time.Minute,
-		[]string{"PATH=" + os.Getenv("PATH"), "HOME=/var/empty"}, "")
-	if err != nil || res.Code != 0 {
-		return Public("Could not fetch pinned base image " + str(base["ref"]) + "; check the digest and registry")
-	}
-	return nil
-}
-
-// fetchBaseImages stores every pinned base in <scratch>/work/bases.
-func fetchBaseImages(scratch string, bases []M) error {
-	if len(bases) == 0 {
-		return nil
-	}
-	dir := filepath.Join(scratch, "work", "bases")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	var total int64
-	for _, b := range bases {
-		target := filepath.Join(dir, filepath.Base(str(b["archive"])))
-		if err := ociFetchBase(b, target); err != nil {
-			return err
-		}
-		info, err := os.Stat(target)
-		if err != nil {
-			return Public("Pinned base image archive is missing")
-		}
-		if total += info.Size(); total > maxBaseBytes {
-			return Public("Pinned base images exceed the 4 GiB build quota")
-		}
-	}
-	return nil
-}
-
-// rewriteBases maps pinned FROM references to locally loaded names in a
-// private build copy of the Dockerfile; the published source is unchanged.
-func rewriteBases(text string, bases []any) string {
-	mapping := map[string]string{}
-	for _, raw := range bases {
-		b := obj(raw)
-		mapping[str(b["ref"])] = str(b["local"])
-	}
-	lines := strings.SplitAfter(text, "\n")
-	for i, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
-			continue
-		}
-		for _, f := range fields[1:] {
-			if strings.HasPrefix(f, "--") {
-				continue
-			}
-			if local, ok := mapping[f]; ok {
-				lines[i] = strings.Replace(line, f, local, 1)
-			}
-			break
-		}
-	}
-	return strings.Join(lines, "")
 }
 
 // --- pinning pasted source ----------------------------------------------------------

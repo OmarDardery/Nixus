@@ -9,17 +9,21 @@ describe. Each app gets its own Incus project, network and storage.
 `Dockerfile` and any files it copies. Or push the folder to your
 [apps repository](apps-repo.md).
 
+Not ready to deploy? **Save draft** keeps the form on the server, including environment
+variables (encrypted with your secrets key), so you can finish from another device. Drafts
+list on the Apps page and are removed when the app deploys.
+
 Rules, checked before anything runs:
 
 - Images are pinned by digest: `image: ghcr.io/org/app@sha256:…`. Use
-  **Pin** on the app page to turn tags into digests. `FROM` lines in
+  **Pin image digests** on New app to turn tags into digests. `FROM` lines in
   Dockerfiles follow the same rule.
-- Builds run offline in a sandbox.
+- Images are pulled, and Dockerfiles are built, by `incus-compose` with Buildah on the server.
 - Named volumes (`volumes: { data: {} }`) become Incus volumes, are backed up
   and survive updates. Host paths are not allowed.
 - `ports:` publish on the server's address.
 - No `privileged`, `cap_add`, `network_mode: host` or Docker secrets. Put
-  secrets in the Env tab instead.
+  secrets in the app's **Environment Variables** tab, or the box on New app.
 
 ### Devices
 

@@ -21,14 +21,6 @@ in {
     users.groups.nixus-ui = { };
     users.users.nixus-ui = { isSystemUser = true; group = "nixus-ui"; };
     # No shell, host keys, Incus group membership or host-root execution.
-    # The OCI runner wraps every Dockerfile in an offline filesystem namespace.
-    users.groups.nixus-oci = { };
-    users.users.nixus-oci = {
-      isSystemUser = true;
-      group = "nixus-oci";
-      home = "/var/empty";
-      createHome = false;
-    };
     environment.systemPackages = [ tool ];
     systemd.services.nixus-management-identity = {
       description = "Refresh management TLS identity from the assigned address";
@@ -46,8 +38,8 @@ in {
       # Restorable declarative projects are intentionally outside /etc/nixos
       # and the world-readable Nix store. Only the root broker may write them.
       "d /srv/nixus 0700 root root -"
-      "d /var/lib/nixus-oci 0711 root root -"
-      "d /var/lib/nixus-oci/jobs 0711 root root -"
+      # The removed sandboxed builder left its work directory behind.
+      "R /var/lib/nixus-oci - - - - -"
       "d /var/lib/nixus-admin 0710 root nixus-ui -"
       "d /var/lib/nixus-admin/jobs 0700 root root -"
       "d /run/nixus-admin 0750 root nixus-ui -"

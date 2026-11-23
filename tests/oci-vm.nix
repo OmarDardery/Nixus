@@ -155,30 +155,10 @@ in pkgs.testers.runNixOSTest {
         bplan = broker("/project-import/plan", {"project": "unpinned", "revision": bpub["revision"]})
         assert "dockerfile-base-image-must-be-pinned-by-digest" in bplan["blocking"], bplan["blocking"]
 
-    with subtest("offline sandbox build from the fetched pinned base, then Incus import"):
+    with subtest("a Dockerfile source is reviewed against the pinned base and approved"):
         oci = broker("/oci/review", {"project": "testapp", "revision": revision})
-        assert oci["status"] == "ready", oci
-        broker("/oci/build", {"id": oci["id"], "planHash": oci["planHash"]})
-        deadline = time.time() + 900
-        while True:
-            status = broker("/oci/status")
-            if status["status"] in ("imported", "failed", "interrupted", "cancelled"):
-                break
-            assert time.time() < deadline, status
-            time.sleep(5)
-        if status["status"] != "imported":
-            machine.succeed("journalctl -b -u nixus-admin-backend -u 'nixus-oci-*' --no-pager | tail -n 120 >&2")
-        assert status["status"] == "imported", status
-        artifact = status["artifacts"][0]
-        assert artifact["incusFingerprint"], artifact
-        images = json.loads(machine.succeed("incus image list --project testapp --format=json"))
-        assert any(i["fingerprint"] == artifact["incusFingerprint"] for i in images), images
-
-    with subtest("the built image contains the base layer and the payload"):
-        rootfs = "/var/lib/incus/images/" + artifact["incusFingerprint"] + ".rootfs"
-        machine.succeed("test -s " + rootfs)
-        listing = machine.succeed("tar -tf " + rootfs)
-        assert "base-marker" in listing and "payload.txt" in listing, listing
+        assert oci["status"] == "imported", oci
+        assert broker("/oci/status")["id"] == oci["id"]
 
     with subtest("a reviewed project revision deploys the imported image with incus-compose"):
         broker("/project/initialize", {"flake": "{ outputs = { self }: {}; }\n",
@@ -201,9 +181,9 @@ in pkgs.testers.runNixOSTest {
         assert project["deployment"] == "verified", project
         running = json.loads(machine.succeed("incus list --project testapp --format=json"))
         assert len(running) == 1 and running[0]["status"] == "Running", running
-        assert running[0]["config"]["volatile.base_image"] == artifact["incusFingerprint"], running[0]["config"]
         served = machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/cat /payload.txt")
         assert served == "guarded-oci-build\n", served
+        machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/sh -c 'test -s /etc/base-marker'")
 
     with subtest("secrets: an app secret is encrypted, published and delivered to /run/secrets"):
         broker("/project-secrets/enroll", {"mode": "generate", "acknowledge": True})
@@ -343,12 +323,7 @@ in pkgs.testers.runNixOSTest {
         wr = broker("/project-import/review", {"id": wp["id"], "manifestHash": ws["manifestHash"]})
         web_rev = broker("/project-import/publish", {"id": wp["id"], "reviewId": wr["reviewId"], "acknowledge": True})["revision"]
         wo = broker("/oci/review", {"project": "web", "revision": web_rev})
-        broker("/oci/build", {"id": wo["id"], "planHash": wo["planHash"]})
-        deadline = time.time() + 900
-        while broker("/oci/status")["status"] not in ("imported", "failed", "interrupted"):
-            assert time.time() < deadline
-            time.sleep(3)
-        assert broker("/oci/status")["status"] == "imported", broker("/oci/status")
+        assert wo["status"] == "imported", wo
         web_decl = '{ ... }: { nixus.project = { backend = "incus-compose"; updates = { policy = "auto"; healthSeconds = 10; }; }; }\n'
         wrev = broker("/project/review", {"changes": {"web/default.nix": web_decl}, "sourceRevisions": {"web": web_rev}})
         broker("/project/publish", {"id": wrev["id"], "planHash": wrev["planHash"]})
@@ -394,6 +369,9 @@ in pkgs.testers.runNixOSTest {
         np_ = broker("/project-import/prepare", {"project": "notes", "files": nentries})
         broker("/project-import/chunk", {"id": np_["id"], "path": "Dockerfile", "offset": 0, "data": base64.b64encode(notes["Dockerfile"]).decode()})
         ns = broker("/project-import/finish", {"id": np_["id"], "manifestHash": np_["manifestHash"]})
+        broker("/apps/draft-save", {"name": "notes", "mode": "files", "entries": [{"path": "Dockerfile", "text": "FROM scratch\n"}], "env": {"GREETING": "hello from deploy"}})
+        assert [d["name"] for d in broker("/apps/drafts")["drafts"]] == ["notes"]
+        assert broker("/apps/draft-read", {"name": "notes", "withEnv": True})["env"]["GREETING"] == "hello from deploy"
         broker("/apps/deploy", {"project": "notes", "kind": "source", "stagingId": ns["id"], "manifestHash": ns["manifestHash"],
                                 "env": {"GREETING": "hello from deploy"}})
         deadline = time.time() + 900
@@ -410,6 +388,7 @@ in pkgs.testers.runNixOSTest {
         assert machine.succeed("incus config get " + running[0]["name"] + " environment.GREETING --project notes").strip() == "hello from deploy"
         assert machine.succeed("test -s /srv/nixus/projects/notes/secrets.enc.yaml && echo ok").strip() == "ok"
         machine.fail("ls /var/lib/nixus-admin/app-deploy-notes.env.age")
+        assert broker("/apps/drafts")["drafts"] == [], "a deployed app's draft is removed"
         assert machine.succeed("cat /srv/nixus/projects/notes/default.nix").strip().endswith("}")
         # Nothing left to update: the one-click action refuses instead of starting a worker.
         code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "

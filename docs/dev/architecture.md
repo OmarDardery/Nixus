@@ -159,10 +159,11 @@ separate applications VM is involved:
 
 1. The original Dockerfile, build context and Compose files are uploaded, hash-manifested
    and published as an immutable source revision.
-2. Images are built offline in a non-root, CPU/memory-limited Buildah sandbox and imported
-   into the project's own Incus image store with verified fingerprints.
-3. A reviewed project revision links that exact source and runs
-   `incus-compose up --no-build` in a Nixus-owned Incus project.
+2. The source is parsed by the pinned `incus-compose` and checked against Nixus's rules
+   (digest-pinned images, no secrets in the file, named volumes only).
+3. A reviewed project revision links that exact source and runs `incus-compose up` in a
+   Nixus-owned Incus project. Prebuilt images are pulled; services with a Dockerfile are
+   built with Buildah. A new revision recreates the instances; named volumes keep their data.
 
 Named volumes become Incus custom volumes and survive redeployments; Nixus never runs
 `down --volumes`. The native reconciler never edits a Compose-owned project, and Compose

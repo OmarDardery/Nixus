@@ -53,13 +53,13 @@ func TestInWindowWrapsMidnight(t *testing.T) {
 	}
 }
 
-func TestRegistrySchemeOnlyLoopbackIsPlainHTTP(t *testing.T) {
-	for registry, want := range map[string]string{
-		"localhost:5000": "http", "127.0.0.1:5000": "http", "docker.io": "https",
-		"ghcr.io": "https", "localhost.example.com:5000": "https", "10.0.0.5:5000": "https",
+func TestOnlyLoopbackRegistriesMayUsePlainHTTP(t *testing.T) {
+	for registry, want := range map[string]bool{
+		"localhost:5000": true, "127.0.0.1:5000": true, "docker.io": false,
+		"ghcr.io": false, "localhost.example.com:5000": false, "10.0.0.5:5000": false,
 	} {
-		if got := registrySchemeFor(registry); got != want {
-			t.Fatalf("%s: got %s", registry, got)
+		if got := loopbackRegistry(registry); got != want {
+			t.Fatalf("%s: got %v", registry, got)
 		}
 	}
 }

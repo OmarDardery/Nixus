@@ -15,7 +15,7 @@ var setupItems = [][4]string{
 	{"secretsKey", "Create the secrets encryption key", "Backups → Encryption key.", "operations"},
 	{"recoveryKit", "Save and verify the encrypted recovery kit", "Download it, store it off this server, then verify it.", "operations"},
 	{"sshKey", "Enroll an SSH key (optional)", "Your laptop's public key.", "system"},
-	{"backup", "Set up backups (optional)", "Save a backup policy on the Apps page.", "projects"},
+	{"backup", "Set up backups (optional)", "Backups → Destination.", "operations"},
 }
 
 func identityDigest(p string) any {

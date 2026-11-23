@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,7 +25,12 @@ func appEnvPath(project string) string {
 	return filepath.Join(STATE, "app-deploy-"+project+".env.age")
 }
 
-func sealDeployEnv(project string, vars M) error {
+func sealDeployEnv(project string, vars M) error { return sealVars(appEnvPath(project), vars) }
+
+func openDeployEnv(project string) (M, error) { return openVars(appEnvPath(project)) }
+
+// sealVars encrypts variables to the secrets key; the plaintext never touches disk.
+func sealVars(path string, vars M) error {
 	recipient, err := NewSecrets("", "", "").recipient()
 	if err != nil {
 		return Public("Create the secrets encryption key first: Backups → Encryption key & recovery kit")
@@ -33,11 +39,11 @@ func sealDeployEnv(project string, vars M) error {
 	if err != nil {
 		return err
 	}
-	return atomic(appEnvPath(project), sealed, 0o600, "")
+	return atomic(path, sealed, 0o600, "")
 }
 
-func openDeployEnv(project string) (M, error) {
-	sealed, err := os.ReadFile(appEnvPath(project))
+func openVars(path string) (M, error) {
+	sealed, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +128,13 @@ func appJobActive(project string) bool {
 }
 
 // startAppDeploy validates a request, records it and starts the worker unit.
+// appDeployMu keeps two requests for the same app from both passing the
+// "already running" check before either has recorded its job.
+var appDeployMu sync.Mutex
+
 func startAppDeploy(actor string, body M) (M, error) {
+	appDeployMu.Lock()
+	defer appDeployMu.Unlock()
 	project, _ := body["project"].(string)
 	if !fullmatch(projectName, project) {
 		return nil, Public("Use a lowercase name: letters, digits and dashes")
@@ -306,6 +318,7 @@ func runAppDeploy(project string) error {
 	}
 	delete(job, "declaration")
 	save("deployed", M{"completedAt": now(), "error": nil})
+	deleteDraft(project) // the form is no longer needed once the app is live
 	audit("app-deployed", M{"project": project, "kind": job["kind"]})
 	return nil
 }

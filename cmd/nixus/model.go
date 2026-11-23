@@ -24,7 +24,7 @@ func command(argv []string, timeout time.Duration) (string, error) {
 	}
 	res, err := run(argv, nil, timeout, nil, "")
 	if err != nil || res.Code != 0 {
-		return "", Public("Host command failed")
+		return "", cmdFailed("Host command failed", res, err)
 	}
 	return string(res.Stdout), nil
 }
@@ -634,8 +634,6 @@ func foundationRecords(values any, fields []string, label string) ([]M, error) {
 	}
 	return out, nil
 }
-
-var guestIdentityRe = re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}/[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`)
 
 func validateFoundation(site, host M) (map[string]bool, error) {
 	c := obj(site["connectivity"])

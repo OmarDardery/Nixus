@@ -44,7 +44,6 @@ func init() {
 		"backup":               backupMain,
 		"nixus-reconcile":      reconcileCommand,
 		"reconcile":            reconcileCommand,
-		"oci-child":            ociChildMain,
 		"release":              releaseCommand,
 		"nixus-release":        releaseCommand,
 		"preflight":            preflightCommand,
@@ -565,12 +564,6 @@ func adminMain(argv []string) int {
 		return generic(guard())
 	case action == "job" && len(rest) == 2:
 		return generic(workerJob(rest[0], rest[1]))
-	case action == "oci-build-job" && root:
-		if len(rest) != 1 {
-			return fail("Expected one OCI build review ID")
-		}
-		_, err := NewOCIBuilds("", nil).run(rest[0])
-		return generic(err)
 	case action == "project-deploy-job" && root:
 		if len(rest) != 1 {
 			return fail("Expected one project deployment ID")

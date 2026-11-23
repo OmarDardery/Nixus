@@ -513,7 +513,7 @@ func diskPrepare() error {
 		for _, argv := range [][]string{{"wipefs", "--all", "--", device}, {"parted", "--script", "--", device, "mklabel", "gpt"},
 			{"parted", "--script", "--", device, "mkpart", "NIXUS_DATA", "ext4", "1MiB", "100%"}, {"udevadm", "settle", "--timeout=30"}} {
 			if _, err := check(argv, nil, 5*time.Minute); err != nil {
-				return Public("Disk preparation step failed; inspect the selected disk")
+				return Failed("Disk preparation step failed; inspect the selected disk", err)
 			}
 		}
 		refreshed, err := blockDisks()
@@ -538,7 +538,7 @@ func diskPrepare() error {
 			label = label[:8]
 		}
 		if _, err := check([]string{"mkfs.ext4", "-F", "-L", "nixus-" + label, partition}, nil, 30*time.Minute); err != nil {
-			return Public("Filesystem creation failed; inspect the selected disk")
+			return Failed("Filesystem creation failed; inspect the selected disk", err)
 		}
 		out, _ := check([]string{"blkid", "-s", "UUID", "-o", "value", "--", partition}, nil, 30*time.Second)
 		uuid := strings.TrimSpace(string(out))

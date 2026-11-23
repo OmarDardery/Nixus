@@ -25,8 +25,6 @@ const pageAliases = {guests:"overview", hardware:"storage", integrations:"system
   ingress:"files", repository:"operations"};
 const navigationItems = [["overview","Overview"],["projects","Apps"],["operations","Backups"],["network","Settings"],["review","Changes"],["commands","Info"]];
 const pageIcons = {setup:"✓",repository:"⑂",overview:"◫",projects:"▧",guests:"▤",network:"◎",storage:"▱",hardware:"⌘",integrations:"▦",security:"◇",accounts:"♧",ingress:"↗",operations:"◷",review:"⇄",system:"⚙",files:"{ }",commands:"?"};
-function primaryPage() { return state.page; }
-function hostTabs() { return ""; }
 function validPage(id) { return pages.some(([page]) => page === id); }
 function selectedHash() {
   try { const raw = decodeURIComponent(window.location.hash.slice(1)); const id = pageAliases[raw] || raw; return validPage(id) ? id : "overview"; }

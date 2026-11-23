@@ -145,7 +145,7 @@ func projectLog(incusProject, instance string) (M, error) {
 	}
 	res, err := run([]string{"incus", "--force-local", "info", instance, "--project", incusProject, "--show-log"}, nil, 15*time.Second, nil, "")
 	if err != nil || res.Code != 0 {
-		return nil, Public("The instance log is unavailable")
+		return nil, cmdFailed("The instance log is unavailable", res, err)
 	}
 	text := strings.ToValidUTF8(string(res.Stdout), "?")
 	truncated := false

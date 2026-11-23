@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,7 +25,8 @@ func opIncus(timeout time.Duration, args ...string) (string, error) {
 	}
 	out, err := incusRun(args, timeout, 4096)
 	if err != nil {
-		return "", Public("Incus operation failed")
+		fmt.Fprintln(os.Stderr, "nixus: incus", strings.Join(args, " "), "failed:", err)
+		return "", Failed("Incus operation failed", err)
 	}
 	return out, nil
 }

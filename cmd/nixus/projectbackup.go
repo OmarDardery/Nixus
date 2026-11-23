@@ -22,13 +22,8 @@ var projectBackupRoot = envPath("NIXUS_PROJECT_BACKUPS", "/var/lib/nixus/project
 
 // GitHub's published SSH host keys; pinned so a first push cannot be redirected.
 
-var backupPhases = []string{"config", "data", "offHost", "verification"}
-
 var resticRepository = re(`(?:rclone:[A-Za-z0-9_-]+:[A-Za-z0-9._/-]+|sftp:[A-Za-z0-9._@:/-]+|s3:[A-Za-z0-9._:/-]+|b2:[A-Za-z0-9._:/-]+|rest:https://[A-Za-z0-9._:/-]+|/[A-Za-z0-9._/-]+)`)
 var runtimeFile = re(`/(?:var/lib|run|etc)/[A-Za-z0-9._/-]+`)
-var gitBranch = re(`[A-Za-z0-9._/-]{1,100}`)
-
-const maxGithubFile = 50 << 20
 
 func validateBackupPolicy(raw any) (M, error) {
 	if raw == nil {
@@ -315,7 +310,7 @@ func resticEnv(policy M) ([]string, error) {
 var resticRun = func(env []string, timeout time.Duration, args ...string) error {
 	res, err := run(append([]string{"restic"}, args...), nil, timeout, env, "")
 	if err != nil || res.Code != 0 {
-		return Public("restic " + args[0] + " failed; check the destination, credentials and quota")
+		return cmdFailed("restic "+args[0]+" failed; check the destination, credentials and quota", res, err)
 	}
 	return nil
 }
@@ -351,14 +346,6 @@ func verifyOffHost(policy M) error {
 		args = append(args, "--read-data")
 	}
 	return resticRun(env, 12*time.Hour, args...)
-}
-
-var gitRun = func(dir string, env []string, args ...string) (string, error) {
-	res, err := run(append([]string{"git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-C", dir}, args...), nil, 10*time.Minute, env, "")
-	if err != nil || res.Code != 0 {
-		return "", Public("git " + args[0] + " failed")
-	}
-	return string(res.Stdout), nil
 }
 
 func pruneSnapshots(keep int) {

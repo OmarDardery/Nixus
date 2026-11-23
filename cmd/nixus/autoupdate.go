@@ -195,7 +195,8 @@ func stageFiles(actor, project string, entries []any, files []sourceEntry, conte
 
 var updatePoll = 3 * time.Second
 
-// buildRevision reviews, queues and waits for an imported OCI build.
+// buildRevision reviews a published revision so it can be deployed. Images are
+// pulled or built by incus-compose when the project is brought up.
 func buildRevision(actor, project, revision string) (string, error) {
 	builds := NewOCIBuilds("", nil)
 	if builds.imported(project, revision) != nil {
@@ -205,24 +206,7 @@ func buildRevision(actor, project, revision string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := builds.queue(review["id"], review["planHash"], false); err != nil {
-		return "", err
-	}
-	deadline := time.Now().Add(45 * time.Minute)
-	for time.Now().Before(deadline) {
-		status, err := builds.status(str(review["id"]))
-		if err != nil {
-			return "", err
-		}
-		switch str(status["status"]) {
-		case "imported":
-			return str(review["id"]), nil
-		case "failed", "interrupted", "cancelled":
-			return "", Public("The rebuilt image did not verify or import: " + str(status["errorDetail"]))
-		}
-		time.Sleep(updatePoll)
-	}
-	return "", Public("The image rebuild timed out")
+	return str(review["id"]), nil
 }
 
 // deployRevision binds the project to a published source revision through a
@@ -264,14 +248,14 @@ var updateIncus incusFunc = func(timeout time.Duration, args ...string) (string,
 func customVolumes(incus incusFunc, project string) ([]volumeSnapshot, error) {
 	out, err := incus(0, "storage", "list", "--format=json")
 	if err != nil {
-		return nil, Public("Could not list storage pools")
+		return nil, Failed("Could not list storage pools", err)
 	}
 	var vols []volumeSnapshot
 	for _, rawPool := range list(must(parseJSON([]byte(out)))) {
 		pool := str(obj(rawPool)["name"])
 		listed, err := incus(0, "storage", "volume", "list", pool, "--project", project, "--format=json")
 		if err != nil {
-			return nil, Public("Could not list the volumes of pool " + pool)
+			return nil, Failed("Could not list the volumes of pool "+pool, err)
 		}
 		for _, raw := range list(must(parseJSON([]byte(listed)))) {
 			v := obj(raw)
@@ -303,12 +287,8 @@ func restoreVolumes(incus incusFunc, project string, snaps []volumeSnapshot) err
 	if len(snaps) == 0 {
 		return nil
 	}
-	out, err := incus(0, "query", "/1.0/instances?project="+project)
-	if err == nil {
-		for _, raw := range list(must(parseJSON([]byte(out)))) {
-			name := filepath.Base(str(raw))
-			incus(0, "stop", name, "--project", project, "--force")
-		}
+	for _, inst := range appInstances(incus, project) {
+		incus(0, "stop", str(inst["name"]), "--project", project, "--force")
 	}
 	for _, s := range snaps {
 		if _, err := incus(0, "storage", "volume", "snapshot", "restore", s.Pool, s.Volume, s.Name, "--project", project); err != nil {

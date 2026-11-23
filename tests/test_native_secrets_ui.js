@@ -47,23 +47,15 @@ async function main() {
   assert.doesNotMatch(panel, /private-value-not-in-UI/);
   assert.ok(!sent.length, "Rendering must not call a broker");
 
-  await run("nativeSecretReview()");
+  const hostRecipient0 = ctx.inventory.identity.recipient;
+  controls["native-recipient-list"] = {value: hostRecipient0};
+  controls["native-recipient-password"] = {value: "admin-test-password"};
+  await run("nativeRecipientReview()");
   assert.equal(sent[0].route, "project-secrets/review");
   assert.equal(sent[0].body.current, "admin-test-password");
-  assert.equal(sent[0].body.value, "private-value-not-in-UI");
-  assert.equal(controls["native-secret-value"].value, "");
-  assert.equal(controls["native-secret-review-password"].value, "");
+  assert.equal(controls["native-recipient-password"].value, "");
   panel = run("nativeSecretsPanel()");
   assert.match(panel, /Approve ciphertext-only publication/);
-  assert.doesNotMatch(panel, /private-value-not-in-UI/);
-  ctx.envPayload = "export API_TOKEN='quoted secret'\nPASSWORD=abc123\n# comment\n";
-  const parsed = run("nativeParseEnv(envPayload)");
-  assert.equal(parsed.API_TOKEN, "quoted secret");
-  assert.equal(parsed.PASSWORD, "abc123");
-  ctx.badEnv = "KEY=$(run)";
-  assert.throws(() => run("nativeParseEnv(badEnv)"), /interpolation/);
-  ctx.duplicateEnv = "KEY=first\nKEY=second";
-  assert.throws(() => run("nativeParseEnv(duplicateEnv)"), /Duplicate/);
   const serialized = run("JSON.stringify(nativeSecretsView)");
   assert.ok(!serialized.includes("private-value-not-in-UI"),
             "Secret value must never enter persistent UI state");

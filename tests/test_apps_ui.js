@@ -22,10 +22,19 @@ let html = render();
 assert.match(html, /data-app-open="web"/);
 assert.match(html, /data-app-open="printer"/);
 assert.match(html, /data-app-new/);
-assert.match(html, /Update available/);
+assert.match(html, /class="app-pill" title="Update available"/);
+// Header: an Add app button and an Import menu, both with icons and accessible names.
+assert.match(html, /data-app-new aria-label="Add app"/);
+assert.match(html, /<summary class="icon-button" aria-label="Import an app"/);
+assert.match(html, /data-import="repo"/);
+assert.match(html, /data-import="upload"/);
+assert.doesNotMatch(html, /data-import="backup"/, "restoring a whole server is only offered before any app exists");
+assert.match(html, /\.app-dot|app-dot bad/);
 assert.doesNotMatch(html, /<b>app<\/b>|<i>bad<\/i>|<x>/);
 vm.runInContext('appView.filter = "print"', context);
 assert.doesNotMatch(render(), /data-app-open="web"/, "search filters the grid");
+vm.runInContext('appView.filter = "zzz"', context);
+assert.match(render(), /No apps match/);
 vm.runInContext('appView.filter = ""', context);
 
 // App page: four tabs and an update action.
@@ -92,3 +101,29 @@ assert.throws(() => vm.runInContext("appFiles()", context), /digest/);
 const index = read("index.html");
 assert.match(index, /\/apps\.js/);
 console.log("Apps page verified");
+
+// Empty state offers Add app, Git and backup imports.
+{
+  const ctx2 = vm.createContext({ state: { page: "projects" }, shell: () => {}, api: async () => ({}), File, console, esc: context.esc, card: context.card, title: context.title });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx2);
+  vm.runInContext("Object.assign(appView, { overview: { projects: [] }, loading: true })", ctx2);
+  const empty = vm.runInContext("appsPage()", ctx2);
+  assert.match(empty, /No apps yet/);
+  assert.match(empty, /data-import="backup"/);
+  assert.match(empty, /data-import="repo"/);
+  assert.doesNotMatch(empty, /id="apps-filter"/, "no search box without apps");
+  console.log("Apps empty state verified");
+}
+
+// Deploying over an existing app's name asks first.
+(async () => {
+  const calls = [];
+  const ctx3 = vm.createContext({ setTimeout: () => 0, state: { page: "projects" }, shell: () => {}, api: async (r, b) => { calls.push(r); return { id: "x", manifestHash: "y" }; }, File, console, esc: context.esc, card: context.card, title: context.title,
+    document: { querySelector: id => id === "#app-password" ? { value: "pw" } : id === "#app-name" ? { value: "web" } : null, querySelectorAll: () => [] } });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx3);
+  vm.runInContext('Object.assign(appView, { view: "new", name: "web", mode: "nix", nix: "{}", overview: { projects: [{ name: "web", instances: [] }] } })', ctx3);
+  await vm.runInContext("deployApp()", ctx3);
+  assert.match(vm.runInContext("appView.error", ctx3), /already exists/);
+  assert.ok(!calls.includes("apps/deploy"), "nothing is sent before the second confirmation");
+  console.log("Replace confirmation verified");
+})().catch(e => { console.error(e); process.exitCode = 1; });

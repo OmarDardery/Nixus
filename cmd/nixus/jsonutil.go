@@ -16,14 +16,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 )
 
 // M is a JSON object.
@@ -36,6 +36,39 @@ func (e *PublicError) Error() string { return e.msg }
 
 // Public returns an error whose message is safe to show to the browser.
 func Public(msg string) error { return &PublicError{msg} }
+
+// cmdFailed reports a finished command that did not succeed. The stderr tail
+// goes to the journal and its last line is added to the message.
+func cmdFailed(msg string, res CmdResult, err error) error {
+	if err != nil && len(res.Stderr) == 0 {
+		return Failed(msg, err)
+	}
+	tail := strings.TrimSpace(string(res.Stderr))
+	if len(tail) > 2000 {
+		tail = tail[len(tail)-2000:]
+	}
+	fmt.Fprintf(os.Stderr, "nixus: %s: %s\n", msg, tail)
+	if line := lastLine(tail); line != "" {
+		return Public(msg + ": " + line)
+	}
+	return Public(msg)
+}
+
+// Failed keeps a public message and appends the cause's last line, so a failed
+// tool says why. Use it only where the cause cannot carry secrets.
+func Failed(msg string, cause error) error {
+	if cause == nil {
+		return Public(msg)
+	}
+	detail := lastLine(cause.Error())
+	if p := (*PublicError)(nil); errors.As(cause, &p) {
+		detail = p.msg
+	}
+	if detail == "" {
+		return Public(msg)
+	}
+	return Public(msg + ": " + detail)
+}
 
 // Publicf formats a reviewed public message.
 func Publicf(format string, args ...any) error { return &PublicError{fmt.Sprintf(format, args...)} }
@@ -113,8 +146,6 @@ func isInt(v any) bool {
 	f, ok := num(v)
 	return ok && f == math.Trunc(f)
 }
-
-func boolean(v any) bool { b, _ := v.(bool); return b }
 
 func isTrue(v any) bool { b, ok := v.(bool); return ok && b }
 
@@ -236,17 +267,6 @@ func parseObject(raw []byte) (M, error) {
 
 func now() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// monotonic returns CLOCK_MONOTONIC seconds, shared by every process on a boot
-// (deadlines stored in state files are compared across processes).
-func monotonic() float64 {
-	var ts syscall.Timespec
-	_, _, errno := syscall.Syscall(syscall.SYS_CLOCK_GETTIME, 1, uintptr(unsafe.Pointer(&ts)), 0)
-	if errno != 0 {
-		return float64(time.Now().UnixNano()) / 1e9
-	}
-	return float64(ts.Sec) + float64(ts.Nsec)/1e9
-}
-
 func b64url(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 // --- randomness ------------------------------------------------------------
@@ -320,7 +340,15 @@ func check(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
 		return nil, err
 	}
 	if res.Code != 0 {
-		return res.Stdout, fmt.Errorf("%s exited with status %d", argv[0], res.Code)
+		tail := strings.TrimSpace(string(res.Stderr))
+		if len(tail) > 2000 {
+			tail = tail[len(tail)-2000:]
+		}
+		fmt.Fprintf(os.Stderr, "nixus: %s exited with status %d: %s\n", filepath.Base(argv[0]), res.Code, tail)
+		if line := lastLine(tail); line != "" {
+			return res.Stdout, fmt.Errorf("%s exited with status %d: %s", filepath.Base(argv[0]), res.Code, line)
+		}
+		return res.Stdout, fmt.Errorf("%s exited with status %d", filepath.Base(argv[0]), res.Code)
 	}
 	return res.Stdout, nil
 }
