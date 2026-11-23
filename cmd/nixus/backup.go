@@ -25,12 +25,12 @@ import (
 
 var backupRoot = envPath("NIXUS_EXPORT_DIRECTORY", "/var/lib/nixus/exports")
 
-const backupPending = "/var/lib/nixus/restart-pending.json"
+var backupPending = "/var/lib/nixus/restart-pending.json"
 
 var generationRe = re(`[0-9]+-[0-9a-f]{32}`)
 var archiveRe = re(`(instance|volume)-[0-9a-f]{64}\.tar\.gz`)
 
-func backupIncus(timeout time.Duration, args ...string) (string, error) {
+var backupIncus = func(timeout time.Duration, args ...string) (string, error) {
 	if timeout == 0 {
 		timeout = 43200 * time.Second
 	}
@@ -673,58 +673,9 @@ func runBackup(only []string) error {
 		backupRecover()
 		os.RemoveAll(destination)
 	}()
-	windows := []any{}
-	for index, group := range selected {
-		var members []any
-		pending := []any{}
-		for _, raw := range list(group["guests"]) {
-			g := obj(raw)
-			members = append(members, str(g["project"])+"/"+str(g["name"]))
-			if str(g["status"]) == "Running" {
-				pending = append(pending, instanceIdentity(g))
-			}
-		}
-		if err := saveRestartPending(pending); err != nil {
-			return err
-		}
-		started := now()
-		err := func() error {
-			defer func() {
-				backupProgress("recovering", M{"generation": generation, "members": members})
-				backupRecover()
-			}()
-			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
-			for _, raw := range pending {
-				g := obj(raw)
-				if err := verifyIdentity(g); err != nil {
-					return err
-				}
-				if _, err := backupIncus(0, "stop", str(g["name"]), "--project", str(g["project"]), "--timeout", "180"); err != nil {
-					return err
-				}
-			}
-			for _, raw := range list(group["guests"]) {
-				g := obj(raw)
-				if err := verifyIdentity(instanceIdentity(g)); err != nil {
-					return err
-				}
-				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"])}, str(g["archive"]), destination); err != nil {
-					return err
-				}
-			}
-			for _, raw := range list(group["volumes"]) {
-				v := obj(raw)
-				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"])},
-					str(v["archive"]), destination); err != nil {
-					return err
-				}
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
-		windows = append(windows, M{"members": members, "started": started, "finished": now()})
+	windows, err := backupGroups(selected, destination, generation)
+	if err != nil {
+		return err
 	}
 	coverageName := "selected"
 	if isTrue(coverage["complete"]) {
@@ -815,4 +766,68 @@ func backupMain(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// backupGroups stops, exports and restarts one consistency group at a time. A
+// group whose guests cannot all be restarted stops the backup right there, with
+// their identities still recorded in the pending file, so no later group
+// overwrites it and the backup cannot report success while a guest is offline
+// (#107).
+func backupGroups(selected []M, destination, generation string) ([]any, error) {
+	windows := []any{}
+	for index, group := range selected {
+		var members []any
+		pending := []any{}
+		for _, raw := range list(group["guests"]) {
+			g := obj(raw)
+			members = append(members, str(g["project"])+"/"+str(g["name"]))
+			if str(g["status"]) == "Running" {
+				pending = append(pending, instanceIdentity(g))
+			}
+		}
+		if err := saveRestartPending(pending); err != nil {
+			return nil, err
+		}
+		started := now()
+		err := func() (err error) {
+			defer func() {
+				backupProgress("recovering", M{"generation": generation, "members": members})
+				if recoverErr := backupRecover(); recoverErr != nil && err == nil {
+					err = recoverErr
+				}
+			}()
+			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
+			for _, raw := range pending {
+				g := obj(raw)
+				if err := verifyIdentity(g); err != nil {
+					return err
+				}
+				if _, err := backupIncus(0, "stop", str(g["name"]), "--project", str(g["project"]), "--timeout", "180"); err != nil {
+					return err
+				}
+			}
+			for _, raw := range list(group["guests"]) {
+				g := obj(raw)
+				if err := verifyIdentity(instanceIdentity(g)); err != nil {
+					return err
+				}
+				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"])}, str(g["archive"]), destination); err != nil {
+					return err
+				}
+			}
+			for _, raw := range list(group["volumes"]) {
+				v := obj(raw)
+				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"])},
+					str(v["archive"]), destination); err != nil {
+					return err
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		windows = append(windows, M{"members": members, "started": started, "finished": now()})
+	}
+	return windows, nil
 }
