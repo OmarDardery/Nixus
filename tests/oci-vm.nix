@@ -39,7 +39,10 @@ let
   webV2 = webImage "v2" true;
   webBroken = webImage "broken" false;
   hostNode = withRegistry: { lib, pkgs, ... }: {
-      imports = [ ../configuration-bootstrap.nix ];
+      # The bootstrap role has neither the hypervisor modules nor AppArmor; the
+      # gzip rule is the production module, with AppArmor enforcing as on a host.
+      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ];
+      security.apparmor.enable = true;
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
       environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
