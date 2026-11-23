@@ -692,6 +692,10 @@ func projectPatches(changes M) (M, error) {
 		if len(name) > 255 || strings.Contains(name, "\x00") {
 			return nil, Public("Invalid project file path")
 		}
+		// "<app>/" with no content removes the whole app (Delete app).
+		if content == nil && strings.HasSuffix(name, "/") && fullmatch(projectName, strings.TrimSuffix(name, "/")) {
+			continue
+		}
 		if name != "backups.nix" {
 			parts := strings.Split(name, "/")
 			valid := len(parts) >= 2 && fullmatch(projectName, parts[0]) &&
@@ -1086,7 +1090,13 @@ func (t *ProjectTransactions) review(changesArg any, principal string, sourceRev
 			p := filepath.Join(source, rel)
 			_, existed := beforeFiles[rel]
 			op := "create"
-			if changes[rel] == nil {
+			if changes[rel] == nil && strings.HasSuffix(rel, "/") {
+				if !isDir(p) {
+					return nil, Public("Unknown app")
+				}
+				os.RemoveAll(p)
+				op = "remove-project"
+			} else if changes[rel] == nil {
 				if !existed {
 					return nil, Public("Cannot remove an unknown module")
 				}

@@ -328,6 +328,8 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return saveEnv(actor, body["project"], body["vars"], body["revision"])
 	case "/apps/power":
 		return appPower(actor, body)
+	case "/apps/delete":
+		return deleteApp(actor, body)
 	case "/apps-repo/key":
 		return ensureAppsRepoKey()
 	case "/apps-repo/scan":
@@ -631,7 +633,7 @@ func init() {
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check
 		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
-		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/draft-save /api/apps/draft-read /api/apps/draft-delete /api/apps/env /api/apps/power /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
+		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/draft-save /api/apps/draft-read /api/apps/draft-delete /api/apps/env /api/apps/power /api/apps/delete /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
 		portalActions[a] = true
 	}
 }
@@ -893,7 +895,7 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	switch path {
-	case "/api/project-import/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env", "/api/apps-repo/connect", "/api/apps-repo/deploy", "/api/apps-repo/disconnect":
+	case "/api/project-import/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/delete", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env", "/api/apps-repo/connect", "/api/apps-repo/deploy", "/api/apps-repo/disconnect":
 		if err := reauth("current", "Reauthenticate before changing project source"); err != nil {
 			return err
 		}
