@@ -281,6 +281,21 @@ func runAppDeploy(project string) error {
 	}
 	actor := str(job["actor"])
 	defer os.Remove(appEnvPath(project))
+	// keepVars saves the variables entered with this deploy as the app's
+	// secrets, so a retry or redeploy still has them.
+	keepVars := func() error {
+		if !isFile(appEnvPath(project)) {
+			return nil
+		}
+		vars, err := openDeployEnv(project)
+		if err == nil {
+			err = applyDeployEnv(actor, project, vars)
+		}
+		if err == nil {
+			os.Remove(appEnvPath(project))
+		}
+		return err
+	}
 	save := func(status string, extra M) {
 		job["status"], job["updatedAt"] = status, now()
 		for k, v := range extra {
@@ -291,6 +306,11 @@ func runAppDeploy(project string) error {
 	var deploymentID string
 	fail := func(err error) error {
 		fmt.Fprintln(os.Stderr, "nixus: app deployment failed:", err)
+		// The app's files are published even when its containers failed;
+		// keep the variables so fixing and redeploying does not lose them.
+		if kerr := keepVars(); kerr != nil {
+			fmt.Fprintln(os.Stderr, "nixus: could not keep the app's variables:", kerr)
+		}
 		if deploymentID != "" {
 			// Release a stopped deployment so the app can be fixed and redeployed.
 			NewProjectTransactions("", "").abandonDeployment(deploymentID, "app deployment failed")
@@ -332,12 +352,7 @@ func runAppDeploy(project string) error {
 	}
 	if isFile(appEnvPath(project)) {
 		save("configuring", nil)
-		vars, err := openDeployEnv(project)
-		os.Remove(appEnvPath(project))
-		if err == nil {
-			err = applyDeployEnv(actor, project, vars)
-		}
-		if err != nil {
+		if err := keepVars(); err != nil {
 			return fail(Public("Deployed, but the environment variables were not saved: " + publicError(err)))
 		}
 	}

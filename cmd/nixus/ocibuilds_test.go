@@ -198,3 +198,23 @@ func TestAppStartEnvUsesPendingValues(t *testing.T) {
 		t.Fatal("an unreadable pending file must be an error, not an app started without its variables")
 	}
 }
+
+// A failed start explains itself: which variables were used and what the
+// stopped container printed.
+func TestStartDetailNamesVariablesAndLogTail(t *testing.T) {
+	useState(t)
+	resource := M{"instances": M{"cf-1": M{"service": "cloudflared", "status": "Stopped"}, "web-1": M{"service": "web", "status": "Running"}}}
+	var asked []string
+	incus := func(_ time.Duration, args ...string) (string, error) {
+		asked = append(asked, args[1])
+		return "line1\nERR requires the ID or name of the tunnel\n", nil
+	}
+	got := startDetail(incus, "web", "web", resource)
+	if !strings.Contains(got, "Started with no variables") || !strings.Contains(got, "cloudflared log:") ||
+		!strings.Contains(got, "requires the ID or name of the tunnel") {
+		t.Fatalf("%q", got)
+	}
+	if len(asked) != 1 || asked[0] != "cf-1" {
+		t.Fatalf("only stopped containers are read: %v", asked)
+	}
+}

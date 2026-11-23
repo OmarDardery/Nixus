@@ -129,7 +129,7 @@ td code { font-size: 10px; }
 .login-card .field + .field { margin-top: 18px; }
 .login-card button { width: 100%; margin: 22px 0 17px; }
 .login-card .note { margin-bottom: 0; }
-.error { color: #ffad9b; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.error { color: #ffad9b; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
 .loading { display: grid; place-items: center; min-height: 80vh; align-content: center; gap: 22px; padding: 30px; }
 .loading p { font: 11px/1.8 var(--mono); }
 #toast { position: fixed; right: 28px; bottom: 25px; background: #252d1c; color: var(--text); border: 0 solid #69774f; font-size: 12px; max-width: 500px; line-height: 1.8; padding: 0; box-shadow: 0 8px 30px #0005; z-index: 50; overflow-wrap: anywhere; }
