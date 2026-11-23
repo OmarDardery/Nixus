@@ -31,7 +31,7 @@ assert.match(html, /id="env-reveal"/);
 run('appView.view = "new"');
 run(items({ key: false, backup: true }));
 html = run("appsPage()");
-assert.match(html, /<details class="env-new">.*class="locked".*id="app-env"/s);
+assert.match(html, /<section class="env-new">.*class="locked".*data-var-key="new:0"/s);
 run(items({ key: true, backup: true }));
 assert.doesNotMatch(run("appsPage()"), /class="locked"/);
 

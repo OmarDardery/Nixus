@@ -10,6 +10,7 @@ const appView = {
   instance: { type: "container", image: "images:debian/13", cpus: 2, memory: 2, disk: 10, usb: "" },
   importTarget: "", importError: "", importMessage: "",
   view: "list", tab: "deployments", filter: "", nixLoaded: "",
+  newVars: [{ key: "", value: "", show: true }], newPaste: false, replaceOk: false,
   env: { project: "", names: null, rows: null, revision: null, paste: false, error: "", message: "" },
 };
 
@@ -245,11 +246,29 @@ function deploymentsTab(p) {
         (img.status === "held" ? "1" : "0") + '">' + (img.status === "held" ? "Unskip" : "Skip") + "</button>" : "") + "</td></tr>").join("");
   const when = t => t ? new Date(t * 1000).toLocaleString() : "—";
   return card("Latest deployment", job
-      ? "<p>" + badge(job.status) + " · started " + esc(when(job.startedAt)) + (job.completedAt ? " · finished " + esc(when(job.completedAt)) : "") + "</p>" +
-        (job.error ? '<p class="error">' + esc(job.error) + "</p>" : "") + (job.revision ? "<p>Source <code>" + esc(String(job.revision).slice(0, 12)) + "</code></p>" : "")
+      ? "<p>" + badge(job.status) + " · started " + esc(when(job.startedAt)) + (job.completedAt ? " · finished " + esc(when(job.completedAt)) : "") +
+        (job.revision ? " · source <code>" + esc(String(job.revision).slice(0, 12)) + "</code>" : "") + "</p>" + deploySteps(job) +
+        (job.error ? '<pre class="deploy-error" role="alert">' + esc(job.error) + "</pre>" +
+          '<div class="actions"><button type="button" class="small" data-app-tab="env">Edit variables</button> ' +
+          ((p.instances || []).some(i => i.status !== "Running") ? '<button type="button" class="small" data-app-power="start">Start again</button>' : "") + "</div>" : "")
       : "<p>No deployments from this console yet.</p>") +
     card("Images", (images ? '<div class="table-wrap"><table><thead><tr><th>Image</th><th>Status</th><th></th></tr></thead><tbody>' + images +
       "</tbody></table></div>" : "<p>No tracked images.</p>") + '<p><button type="button" class="small" id="image-updates-check">Check for updates</button></p>');
+}
+
+const DEPLOY_STEPS = [["preparing", "Prepare"], ["publishing", "Publish files"], ["building", "Build images"],
+  ["deploying", "Start containers"], ["configuring", "Save variables"], ["deployed", "Done"]];
+
+// deploySteps shows where a deployment is, or where it stopped.
+function deploySteps(job) {
+  const status = job.status === "failed" || job.status === "interrupted" ? (job.failedStep || "") : job.status === "queued" ? "preparing" : job.status;
+  const at = DEPLOY_STEPS.findIndex(([id]) => id === status);
+  if (at < 0) return "";
+  const stopped = job.status === "failed" || job.status === "interrupted";
+  return '<ol class="deploy-steps">' + DEPLOY_STEPS.map(([id, label], i) => {
+    const cls = i < at || (job.status === "deployed") ? "done" : i === at ? (stopped ? "failed" : "current") : "";
+    return '<li class="' + cls + '">' + esc(label) + "</li>";
+  }).join("") + "</ol>";
 }
 
 function logsTab(p) {
@@ -277,6 +296,59 @@ function parseEnv(text) {
   return out;
 }
 
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+function varRows(scope) { return scope === "new" ? appView.newVars : (appView.env.rows || []); }
+
+// varsEditor renders Name / Value rows. Every keystroke is copied into state
+// (bindVars), so a re-render never loses what was typed.
+function varsEditor(scope, rows, pasteOpen) {
+  const bad = rows.filter(r => r.key && !VAR_NAME.test(r.key)).map(r => r.key);
+  return '<div class="vars">' + rows.map((r, i) => {
+    const id = scope + ":" + i;
+    const invalid = r.key && !VAR_NAME.test(r.key);
+    return '<div class="env-row"><input data-var-key="' + id + '" value="' + esc(r.key) + '" placeholder="NAME" spellcheck="false" autocomplete="off" aria-label="Name"' +
+      (invalid ? ' aria-invalid="true" class="invalid"' : "") + ">" +
+      '<input data-var-value="' + id + '" type="' + (r.show ? "text" : "password") + '" value="' + esc(r.value) + '" placeholder="value" spellcheck="false" autocomplete="off" aria-label="Value">' +
+      '<button type="button" class="small" data-var-show="' + id + '" aria-label="Show or hide">' + (r.show ? "Hide" : "Show") + "</button>" +
+      '<button type="button" class="small" data-var-remove="' + id + '" aria-label="Remove">✕</button></div>';
+  }).join("") + "</div>" +
+    (bad.length ? '<p class="error">Names use letters, digits and _, and do not start with a digit: ' + esc(bad.join(", ")) + "</p>" : "") +
+    '<p><button type="button" class="small" data-var-add="' + scope + '">Add variable</button> <button type="button" class="small" data-var-paste="' + scope + '">Paste .env</button></p>' +
+    (pasteOpen ? '<textarea id="var-paste-' + scope + '" rows="6" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER=value" aria-label="Paste .env"></textarea>' +
+      '<p><button type="button" class="small" data-var-paste-apply="' + scope + '">Add to list</button></p>' : "");
+}
+
+// varsObject turns rows into { NAME: value }, refusing bad or repeated names.
+function varsObject(rows) {
+  const vars = {};
+  for (const r of rows) {
+    if (!r.key && !r.value) continue;
+    if (!VAR_NAME.test(r.key)) throw Error("Invalid variable name: " + (r.key || "(empty)"));
+    if (r.key in vars) throw Error("Variable listed twice: " + r.key);
+    vars[r.key] = r.value;
+  }
+  return vars;
+}
+
+function varsFrom(env) {
+  const rows = Object.entries(env || {}).map(([key, value]) => ({ key, value, show: false }));
+  return rows.length ? rows : [{ key: "", value: "", show: true }];
+}
+
+function syncVars() {
+  for (const input of document.querySelectorAll("[data-var-key]")) {
+    const [scope, i] = input.dataset.varKey.split(":");
+    const row = varRows(scope)[Number(i)];
+    if (row) row.key = input.value.trim();
+  }
+  for (const input of document.querySelectorAll("[data-var-value]")) {
+    const [scope, i] = input.dataset.varValue.split(":");
+    const row = varRows(scope)[Number(i)];
+    if (row) row.value = input.value;
+  }
+}
+
 function envTab(p) {
   const e = appView.env;
   if (e.project !== p.name) Object.assign(e, { project: p.name, names: null, rows: null, revision: null, paste: false, error: "", message: "" });
@@ -284,21 +356,20 @@ function envTab(p) {
   const status = (e.error ? '<p class="error" role="alert">' + esc(e.error) + "</p>" : "") + (e.message ? '<p role="status">' + esc(e.message) + "</p>" : "");
   if (!e.rows) {
     const names = e.names || [];
+    const job = appView.jobs[p.name];
+    const pending = !names.length && (job?.envKeys || []).length && !["deployed"].includes(job.status) ? job.envKeys : [];
     return card("Environment Variables", needsKey(
+      (pending.length ? '<p class="hint">Entered with the ' + (job.status === "failed" ? "failed" : "current") + " deployment: " +
+        pending.map(n => "<code>" + esc(n) + "</code>").join(" ") + "</p>" : "") +
       (names.length ? '<div class="table-wrap"><table><tbody>' + names.map(n => "<tr><td><code>" + esc(n) + "</code></td><td>••••••••</td></tr>").join("") +
         "</tbody></table></div>" : "<p>No variables.</p>") +
       '<div class="toolbar"><input id="env-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
       '<button type="button" class="primary" id="env-reveal">' + (names.length ? "Reveal & edit" : "Add variables") + "</button></div>") + status);
   }
-  const rows = e.rows.map((r, i) => '<div class="env-row"><input data-env-key="' + i + '" value="' + esc(r.key) + '" placeholder="KEY" spellcheck="false" aria-label="Name">' +
-    '<input data-env-value="' + i + '" type="' + (r.show ? "text" : "password") + '" value="' + esc(r.value) + '" placeholder="value" spellcheck="false" autocomplete="off" aria-label="Value">' +
-    '<button type="button" class="small" data-env-show="' + i + '" aria-label="Show or hide">' + (r.show ? "Hide" : "Show") + "</button>" +
-    '<button type="button" class="small" data-env-remove="' + i + '" aria-label="Remove">✕</button></div>').join("");
-  return card("Environment Variables",
-    rows + '<p><button type="button" class="small" id="env-add">Add variable</button> <button type="button" class="small" id="env-paste-toggle">Paste .env</button></p>' +
-    (e.paste ? '<textarea id="env-paste" rows="8" spellcheck="false" placeholder="KEY=value&#10;OTHER=value"></textarea><p><button type="button" class="small" id="env-paste-apply">Add to list</button></p>' : "") +
+  return card("Environment Variables", varsEditor("env", e.rows, e.paste) +
     '<div class="toolbar"><input id="env-save-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
-    '<button type="button" class="primary" id="env-save">Save & redeploy</button></div>' + status);
+    '<button type="button" class="primary" id="env-save">Save & apply</button></div>' +
+    '<p class="hint">Saved encrypted. Running containers get the new values; stopped ones are started with them.</p>' + status);
 }
 
 function settingsTab(p) {
@@ -386,9 +457,12 @@ function addAppCard() {
     '" placeholder="path" aria-label="File path"><textarea rows="8" spellcheck="false" data-app-text="' + i +
     '" aria-label="File contents">' + esc(e.text) + "</textarea>" +
     (appView.entries.length > 1 ? '<button type="button" class="small" data-app-remove="' + i + '">Remove</button>' : "") + "</div>").join("");
+  const exists = appProjects().some(p => p.name === appView.name);
   return card("App",
     '<label class="field"><span>Name</span><input id="app-name" type="text" spellcheck="false" placeholder="my-app" value="' +
     esc(appView.name || "") + '"></label>' +
+    (exists ? '<label class="check replace-ok"><input type="checkbox" id="app-replace-ok"' + (appView.replaceOk ? " checked" : "") +
+      "> Replace the files of the existing app <b>" + esc(appView.name) + "</b> (its data and variables are kept)</label>" : "") +
     '<nav class="tabs"><button type="button" class="' + (files ? "active" : "") + '" data-app-mode="files">Dockerfile / Compose</button>' +
     '<button type="button" class="' + (files ? "" : "active") + '" data-app-mode="nix">VM / container</button></nav>' +
     (files
@@ -401,9 +475,9 @@ function addAppCard() {
         (appView.uploads.length ? "<p>" + appView.uploads.length + " uploaded file(s)</p>" : "")
       : instanceForm() +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
-    '<details class="env-new"' + (appView.newEnv ? " open" : "") + '><summary>Environment variables (optional)</summary>' +
-    needsKey('<textarea id="app-env" rows="5" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER_KEY=value" aria-label="Environment variables">' +
-    esc(appView.newEnv || "") + '</textarea><p class="hint">One KEY=value per line, or paste a .env file. Saved encrypted with your secrets key.</p>') + "</details>" +
+    '<section class="env-new"><h3>Environment variables</h3>' +
+    needsKey(varsEditor("new", appView.newVars, appView.newPaste) +
+      '<p class="hint">Every service gets these. Saved encrypted with your secrets key; values never leave this server.</p>') + "</section>" +
     '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
     '<button type="button" id="app-draft-save"' + (appView.busy ? " disabled" : "") + '>Save draft</button> ' +
     '<button type="button" class="primary" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button></div>" +
@@ -436,6 +510,13 @@ function appsPage() {
 
 function rerender() { if (state.page === "projects") shell(); }
 
+// typing is true while the cursor is in a form field, so background refreshes
+// wait instead of redrawing under it.
+function typing() {
+  const el = document.activeElement;
+  return !!el && el.id !== "apps-filter" && (el.tagName === "TEXTAREA" || el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type !== "button"));
+}
+
 async function refreshApps() {
   if (appView.loading) return;
   appView.loading = true;
@@ -447,7 +528,7 @@ async function refreshApps() {
     appView.error = error.message || "Could not load appView.";
   } finally {
     appView.loading = false;
-    rerender();
+    if (!typing()) rerender();
   }
   if (Object.values(appView.jobs || {}).some(j => !["deployed", "failed", "interrupted"].includes(j.status)))
     setTimeout(() => { if (state.page === "projects") void refreshApps(); }, 4000);
@@ -455,14 +536,13 @@ async function refreshApps() {
 
 function syncForm() {
   const typed = document.querySelector("#app-name")?.value.trim() ?? appView.name;
-  if (typed !== appView.name) appView.replaceConfirmed = "";
+  if (typed !== appView.name) appView.replaceOk = false;
   appView.name = typed;
   for (const input of document.querySelectorAll("[data-app-path]")) appView.entries[Number(input.dataset.appPath)].path = input.value.trim();
   for (const area of document.querySelectorAll("[data-app-text]")) appView.entries[Number(area.dataset.appText)].text = area.value;
   const nix = document.querySelector("#app-nix");
   if (nix) appView.nix = nix.value;
-  const env = document.querySelector("#app-env");
-  if (env) appView.newEnv = env.value;
+  syncVars();
 }
 
 async function deployApp() {
@@ -474,14 +554,10 @@ async function deployApp() {
   appView.error = appView.message = "";
   try {
     if (!/^[a-z][a-z0-9-]{0,62}$/.test(project)) throw Error("Name: lowercase letters, digits and dashes.");
+    if (appProjects().some(p => p.name === project) && !appView.replaceOk)
+      throw Error("An app named " + project + " already exists. Tick “Replace” above to update it.");
+    const env = varsObject(appView.newVars);
     if (!current) throw Error("Enter your password.");
-    if (appProjects().some(p => p.name === project) && appView.replaceConfirmed !== project) {
-      appView.replaceConfirmed = project;
-      throw Error("An app named " + project + " already exists. Deploying replaces its files. Press Deploy again to continue.");
-    }
-    appView.replaceConfirmed = "";
-    const env = {};
-    for (const { key, value } of parseEnv(appView.newEnv || "")) env[key] = value;
     appView.busy = true;
     rerender();
     let body;
@@ -495,8 +571,7 @@ async function deployApp() {
     await api("apps/deploy", body);
     appView.message = "";
     appView.uploads = [];
-    appView.newEnv = "";
-    Object.assign(appView, { view: project, tab: "deployments" });
+    Object.assign(appView, { view: project, tab: "deployments", newVars: varsFrom({}), newPaste: false, replaceOk: false });
   } catch (error) {
     appView.error = error.message || "Deploy failed.";
   } finally {
@@ -518,8 +593,7 @@ async function saveDraftApp() {
       if (text === null || text.includes("\u0000")) { skipped++; continue; }
       entries.push({ path: file.webkitRelativePath || file.name, text });
     }
-    const env = {};
-    for (const { key, value } of parseEnv(appView.newEnv || "")) env[key] = value;
+    const env = varsObject(appView.newVars);
     const result = await api("apps/draft-save", { name, mode: appView.mode, entries, nix: appView.nix, instance: appView.instance,
       env: Object.keys(env).length ? env : undefined });
     appView.message = "Draft saved." + (skipped ? " " + skipped + " file(s) were too large or binary and were not saved." : "") + (result?.note ? " " + result.note : "");
@@ -540,8 +614,7 @@ async function resumeDraft(name) {
     const listed = (appView.drafts || []).find(x => x.name === name);
     if (listed?.envCount > 0 && !current) throw Error("Enter your password to open this draft's variables.");
     const d = await api("apps/draft-read", current ? { name, current } : { name });
-    const envText = Object.entries(d.env || {}).map(([k, v]) => k + "=" + v).join("\n");
-    Object.assign(appView, { name, mode: d.mode === "nix" ? "nix" : "files", uploads: [], nix: d.nix || "", newEnv: envText, view: "new",
+    Object.assign(appView, { name, mode: d.mode === "nix" ? "nix" : "files", uploads: [], nix: d.nix || "", newVars: varsFrom(d.env), view: "new", replaceOk: false,
       entries: (d.entries || []).length ? d.entries.map(e => ({ path: e.path, text: e.text })) : [{ path: "Dockerfile", text: "" }],
       message: d.envError || "" });
     Object.assign(appView.instance, d.instance || {});
@@ -595,12 +668,6 @@ async function loadEnvNames(name) {
   rerender();
 }
 
-function syncEnv() {
-  const rows = appView.env.rows || [];
-  for (const input of document.querySelectorAll("[data-env-key]")) rows[Number(input.dataset.envKey)].key = input.value.trim();
-  for (const input of document.querySelectorAll("[data-env-value]")) rows[Number(input.dataset.envValue)].value = input.value;
-}
-
 async function revealEnv(name) {
   const e = appView.env;
   const input = document.querySelector("#env-password");
@@ -620,26 +687,27 @@ async function revealEnv(name) {
 }
 
 async function saveEnvVars(name) {
-  syncEnv();
+  syncVars();
   const e = appView.env;
   const input = document.querySelector("#env-save-password");
   const current = input?.value || "";
   if (input) input.value = "";
   e.error = e.message = "";
   try {
-    const vars = {};
-    for (const r of e.rows) {
-      if (!r.key && !r.value) continue;
-      if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(r.key)) throw Error("Invalid name: " + (r.key || "(empty)"));
-      if (r.key in vars) throw Error("Duplicate name: " + r.key);
-      vars[r.key] = r.value;
-    }
+    const vars = varsObject(e.rows);
     if (!Object.keys(vars).length) throw Error("Add at least one variable.");
     if (!current) throw Error("Enter your password.");
     const result = await api("apps/env", { project: name, vars, revision: e.revision, current });
     e.revision = result.revision ?? e.revision;
     e.names = Object.keys(vars);
+    e.rows = null;
     e.message = result.delivery?.error ? "Saved. " + result.delivery.error : "Saved and applied.";
+    const stopped = (appByName(name)?.instances || []).some(i => i.status !== "Running");
+    if (stopped && !result.delivery?.error) {
+      await api("apps/power", { project: name, action: "start" });
+      e.message = "Saved. Starting the app with the new variables…";
+      void refreshApps();
+    }
   } catch (error) {
     e.error = error.message || "Could not save.";
   }
@@ -767,25 +835,52 @@ function bindApps() {
   on("#image-updates-check", () => void appRequest("image-updates/check", {}, "Checked."));
   on("#env-reveal", () => void revealEnv(appView.view));
   on("#env-save", () => void saveEnvVars(appView.view));
-  on("#env-add", () => { syncEnv(); appView.env.rows.push({ key: "", value: "", show: true }); rerender(); });
-  on("#env-paste-toggle", () => { syncEnv(); appView.env.paste = !appView.env.paste; rerender(); });
-  on("#env-paste-apply", () => {
-    syncEnv();
+  const scopeOf = id => id.split(":")[0];
+  const rowOf = id => varRows(scopeOf(id))[Number(id.split(":")[1])];
+  each("[data-var-add]", el => { syncVars(); varRows(el.dataset.varAdd).push({ key: "", value: "", show: true }); rerender(); });
+  each("[data-var-paste]", el => {
+    syncVars();
+    if (el.dataset.varPaste === "new") appView.newPaste = !appView.newPaste; else appView.env.paste = !appView.env.paste;
+    rerender();
+  });
+  each("[data-var-paste-apply]", el => {
+    syncVars();
+    const scope = el.dataset.varPasteApply;
+    const target = scope === "new" ? appView : appView.env;
     try {
-      const parsed = parseEnv(document.querySelector("#env-paste")?.value || "");
-      const rows = appView.env.rows.filter(r => r.key || r.value);
+      const parsed = parseEnv(document.querySelector("#var-paste-" + scope)?.value || "");
+      const rows = varRows(scope).filter(r => r.key || r.value);
       for (const { key, value } of parsed) {
         const existing = rows.find(r => r.key === key);
         if (existing) existing.value = value; else rows.push({ key, value, show: false });
       }
-      Object.assign(appView.env, { rows, paste: false, error: "", message: parsed.length + " variable(s) added; Save to apply." });
+      if (!rows.length) rows.push({ key: "", value: "", show: true });
+      if (scope === "new") Object.assign(appView, { newVars: rows, newPaste: false, error: "", message: parsed.length + " variable(s) added." });
+      else Object.assign(appView.env, { rows, paste: false, error: "", message: parsed.length + " variable(s) added; Save to apply." });
     } catch (error) {
-      appView.env.error = error.message;
+      target.error = error.message;
     }
     rerender();
   });
-  each("[data-env-show]", el => { syncEnv(); const r = appView.env.rows[Number(el.dataset.envShow)]; r.show = !r.show; rerender(); });
-  each("[data-env-remove]", el => { syncEnv(); appView.env.rows.splice(Number(el.dataset.envRemove), 1); rerender(); });
+  each("[data-var-show]", el => { syncVars(); const r = rowOf(el.dataset.varShow); if (r) r.show = !r.show; rerender(); });
+  each("[data-var-remove]", el => {
+    syncVars();
+    const rows = varRows(scopeOf(el.dataset.varRemove));
+    rows.splice(Number(el.dataset.varRemove.split(":")[1]), 1);
+    if (!rows.length) rows.push({ key: "", value: "", show: true });
+    rerender();
+  });
+  // Keep state in step with every keystroke so background refreshes never drop input.
+  for (const el of document.querySelectorAll("#app-name, [data-app-path], [data-app-text], #app-nix, [data-var-key], [data-var-value]"))
+    el.addEventListener("input", () => { syncForm(); });
+  for (const el of document.querySelectorAll("[data-var-key]"))
+    el.addEventListener("input", () => {
+      const bad = el.value.trim() !== "" && !VAR_NAME.test(el.value.trim());
+      el.classList.toggle("invalid", bad);
+      el.setAttribute("aria-invalid", bad ? "true" : "false");
+    });
+  document.querySelector("#app-name")?.addEventListener("change", () => { syncForm(); rerender(); });
+  document.querySelector("#app-replace-ok")?.addEventListener("change", event => { appView.replaceOk = event.target.checked; });
   for (const input of ["#app-upload", "#app-upload-dir"]) {
     document.querySelector(input)?.addEventListener("change", event => { syncForm(); appView.uploads = [...event.target.files]; rerender(); });
   }
