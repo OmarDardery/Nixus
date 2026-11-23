@@ -131,3 +131,26 @@ func TestDeployEnvIsSealedAtRest(t *testing.T) {
 		t.Fatalf("%v %v", vars, err)
 	}
 }
+
+// An empty value means "unset" in Incus: delivering it again must not look like
+// a change (it used to restart the container every time), and removal works.
+func TestEmptyEnvValueIsStable(t *testing.T) {
+	config := M{envKeysConfig: ""}
+	patch, changed := envPatch(config, M{"EMPTY": ""})
+	if !changed || patch[envKeysConfig] != "EMPTY" {
+		t.Fatalf("first delivery records the name: %v %v", patch, changed)
+	}
+	applied := M{envKeysConfig: "EMPTY"} // what the instance holds afterwards: no environment.EMPTY key
+	for i := 0; i < 3; i++ {
+		if p, changed := envPatch(applied, M{"EMPTY": ""}); changed {
+			t.Fatalf("delivery %d must not change anything: %v", i, p)
+		}
+	}
+	// Going from a real value to empty unsets it; removing the variable still works.
+	if p, changed := envPatch(M{"environment.A": "1", envKeysConfig: "A"}, M{"A": ""}); !changed || p["environment.A"] != "" {
+		t.Fatalf("emptying a set value: %v %v", p, changed)
+	}
+	if p, changed := envPatch(M{"environment.A": "1", envKeysConfig: "A"}, M{}); !changed || p["environment.A"] != "" || p[envKeysConfig] != "" {
+		t.Fatalf("removal: %v %v", p, changed)
+	}
+}

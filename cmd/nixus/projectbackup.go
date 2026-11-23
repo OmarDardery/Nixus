@@ -115,6 +115,50 @@ func publishedProjectPolicy(t *ProjectTransactions) (M, M, error) {
 	return policy, inventory, nil
 }
 
+// workspaceApproved returns the last published review and whether the live
+// workspace is exactly what that review approved.
+func workspaceApproved(t *ProjectTransactions) (string, bool) {
+	id := str(readObj(filepath.Join(t.state, "project-last.json"))["id"])
+	if id == "" {
+		return "", false
+	}
+	record, err := t.record(id)
+	if err != nil || str(record["status"]) != "published-source" {
+		return "", false
+	}
+	live, err := validateWorkspace(t.workspace, true)
+	return id, err == nil && str(live["sourceHash"]) == str(record["candidateHash"])
+}
+
+// adoptWorkspaceChange records the live workspace as the approved one. It is
+// used right after an approved change that does not go through a project
+// review (published secret ciphertext), so backups keep accepting the
+// workspace while unreviewed edits to it are still rejected (#108).
+func adoptWorkspaceChange(t *ProjectTransactions, id string) error {
+	record, err := t.record(id)
+	if err != nil {
+		return err
+	}
+	live, err := validateWorkspace(t.workspace, true)
+	if err != nil {
+		return err
+	}
+	record["candidateHash"] = live["sourceHash"]
+	return t.write(id, record)
+}
+
+// incusProjectsOf maps the selected source projects to their Incus projects.
+// It is never nil, so an empty selection backs up nothing.
+func incusProjectsOf(policy, inventory M) []string {
+	out := []string{}
+	for _, name := range includedProjects(policy, inventory) {
+		if p := str(obj(obj(inventory["projects"])[name])["incusProject"]); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func includedProjects(policy, inventory M) []string {
 	all := keys(obj(inventory["projects"]))
 	if str(policy["includeProjects"]) == "all" {
@@ -155,22 +199,27 @@ func projectBackupStatus() M {
 	return status
 }
 
-// projectBackupHealth: disabled, never, ok, failed (last run had failed
-// phases) or overdue (no success for two schedule periods).
+// projectBackupHealth: disabled, never (no run yet), failed (the last run had
+// failed phases) or overdue (no success for two schedule periods). The outcome
+// of the last run is stored explicitly; comparing two timestamps taken a moment
+// apart made every success look like a failure.
 func projectBackupHealth() string {
-	status := projectBackupStatus()
+	return backupHealth(projectBackupStatus(), now())
+}
+
+func backupHealth(status M, at float64) string {
 	if !isTrue(status["enabled"]) {
 		return "disabled"
 	}
 	last, _ := num(status["lastSuccess"])
-	attempt, _ := num(status["lastAttempt"])
+	outcome := str(status["lastOutcome"])
 	period := scheduleSeconds(str(status["schedule"]))
 	switch {
+	case outcome == "failed":
+		return "failed"
 	case last == 0:
 		return "never"
-	case attempt > last:
-		return "failed"
-	case now()-last > 2*period:
+	case at-last > 2*period:
 		return "overdue"
 	}
 	return "ok"
@@ -315,7 +364,16 @@ var resticRun = func(env []string, timeout time.Duration, args ...string) error 
 	return nil
 }
 
-func offHostBackup(policy M, paths []string) error {
+// A snapshot is tagged nixus-complete when the backup fulfilled its policy (a
+// config-only policy counts), and nixus-partial when requested data could not be
+// exported. The default restore only picks complete snapshots (#106).
+const (
+	snapshotTag      = "nixus-project"
+	snapshotComplete = "nixus-complete"
+	snapshotPartial  = "nixus-partial"
+)
+
+func offHostBackup(policy M, paths []string, complete bool) error {
 	env, err := resticEnv(policy)
 	if err != nil {
 		return err
@@ -328,12 +386,54 @@ func offHostBackup(policy M, paths []string) error {
 			return err
 		}
 	}
-	if err := resticRun(env, 12*time.Hour, append([]string{"backup", "--tag", "nixus-project", "--host", "nixus"}, paths...)...); err != nil {
+	host := backupHost()
+	if err := resticRun(env, 12*time.Hour, resticBackupArgs(host, paths, complete)...); err != nil {
 		return err
 	}
 	r := obj(policy["retention"])
-	return resticRun(env, 2*time.Hour, "forget", "--tag", "nixus-project", "--prune",
-		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"]))
+	if err := resticRun(env, 2*time.Hour, resticForgetArgs(host, r)...); err != nil {
+		return err
+	}
+	// Snapshots from before installations had their own identity share one host
+	// name; apply the same retention to them so they do not accumulate.
+	return resticRun(env, 2*time.Hour, resticForgetArgs(legacyBackupHost, r)...)
+}
+
+// Retention groups snapshots by host and tags, never by path: every generation
+// is a new directory, so grouping by path made each snapshot its own group and
+// every one qualified for daily retention (#112). Each installation has its own
+// stable host name, so two installations sharing a repository expire
+// independently.
+const legacyBackupHost = "nixus"
+
+func resticBackupArgs(host string, paths []string, complete bool) []string {
+	state := snapshotPartial
+	if complete {
+		state = snapshotComplete
+	}
+	return append([]string{"backup", "--tag", snapshotTag, "--tag", state, "--host", host}, paths...)
+}
+
+func resticForgetArgs(host string, r M) []string {
+	return []string{"forget", "--tag", snapshotTag, "--host", host, "--group-by", "host,tags", "--prune",
+		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"])}
+}
+
+// backupHost is this installation's stable restic host name. The id lives with
+// the other credentials, so it travels in the encrypted snapshot and a restored
+// host continues the same identity.
+func backupHost() string {
+	p := filepath.Join(backupSecretsDir, "installation-id")
+	if raw, err := os.ReadFile(p); err == nil {
+		if id := strings.TrimSpace(string(raw)); fullmatch(re(`[0-9a-f]{16}`), id) {
+			return "nixus-" + id
+		}
+	}
+	id := tokenHex(8)
+	if err := writeSecretFile(p, []byte(id+"\n")); err != nil {
+		return legacyBackupHost
+	}
+	return "nixus-" + id
 }
 
 func verifyOffHost(policy M) error {
@@ -406,7 +506,7 @@ func runProjectBackup(force bool) (M, error) {
 				return err
 			}
 			defer release()
-			return runBackup()
+			return runBackup(incusProjectsOf(policy, inventory))
 		}()
 		if err != nil {
 			ok = false
@@ -421,7 +521,7 @@ func runProjectBackup(force bool) (M, error) {
 	} else {
 		setPhase(status, "data", "skipped", "data excluded by policy")
 	}
-	if err := offHostBackup(policy, paths); err != nil {
+	if err := offHostBackup(policy, paths, ok); err != nil {
 		ok = false
 		setPhase(status, "offHost", "failed", publicError(err))
 		setPhase(status, "verification", "skipped", "no completed upload to verify")
@@ -438,10 +538,14 @@ func runProjectBackup(force bool) (M, error) {
 	}
 	pruneSnapshots(2)
 	status["restoreTest"] = "not performed; run an isolated restore drill to qualify recovery"
+	finished := now()
+	status["lastAttempt"] = finished
 	if ok {
-		status["lastSuccess"] = now()
+		status["lastSuccess"] = finished
+		status["lastOutcome"] = "success"
+	} else {
+		status["lastOutcome"] = "failed"
 	}
-	status["lastAttempt"] = now()
 	writeJSONMode(projectBackupStatusPath(), status, 0o640, "")
 	audit("project-backup-finished", M{"generation": generation, "success": ok})
 	if !ok {

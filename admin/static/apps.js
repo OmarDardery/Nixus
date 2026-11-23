@@ -128,8 +128,8 @@ function appStatus(p) {
   const instances = p.instances || [];
   const running = instances.filter(i => i.status === "Running").length;
   const job = appView.jobs[p.name];
-  if (job && !["deployed", "failed"].includes(job.status)) return job.status;
-  if (job?.status === "failed") return "failed";
+  if (job && !["deployed", "failed", "interrupted"].includes(job.status)) return job.status;
+  if (job?.status === "failed" || job?.status === "interrupted") return job.status;
   return !instances.length ? "Stopped" : running === instances.length ? "Running" : running ? "Degraded" : "Stopped";
 }
 
@@ -449,7 +449,7 @@ async function refreshApps() {
     appView.loading = false;
     rerender();
   }
-  if (Object.values(appView.jobs || {}).some(j => !["deployed", "failed"].includes(j.status)))
+  if (Object.values(appView.jobs || {}).some(j => !["deployed", "failed", "interrupted"].includes(j.status)))
     setTimeout(() => { if (state.page === "projects") void refreshApps(); }, 4000);
 }
 

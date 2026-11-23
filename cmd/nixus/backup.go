@@ -25,12 +25,12 @@ import (
 
 var backupRoot = envPath("NIXUS_EXPORT_DIRECTORY", "/var/lib/nixus/exports")
 
-const backupPending = "/var/lib/nixus/restart-pending.json"
+var backupPending = "/var/lib/nixus/restart-pending.json"
 
 var generationRe = re(`[0-9]+-[0-9a-f]{32}`)
 var archiveRe = re(`(instance|volume)-[0-9a-f]{64}\.tar\.gz`)
 
-func backupIncus(timeout time.Duration, args ...string) (string, error) {
+var backupIncus = func(timeout time.Duration, args ...string) (string, error) {
 	if timeout == 0 {
 		timeout = 43200 * time.Second
 	}
@@ -282,6 +282,37 @@ func consistencyGroups(guests []M, volumes []M, configured []any, namespaces map
 	return groups, nil
 }
 
+// redactGuest returns a copy of an Incus guest record without the values of the
+// environment variables Nixus delivers. The inventory is staged on disk before
+// restic encrypts it, and restore never reads these values from it: the
+// instance archives carry the configuration (#110).
+func redactGuest(g M) M {
+	out := cloneM(g)
+	for _, section := range []string{"config", "expanded_config"} {
+		cfg := obj(out[section])
+		if cfg == nil {
+			continue
+		}
+		redacted := M{}
+		for k, v := range cfg {
+			if strings.HasPrefix(k, "environment.") {
+				v = "REDACTED"
+			}
+			redacted[k] = v
+		}
+		out[section] = redacted
+	}
+	return out
+}
+
+func redactGuests(guests []M) []M {
+	out := make([]M, len(guests))
+	for i, g := range guests {
+		out[i] = redactGuest(g)
+	}
+	return out
+}
+
 func previousSizes() map[string]int64 {
 	out := map[string]int64{}
 	pointer := readObj(filepath.Join(backupRoot, "latest.json"))
@@ -469,7 +500,55 @@ func fileSHA256(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runBackup() error {
+// scopeGroups keeps only the consistency groups that belong to the selected
+// Incus projects. A group that mixes selected and unselected guests (a shared
+// writable volume) is refused before anything is stopped (#109).
+func scopeGroups(groups []M, only map[string]bool, namespaces map[string]string) ([]M, error) {
+	selectedNS := map[string]bool{}
+	for project := range only {
+		ns, ok := namespaces[project]
+		if !ok {
+			ns = project
+		}
+		selectedNS[ns] = true
+	}
+	var kept []M
+	for _, group := range groups {
+		inside, outside := []string{}, []string{}
+		for _, raw := range list(group["guests"]) {
+			g := obj(raw)
+			name := str(g["project"]) + "/" + str(g["name"])
+			if only[str(g["project"])] {
+				inside = append(inside, name)
+			} else {
+				outside = append(outside, name)
+			}
+		}
+		switch {
+		case len(inside) > 0 && len(outside) > 0:
+			return nil, Public("These guests share a writable volume, but only some are selected for backup: " +
+				strings.Join(append(inside, outside...), ", ") + ". Select all of them or none.")
+		case len(inside) > 0:
+			kept = append(kept, group)
+		case len(outside) == 0:
+			// Standalone volumes: keep those in the selected namespaces.
+			var vols []any
+			for _, raw := range list(group["volumes"]) {
+				if selectedNS[str(obj(raw)["project"])] {
+					vols = append(vols, raw)
+				}
+			}
+			if len(vols) > 0 {
+				kept = append(kept, M{"guests": []any{}, "volumes": vols})
+			}
+		}
+	}
+	return kept, nil
+}
+
+// runBackup stages exports of every guest and volume, or only those of the
+// given Incus projects when only is not nil.
+func runBackup(only []string) error {
 	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
 		return err
 	}
@@ -561,6 +640,15 @@ func runBackup() error {
 	if err != nil {
 		return err
 	}
+	if only != nil {
+		wanted := map[string]bool{}
+		for _, p := range only {
+			wanted[p] = true
+		}
+		if groups, err = scopeGroups(groups, wanted, namespaces); err != nil {
+			return err
+		}
+	}
 	skipped := []any{}
 	var selected []M
 	for _, group := range groups {
@@ -616,58 +704,9 @@ func runBackup() error {
 		backupRecover()
 		os.RemoveAll(destination)
 	}()
-	windows := []any{}
-	for index, group := range selected {
-		var members []any
-		pending := []any{}
-		for _, raw := range list(group["guests"]) {
-			g := obj(raw)
-			members = append(members, str(g["project"])+"/"+str(g["name"]))
-			if str(g["status"]) == "Running" {
-				pending = append(pending, instanceIdentity(g))
-			}
-		}
-		if err := saveRestartPending(pending); err != nil {
-			return err
-		}
-		started := now()
-		err := func() error {
-			defer func() {
-				backupProgress("recovering", M{"generation": generation, "members": members})
-				backupRecover()
-			}()
-			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
-			for _, raw := range pending {
-				g := obj(raw)
-				if err := verifyIdentity(g); err != nil {
-					return err
-				}
-				if _, err := backupIncus(0, "stop", str(g["name"]), "--project", str(g["project"]), "--timeout", "180"); err != nil {
-					return err
-				}
-			}
-			for _, raw := range list(group["guests"]) {
-				g := obj(raw)
-				if err := verifyIdentity(instanceIdentity(g)); err != nil {
-					return err
-				}
-				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"])}, str(g["archive"]), destination); err != nil {
-					return err
-				}
-			}
-			for _, raw := range list(group["volumes"]) {
-				v := obj(raw)
-				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"])},
-					str(v["archive"]), destination); err != nil {
-					return err
-				}
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
-		windows = append(windows, M{"members": members, "started": started, "finished": now()})
+	windows, err := backupGroups(selected, destination, generation)
+	if err != nil {
+		return err
 	}
 	coverageName := "selected"
 	if isTrue(coverage["complete"]) {
@@ -675,7 +714,7 @@ func runBackup() error {
 	}
 	manifest := M{"format": 2, "generation": generation, "created": now(), "consistencyGroups": windows,
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
-		"guests": selectedGuests, "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
+		"guests": redactGuests(selectedGuests), "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
 		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
 	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
 	sort.Strings(archives)
@@ -743,7 +782,7 @@ func backupMain(args []string) int {
 		if recoverOnly {
 			done <- backupRecover()
 		} else {
-			done <- runBackup()
+			done <- runBackup(nil)
 		}
 	}()
 	select {
@@ -758,4 +797,68 @@ func backupMain(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// backupGroups stops, exports and restarts one consistency group at a time. A
+// group whose guests cannot all be restarted stops the backup right there, with
+// their identities still recorded in the pending file, so no later group
+// overwrites it and the backup cannot report success while a guest is offline
+// (#107).
+func backupGroups(selected []M, destination, generation string) ([]any, error) {
+	windows := []any{}
+	for index, group := range selected {
+		var members []any
+		pending := []any{}
+		for _, raw := range list(group["guests"]) {
+			g := obj(raw)
+			members = append(members, str(g["project"])+"/"+str(g["name"]))
+			if str(g["status"]) == "Running" {
+				pending = append(pending, instanceIdentity(g))
+			}
+		}
+		if err := saveRestartPending(pending); err != nil {
+			return nil, err
+		}
+		started := now()
+		err := func() (err error) {
+			defer func() {
+				backupProgress("recovering", M{"generation": generation, "members": members})
+				if recoverErr := backupRecover(); recoverErr != nil && err == nil {
+					err = recoverErr
+				}
+			}()
+			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
+			for _, raw := range pending {
+				g := obj(raw)
+				if err := verifyIdentity(g); err != nil {
+					return err
+				}
+				if _, err := backupIncus(0, "stop", str(g["name"]), "--project", str(g["project"]), "--timeout", "180"); err != nil {
+					return err
+				}
+			}
+			for _, raw := range list(group["guests"]) {
+				g := obj(raw)
+				if err := verifyIdentity(instanceIdentity(g)); err != nil {
+					return err
+				}
+				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"])}, str(g["archive"]), destination); err != nil {
+					return err
+				}
+			}
+			for _, raw := range list(group["volumes"]) {
+				v := obj(raw)
+				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"])},
+					str(v["archive"]), destination); err != nil {
+					return err
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		windows = append(windows, M{"members": members, "started": started, "finished": now()})
+	}
+	return windows, nil
 }

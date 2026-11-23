@@ -819,8 +819,8 @@ func composeExec(argv []string, cwd string) ([]byte, error) {
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	last := strings.TrimSpace(lines[len(lines)-1])
-	if len(last) > 240 {
-		last = last[:240]
+	if len(last) > 700 {
+		last = last[:700]
 	}
 	return last
 }

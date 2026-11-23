@@ -17,6 +17,18 @@ What happens:
    files in `/run/secrets/<KEY>` (Docker's secrets convention, mode 0444).
 3. Containers whose variables changed are restarted.
 
+## Where values can exist
+
+| Where | What is stored |
+|---|---|
+| `secrets.enc.yaml` and backups | Encrypted. Never plaintext. |
+| `/run/secrets/<KEY>` inside a container | Plaintext in memory (tmpfs); gone when the container stops, restored by the delivery timer. |
+| The container's environment (`incus config`) | **Plaintext in Incus's own configuration**, because that is how Incus passes environment variables. It is part of an Incus instance export. |
+| Local backup staging (`/var/lib/nixus/exports`) | Instance exports (which hold the environment above), root-only, until restic encrypts them off-host. The backup inventory file lists variable *names* only; values are redacted. |
+
+If a value must never rest in Incus's configuration, read it from the
+`/run/secrets/<KEY>` file instead of the environment.
+
 Values are re-applied after reboots and every 10 minutes. Nixus only manages
 the variables it set; ones defined in `compose.yaml` or the image are left
 alone. Keep secrets out of `compose.yaml`: Nixus refuses variables there whose

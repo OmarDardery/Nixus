@@ -83,6 +83,48 @@ func verifiedRestoredFile(base, rel, want string) ([]byte, error) {
 	return data, nil
 }
 
+// restoreJournal records which stages of a cold-host restore finished, keyed by
+// the identity of the snapshot content, so a retry of the same snapshot resumes
+// instead of colliding with what the first attempt already installed (#111).
+type restoreJournal struct {
+	path string
+	data M
+}
+
+func restoreJournalPath() string { return filepath.Join(STATE, "project-restore-journal.json") }
+
+// openRestoreJournal loads the journal when it belongs to this snapshot
+// (identity); otherwise it starts a new one.
+func openRestoreJournal(identity string) *restoreJournal {
+	j := &restoreJournal{path: restoreJournalPath(), data: readObj(restoreJournalPath())}
+	if str(j.data["identity"]) != identity {
+		j.data = M{"identity": identity, "done": M{}}
+	}
+	if obj(j.data["done"]) == nil {
+		j.data["done"] = M{}
+	}
+	return j
+}
+
+func (j *restoreJournal) done(key string) bool {
+	return j != nil && obj(j.data["done"])[key] != nil
+}
+
+func (j *restoreJournal) value(key string) any {
+	if j == nil {
+		return nil
+	}
+	return obj(j.data["done"])[key]
+}
+
+func (j *restoreJournal) mark(key string, v any) {
+	if j == nil {
+		return
+	}
+	obj(j.data["done"])[key] = v
+	writeJSONMode(j.path, j.data, 0o600, "")
+}
+
 func restoreWorkspace(t *ProjectTransactions, config string, files M) (int, error) {
 	if lexists(t.workspace) {
 		return 0, Public("A project workspace already exists on this host; restore only onto an empty host")
@@ -130,6 +172,10 @@ func restoreSources(config string, manifest M) (M, error) {
 			continue
 		}
 		if current, _ := publisher.current(project); current != nil {
+			if str(current["revision"]) == want {
+				restored[project] = want // installed by an earlier attempt of this restore
+				continue
+			}
 			return nil, Public("Published source for " + project + " already exists on this host")
 		}
 		prefix := "sources/" + project + "/"
@@ -169,6 +215,17 @@ func restoreSources(config string, manifest M) (M, error) {
 // restoreIncus recreates Incus projects, then imports custom volumes and
 // instances from one verified export generation.
 func restoreIncus(incus incusFunc, generation string) (M, error) {
+	inventory, err := restoreIncusPreflight(incus, generation, nil)
+	if err != nil {
+		return nil, err
+	}
+	return restoreIncusApply(incus, generation, inventory, nil)
+}
+
+// restoreIncusPreflight verifies the export and refuses every collision before
+// anything is changed. Resources an earlier attempt of the same restore already
+// created (recorded in the journal) are not collisions.
+func restoreIncusPreflight(incus incusFunc, generation string, j *restoreJournal) (M, error) {
 	inventory := readObj(filepath.Join(generation, "inventory.json"))
 	sums := obj(inventory["archiveSHA256"])
 	if inventory == nil || sums == nil {
@@ -182,7 +239,6 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 			return nil, Public("Incus export " + name + " is missing or damaged")
 		}
 	}
-	// Refuse every collision before changing anything.
 	pools := map[string]bool{}
 	if out, err := incus(0, "storage", "list", "--format=json"); err == nil {
 		for _, raw := range list(must(parseJSON([]byte(out)))) {
@@ -191,6 +247,10 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 	}
 	for _, raw := range list(inventory["customVolumes"]) {
 		v := obj(raw)
+		key := "volume:" + str(v["project"]) + "/" + str(v["pool"]) + "/" + str(v["name"])
+		if j.done(key) {
+			continue
+		}
 		if !pools[str(v["pool"])] {
 			return nil, Public("Storage pool " + str(v["pool"]) + " does not exist on this host; create it first")
 		}
@@ -200,10 +260,19 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 	}
 	for _, raw := range list(inventory["guests"]) {
 		g := obj(raw)
+		if j.done("instance:" + str(g["project"]) + "/" + str(g["name"])) {
+			continue
+		}
 		if incusQueryObj(incus, "/1.0/instances/"+str(g["name"])+"?project="+str(g["project"])) != nil {
 			return nil, Public("Instance " + str(g["project"]) + "/" + str(g["name"]) + " already exists on this host")
 		}
 	}
+	return inventory, nil
+}
+
+// restoreIncusApply recreates projects and networks and imports volumes and
+// instances, recording each finished step so a retry resumes after it.
+func restoreIncusApply(incus incusFunc, generation string, inventory M, j *restoreJournal) (M, error) {
 	created := []any{}
 	for _, raw := range list(inventory["projects"]) {
 		p := obj(raw)
@@ -228,28 +297,45 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 	volumes, instances, started := []any{}, []any{}, []any{}
 	for _, raw := range list(inventory["customVolumes"]) {
 		v := obj(raw)
+		id := str(v["project"]) + "/" + str(v["pool"]) + "/" + str(v["name"])
+		if j.done("volume:" + id) {
+			volumes = append(volumes, id)
+			continue
+		}
 		if _, err := incus(0, "storage", "volume", "import", str(v["pool"]), filepath.Join(generation, str(v["archive"])), str(v["name"]),
 			"--project", str(v["project"])); err != nil {
 			return nil, Failed("Could not import volume "+str(v["name"]), err)
 		}
-		volumes = append(volumes, str(v["project"])+"/"+str(v["pool"])+"/"+str(v["name"]))
+		j.mark("volume:"+id, true)
+		volumes = append(volumes, id)
 	}
 	for _, raw := range list(inventory["guests"]) {
 		g := obj(raw)
+		id := str(g["project"]) + "/" + str(g["name"])
+		if j.done("instance:" + id) {
+			instances = append(instances, id)
+			continue
+		}
 		if _, err := incus(0, "import", filepath.Join(generation, str(g["archive"])), str(g["name"]), "--project", str(g["project"])); err != nil {
 			return nil, Failed("Could not import instance "+str(g["name"]), err)
 		}
-		instances = append(instances, str(g["project"])+"/"+str(g["name"]))
+		j.mark("instance:"+id, true)
+		instances = append(instances, id)
 	}
 	for _, raw := range list(inventory["guests"]) {
 		g := obj(raw)
 		if str(g["status"]) != "Running" {
 			continue
 		}
+		id := str(g["project"]) + "/" + str(g["name"])
+		if state := incusQueryObj(incus, "/1.0/instances/"+str(g["name"])+"/state?project="+str(g["project"])); str(state["status"]) == "Running" {
+			started = append(started, id) // already started by an earlier attempt
+			continue
+		}
 		if _, err := incus(0, "start", str(g["name"]), "--project", str(g["project"])); err != nil {
 			return nil, Failed("Imported instance "+str(g["name"])+" did not start", err)
 		}
-		started = append(started, str(g["project"])+"/"+str(g["name"]))
+		started = append(started, id)
 	}
 	return M{"generation": filepath.Base(generation), "projectsCreated": created, "networks": networks, "volumes": volumes,
 		"instances": instances, "started": started}, nil
@@ -313,7 +399,9 @@ func projectRestore(o restoreOptions) (M, error) {
 		return nil, Public("Invalid restic snapshot identifier")
 	}
 	t := NewProjectTransactions("", "")
-	if lexists(t.workspace) {
+	// A workspace is only acceptable when an earlier attempt of this same
+	// restore installed it; whether it is the same snapshot is checked below.
+	if lexists(t.workspace) && !isFile(restoreJournalPath()) {
 		return nil, Public("A project workspace already exists on this host; restore only onto an empty host")
 	}
 	os.MkdirAll(restoreRoot, 0o700)
@@ -333,9 +421,14 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	args := []string{"restore", snapshot, "--target", target}
 	if snapshot == "latest" {
-		args = append(args, "--tag", "nixus-project")
+		// Only a backup that fulfilled its policy is restored by default; a
+		// partial one needs an explicit snapshot ID.
+		args = append(args, "--tag", snapshotComplete)
 	}
 	if err := resticRun(env, 12*time.Hour, args...); err != nil {
+		if snapshot == "latest" {
+			return failWith("download", Public("No complete backup was found to restore. Choose a snapshot ID to restore a partial or older backup. "+publicError(err)))
+		}
 		return failWith("download", err)
 	}
 	config := findOne(target, "/config/", "MANIFEST.json")
@@ -350,9 +443,29 @@ func projectRestore(o restoreOptions) (M, error) {
 		}
 	}
 	report["verifiedFiles"] = len(files)
-	count, err := restoreWorkspace(t, config, files)
-	if err != nil {
-		return failWith("workspace", err)
+	manifestBytes, _ := os.ReadFile(filepath.Join(config, "MANIFEST.json"))
+	journal := openRestoreJournal(sha256hex(manifestBytes))
+	generation := findOne(target, "/generations/", "inventory.json")
+	// Refuse every conflict before installing anything, so a refusal leaves the
+	// host as it was and the restore can simply be retried.
+	var inventory M
+	if generation != "" {
+		if inventory, err = restoreIncusPreflight(updateIncus, generation, journal); err != nil {
+			return failWith("preflight", err)
+		}
+	}
+	if lexists(t.workspace) && !journal.done("workspace") {
+		return failWith("preflight", Public("A project workspace already exists on this host; restore only onto an empty host"))
+	}
+	count := 0
+	if journal.done("workspace") {
+		n, _ := num(journal.value("workspace"))
+		count = int(n) // installed by an earlier attempt of this restore
+	} else {
+		if count, err = restoreWorkspace(t, config, files); err != nil {
+			return failWith("workspace", err)
+		}
+		journal.mark("workspace", count)
 	}
 	report["workspaceFiles"] = count
 	sources, err := restoreSources(config, manifest)
@@ -366,8 +479,8 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	report["keys"] = keysReport
 	report["host"] = restoreHost(config, files, keysReport)
-	if generation := findOne(target, "/generations/", "inventory.json"); generation != "" {
-		incusReport, err := restoreIncus(updateIncus, generation)
+	if generation != "" {
+		incusReport, err := restoreIncusApply(updateIncus, generation, inventory, journal)
 		if err != nil {
 			return failWith("incus", err)
 		}
@@ -380,6 +493,7 @@ func projectRestore(o restoreOptions) (M, error) {
 	} else {
 		report["incus"] = M{"skipped": "the snapshot holds no Incus data export"}
 	}
+	os.Remove(restoreJournalPath())
 	report["status"], report["completedAt"] = "restored", now()
 	report["next"] = []any{
 		"Redeploy each app from the Apps page so its images are rebuilt on this host.",

@@ -25,6 +25,7 @@ let
     text = ''exec ${nixus}/bin/nixus-go reconcile ${desired}'';
   };
 in {
+  imports = [ ./incus-apparmor.nix ];
   nixus.incus.desiredInstances = instances;
   environment.etc."nixus/desired-instances.json".source = desired;
   environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON config.virtualisation.incus.preseed;

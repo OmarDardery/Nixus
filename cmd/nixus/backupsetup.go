@@ -96,7 +96,8 @@ func backupPolicyText(repository, schedule, verification string, data bool, rclo
 }
 
 // setupBackups writes credentials, ensures a repository password and saves
-// the policy. The generated password is returned once, on first setup.
+// the policy. The generated password is returned once, by the first setup that
+// succeeds, even if an earlier attempt failed after creating it.
 func setupBackups(actor string, body M) (M, error) {
 	repository, env, rcloneConf, err := backupDestination(body)
 	if err != nil {
@@ -119,7 +120,11 @@ func setupBackups(actor string, body M) (M, error) {
 		if err := writeSecretFile(backupPasswordPth, []byte(password+"\n")); err != nil {
 			return nil, err
 		}
-		result["password"] = password
+		// Hand the password over only when setup succeeds. If a later step
+		// fails, the marker keeps it for the retry (#116).
+		if err := writeSecretFile(pendingBackupPasswordMarker(), []byte("1\n")); err != nil {
+			return nil, err
+		}
 	}
 	envFile, rcloneFile := "", ""
 	if len(env) > 0 {
@@ -146,5 +151,26 @@ func setupBackups(actor string, body M) (M, error) {
 		return nil, err
 	}
 	audit("backup-destination-set", M{"principal": actor, "kind": body["kind"]})
+	if password := takePendingBackupPassword(); password != "" {
+		result["password"] = password
+	}
 	return result, nil
+}
+
+// pendingBackupPasswordMarker exists while a generated repository password has
+// not yet been shown to the operator.
+func pendingBackupPasswordMarker() string { return backupPasswordPth + ".unshown" }
+
+// takePendingBackupPassword returns the generated password once, after a
+// successful setup, and clears the marker.
+func takePendingBackupPassword() string {
+	if !isFile(pendingBackupPasswordMarker()) {
+		return ""
+	}
+	raw, err := os.ReadFile(backupPasswordPth)
+	if err != nil {
+		return ""
+	}
+	os.Remove(pendingBackupPasswordMarker())
+	return strings.TrimSpace(string(raw))
 }

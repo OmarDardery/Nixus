@@ -25,14 +25,18 @@ func backupSnapshots() (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := run([]string{"restic", "snapshots", "--json", "--tag", "nixus-project"}, nil, 2*time.Minute, env, "")
+	res, err := run([]string{"restic", "snapshots", "--json", "--tag", snapshotTag}, nil, 2*time.Minute, env, "")
 	if err != nil || res.Code != 0 {
 		return nil, cmdFailed("Could not list snapshots; check the destination and credentials", res, err)
 	}
 	out := []any{}
 	for _, raw := range list(must(parseJSON(res.Stdout))) {
 		s := obj(raw)
-		out = append(out, M{"id": s["short_id"], "time": s["time"]})
+		complete := false
+		for _, tag := range list(s["tags"]) {
+			complete = complete || str(tag) == snapshotComplete
+		}
+		out = append(out, M{"id": s["short_id"], "time": s["time"], "complete": complete})
 	}
 	return M{"snapshots": out, "configured": true, "repository": jget(policy, "restic", "repository")}, nil
 }
@@ -42,7 +46,8 @@ var restoreReportPath = func() string { return filepath.Join(STATE, "project-res
 // startRestore writes the destination credentials and starts a cold-host
 // restore worker. Only for a host without a project workspace.
 func startRestore(actor string, body M) (M, error) {
-	if lexists(NewProjectTransactions("", "").workspace) {
+	// Retrying a failed restore is allowed: its journal lets it resume.
+	if lexists(NewProjectTransactions("", "").workspace) && !isFile(restoreJournalPath()) {
 		return nil, Public("This server already has apps; restore onto a fresh install")
 	}
 	if s := str(readObj(restoreReportPath())["status"]); s == "restoring" || s == "starting" {

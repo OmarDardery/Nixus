@@ -39,7 +39,10 @@ let
   webV2 = webImage "v2" true;
   webBroken = webImage "broken" false;
   hostNode = withRegistry: { lib, pkgs, ... }: {
-      imports = [ ../configuration-bootstrap.nix ];
+      # The bootstrap role has neither the hypervisor modules nor AppArmor; the
+      # gzip rule is the production module, with AppArmor enforcing as on a host.
+      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ];
+      security.apparmor.enable = true;
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
       environment.systemPackages = [ pkgs.curl pkgs.jq pkgs.skopeo pkgs.restic ];
@@ -362,6 +365,37 @@ in pkgs.testers.runNixOSTest {
         rechecked = json.loads(machine.succeed("nixus-admin image-updates check"))
         assert rechecked["projects"]["web"]["updates"] == 0, rechecked["projects"]["web"]
         run_auto(True)
+
+    with subtest("first-time named volume is filled from the image under enforcing AppArmor (#117)"):
+        machine.succeed("test \"$(cat /sys/module/apparmor/parameters/enabled)\" = Y")
+        pf = {
+            "Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCOPY marker.txt /srv/data/marker.txt\nCMD [\"/bin/sleep\", \"86400\"]\n").encode(),
+            "marker.txt": b"from-the-image\n",
+            "compose.yaml": b"services:\n  app:\n    build: .\n    volumes:\n      - data:/srv/data\nvolumes:\n  data: {}\n",
+        }
+        pentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in pf.items()]
+        pp = broker("/project-import/prepare", {"project": "prefetch", "files": pentries})
+        for p_, d in pf.items():
+            broker("/project-import/chunk", {"id": pp["id"], "path": p_, "offset": 0, "data": base64.b64encode(d).decode()})
+        ps = broker("/project-import/finish", {"id": pp["id"], "manifestHash": pp["manifestHash"]})
+        broker("/apps/deploy", {"project": "prefetch", "kind": "source", "stagingId": ps["id"], "manifestHash": ps["manifestHash"]})
+        deadline = time.time() + 900
+        while broker("/apps")["prefetch"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        pjob = broker("/apps")["prefetch"]
+        if pjob["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM|apparmor' | tail -n 60 >&2")
+        assert pjob["status"] == "deployed", pjob
+        prun = json.loads(machine.succeed("incus list --project prefetch --format=json"))
+        assert len(prun) == 1 and prun[0]["status"] == "Running", prun
+        assert machine.succeed("incus exec " + prun[0]["name"] + " --project prefetch -- /bin/cat /srv/data/marker.txt") == "from-the-image\n"
+        code, denied = machine.execute("journalctl -b -k --no-pager | grep -E 'apparmor=\"DENIED\"'")
+        # gzip also asks for /dev/tty (harmless; the unpack still succeeds). What
+        # must not appear is the exec/open of the wrapped binary (#117).
+        assert ".gzip-wrapped" not in denied, "AppArmor denied the wrapped gzip:\n" + denied
+        if denied:
+            print("other AppArmor denials during the run:\n" + denied)
 
     with subtest("one-step app deploy, as the Apps page does it"):
         notes = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode()}

@@ -119,19 +119,44 @@ func appJobs() M {
 	return out
 }
 
+// appWorkerActive reports whether the transient worker unit for an app is
+// running. Tests replace it.
+var appWorkerActive = func(project string) bool {
+	res, err := run([]string{"systemctl", "is-active", "--quiet", "nixus-app-deploy-" + project}, nil, 10*time.Second, nil, "")
+	// If systemd cannot be asked, assume the worker is alive rather than start a second one.
+	return err != nil || (res.Code != 3 && res.Code != 4)
+}
+
+// appJobActive reports whether a deployment of the app is really running. A
+// saved non-terminal job whose worker is gone (reboot, timeout, crash) is
+// marked interrupted so the operator can redeploy.
 func appJobActive(project string) bool {
-	switch str(readObj(appJobPath(project))["status"]) {
-	case "", "deployed", "failed":
+	job := readObj(appJobPath(project))
+	switch str(job["status"]) {
+	case "", "deployed", "failed", "interrupted":
+		return false
+	}
+	updated, ok := num(job["updatedAt"])
+	if !ok {
+		updated, _ = num(job["startedAt"])
+	}
+	// A worker is started right after the job is written; give it a moment.
+	if now()-updated > 30 && !appWorkerActive(project) {
+		job["status"], job["updatedAt"] = "interrupted", now()
+		job["error"] = "The deployment stopped before it finished (the server restarted or the worker timed out). Deploy again to retry."
+		job["completedAt"] = now()
+		writeJSONMode(appJobPath(project), job, 0o600, "")
+		audit("app-deploy-interrupted", M{"project": project})
 		return false
 	}
 	return true
 }
 
-// startAppDeploy validates a request, records it and starts the worker unit.
 // appDeployMu keeps two requests for the same app from both passing the
 // "already running" check before either has recorded its job.
 var appDeployMu sync.Mutex
 
+// startAppDeploy validates a request, records it and starts the worker unit.
 func startAppDeploy(actor string, body M) (M, error) {
 	appDeployMu.Lock()
 	defer appDeployMu.Unlock()

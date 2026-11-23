@@ -41,7 +41,17 @@ func envPatch(config M, values M) (M, bool) {
 	changed := false
 	names := keys(values)
 	for _, k := range names {
-		if str(config["environment."+k]) != str(values[k]) || config["environment."+k] == nil {
+		have, exists := config["environment."+k]
+		if str(values[k]) == "" {
+			// Incus has no empty variable: an empty value means "unset". Only act
+			// when something is currently set, or every pass would "change" it.
+			if exists && str(have) != "" {
+				patch["environment."+k] = ""
+				changed = true
+			}
+			continue
+		}
+		if !exists || str(have) != str(values[k]) {
 			patch["environment."+k] = values[k]
 			changed = true
 		}
