@@ -6,6 +6,7 @@ package main
 // pulls prebuilt images and builds the rest with buildah.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -344,6 +345,25 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		}
 		flags = append(flags, "-f", p)
 	}
+	// The app's variables go into the Compose model like any other
+	// environment entry, so incus-compose creates each container with them
+	// set, the way docker compose does with a stack's variables.
+	values, err := appStartEnv(sourceProject)
+	if err != nil {
+		return Failed("Could not read the variables entered for this app", err)
+	}
+	if len(values) > 0 {
+		var names []string
+		for _, s := range list(build["services"]) {
+			names = append(names, str(obj(s)["service"]))
+		}
+		p := filepath.Join(scratch, "nixus-env.yaml")
+		if err := atomic(p, envOverride(names, values), 0o600, ""); err != nil {
+			return err
+		}
+		flags = append(flags, "-f", p)
+		fmt.Fprintf(os.Stderr, "nixus: deploying %s with variables %v\n", sourceProject, keys(values))
+	}
 	binary := os.Getenv("NIXUS_OCI_COMPOSE_BIN")
 	if binary == "" {
 		binary = "incus-compose"
@@ -378,26 +398,6 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			return Public("incus-compose could not bring the project up: " + lastLine(tail))
 		}
 		return nil
-	}
-	// An app with variables must have them before its containers start: a
-	// service that needs a token or key at startup would otherwise exit and the
-	// deployment would fail verification. Create the instances stopped, set
-	// the variables, then start them.
-	values, err := appStartEnv(sourceProject)
-	if err != nil {
-		return Failed("Could not read the variables entered for this app", err)
-	}
-	if len(values) > 0 {
-		if err := runUp(append(append([]string{}, args...), "--no-start")); err != nil {
-			return err
-		}
-		for _, inst := range appInstances(a.incus, incusProject) {
-			if _, err := injectEnv(incusProject, str(inst["name"]), values); err != nil {
-				return Failed("Could not set the app's variables before starting it", err)
-			}
-			fmt.Fprintf(os.Stderr, "nixus: set variables %v on %s before start\n", keys(values), str(inst["name"]))
-		}
-		args = startCommand(args)
 	}
 	if err := runUp(args); err != nil {
 		return err
@@ -462,23 +462,20 @@ func appStartEnv(project string) (M, error) {
 	return values, nil
 }
 
-// startCommand turns an `up` invocation into one that only starts instances
-// that already exist: no build, nothing new to create.
-func startCommand(args []string) []string {
-	out := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--build":
-			continue
-		case "--builder":
-			i++
-			continue
-		case "--no-build":
-			continue
-		}
-		out = append(out, args[i])
+// envOverride is a Compose override that gives every service the app's
+// variables. JSON is valid YAML; "$" is doubled so Compose does not
+// interpolate values.
+func envOverride(services []string, values M) []byte {
+	env := map[string]string{}
+	for k, v := range values {
+		env[k] = strings.ReplaceAll(str(v), "$", "$$")
 	}
-	return append(out, "--no-build")
+	out := M{}
+	for _, name := range services {
+		out[name] = M{"environment": env}
+	}
+	b, _ := json.Marshal(M{"services": out})
+	return b
 }
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
