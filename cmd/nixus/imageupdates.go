@@ -8,8 +8,6 @@ package main
 // matching @sha256 digests replaced, for the normal review and deployment.
 
 import (
-	"bytes"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -168,99 +166,27 @@ func unpinnedBases(lock []any) bool {
 
 // --- registry digest lookup -----------------------------------------------------
 
-var registryClient = &http.Client{Timeout: 30 * time.Second}
-var registryScheme = "https"
-
-const manifestAccept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, " +
-	"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
-
-func registryHost(registry string) string {
-	if registry == "docker.io" {
-		return "registry-1.docker.io"
-	}
-	return registry
+// loopbackRegistry reports a registry on this machine, which may use plain HTTP.
+func loopbackRegistry(registry string) bool {
+	return strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:")
 }
 
-var bearerParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
-
-// anonymousToken follows a registry's Bearer challenge without credentials.
-func anonymousToken(challenge string) (string, error) {
-	if !strings.HasPrefix(strings.ToLower(challenge), "bearer ") {
-		return "", Public("Registry requires unsupported authentication")
-	}
-	params := map[string]string{}
-	for _, m := range bearerParam.FindAllStringSubmatch(challenge, -1) {
-		params[strings.ToLower(m[1])] = m[2]
-	}
-	realm := params["realm"]
-	if !strings.HasPrefix(realm, "https://") && !(registryScheme == "http" && strings.HasPrefix(realm, "http://")) {
-		return "", Public("Registry token endpoint must use HTTPS")
-	}
-	req, _ := http.NewRequest("GET", realm, nil)
-	q := req.URL.Query()
-	for _, k := range []string{"service", "scope"} {
-		if params[k] != "" {
-			q.Set(k, params[k])
-		}
-	}
-	req.URL.RawQuery = q.Encode()
-	resp, err := registryClient.Do(req)
-	if err != nil {
-		return "", Public("Registry token request failed")
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(http.MaxBytesReader(nil, resp.Body, 1<<20))
-	body, err := parseObject(buf.Bytes())
-	if err != nil || resp.StatusCode != 200 {
-		return "", Public("Registry token request was refused")
-	}
-	token := str(body["token"])
-	if token == "" {
-		token = str(body["access_token"])
-	}
-	return token, nil
-}
-
-// registryDigest returns the manifest digest a tag currently points to.
-// registrySchemeFor uses plain HTTP only for loopback registries (as Docker
-// and containers/image do); every other registry must use HTTPS.
-func registrySchemeFor(registry string) string {
-	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
-		return "http"
-	}
-	return registryScheme
-}
-
+// registryDigest returns the manifest digest a tag currently points to. skopeo
+// does the registry protocol and authentication.
 var registryDigest = func(r imageRef) (string, error) {
-	url := registrySchemeFor(r.Registry) + "://" + registryHost(r.Registry) + "/v2/" + r.Repository + "/manifests/" + r.Tag
-	head := func(token string) (*http.Response, error) {
-		req, _ := http.NewRequest("HEAD", url, nil)
-		req.Header.Set("Accept", manifestAccept)
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		return registryClient.Do(req)
+	argv := []string{"skopeo", "--insecure-policy", "inspect", "--format", "{{.Digest}}"}
+	if loopbackRegistry(r.Registry) {
+		argv = append(argv, "--tls-verify=false")
 	}
-	resp, err := head("")
+	res, err := run(append(argv, "docker://"+r.Registry+"/"+r.Repository+":"+r.Tag), nil, 60*time.Second,
+		[]string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}, "")
 	if err != nil {
 		return "", Public("Registry unreachable")
 	}
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		token, err := anonymousToken(resp.Header.Get("WWW-Authenticate"))
-		if err != nil {
-			return "", err
-		}
-		if resp, err = head(token); err != nil {
-			return "", Public("Registry unreachable")
-		}
-		resp.Body.Close()
-	}
-	if resp.StatusCode != http.StatusOK {
+	if res.Code != 0 {
 		return "", Public("Registry has no manifest for this tag")
 	}
-	digest := resp.Header.Get("Docker-Content-Digest")
+	digest := strings.TrimSpace(string(res.Stdout))
 	if !digestRe.MatchString(digest) {
 		return "", Public("Registry returned no usable digest")
 	}

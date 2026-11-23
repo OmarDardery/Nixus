@@ -1,8 +1,6 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,35 +56,34 @@ func TestImageLockAndUnpinnedBase(t *testing.T) {
 	}
 }
 
-func TestRegistryDigestFollowsAnonymousTokenChallenge(t *testing.T) {
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/token":
-			if r.URL.Query().Get("scope") != "repository:library/nginx:pull" {
-				t.Errorf("scope %q", r.URL.RawQuery)
-			}
-			w.Write([]byte(`{"token":"anon"}`))
-		case r.Header.Get("Authorization") != "Bearer anon":
-			w.Header().Set("WWW-Authenticate", `Bearer realm="`+server.URL+`/token",service="registry",scope="repository:library/nginx:pull"`)
-			w.WriteHeader(http.StatusUnauthorized)
-		case r.Method == "HEAD" && r.URL.Path == "/v2/library/nginx/manifests/1.27":
-			w.Header().Set("Docker-Content-Digest", digestB)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	oldScheme, oldClient := registryScheme, registryClient
-	registryScheme, registryClient = "http", server.Client()
-	defer func() { registryScheme, registryClient = oldScheme, oldClient }()
-	host := strings.TrimPrefix(server.URL, "http://")
-	got, err := registryDigest(imageRef{Registry: host, Repository: "library/nginx", Tag: "1.27"})
+func TestRegistryDigestUsesSkopeo(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"$@\" >> " + filepath.Join(bin, "calls") + "\n" +
+		"case \"$*\" in *:missing) exit 1;; *:odd) echo nonsense;; *) echo " + digestB + ";; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "skopeo"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	got, err := registryDigest(imageRef{Registry: "docker.io", Repository: "library/nginx", Tag: "1.27"})
 	if err != nil || got != digestB {
 		t.Fatalf("digest: %q %v", got, err)
 	}
-	if _, err := registryDigest(imageRef{Registry: host, Repository: "library/nginx", Tag: "missing"}); err == nil {
+	if _, err := registryDigest(imageRef{Registry: "docker.io", Repository: "library/nginx", Tag: "missing"}); err == nil {
 		t.Fatal("missing tag returned a digest")
+	}
+	if _, err := registryDigest(imageRef{Registry: "docker.io", Repository: "library/nginx", Tag: "odd"}); err == nil {
+		t.Fatal("a malformed digest was accepted")
+	}
+	if _, err := registryDigest(imageRef{Registry: "localhost:5000", Repository: "nixus/base", Tag: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(filepath.Join(bin, "calls"))
+	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	if !strings.Contains(lines[0], "docker://docker.io/library/nginx:1.27") || strings.Contains(lines[0], "--tls-verify=false") {
+		t.Fatalf("remote registries must verify TLS: %s", lines[0])
+	}
+	if !strings.Contains(lines[len(lines)-1], "--tls-verify=false") {
+		t.Fatalf("loopback registries use plain HTTP: %s", lines[len(lines)-1])
 	}
 }
 
