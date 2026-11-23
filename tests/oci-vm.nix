@@ -391,7 +391,9 @@ in pkgs.testers.runNixOSTest {
         assert len(prun) == 1 and prun[0]["status"] == "Running", prun
         assert machine.succeed("incus exec " + prun[0]["name"] + " --project prefetch -- /bin/cat /srv/data/marker.txt") == "from-the-image\n"
         code, denied = machine.execute("journalctl -b -k --no-pager | grep -E 'apparmor=\"DENIED\"'")
-        assert "gzip" not in denied, "AppArmor denied gzip:\n" + denied
+        # gzip also asks for /dev/tty (harmless; the unpack still succeeds). What
+        # must not appear is the exec/open of the wrapped binary (#117).
+        assert ".gzip-wrapped" not in denied, "AppArmor denied the wrapped gzip:\n" + denied
         if denied:
             print("other AppArmor denials during the run:\n" + denied)
 
