@@ -11,7 +11,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  validate:
+  source:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -19,12 +19,6 @@ jobs:
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b
         with:
           extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
-      - name: Enable KVM for NixOS VM tests
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm
       - name: Check release tag version
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -75,11 +69,48 @@ jobs:
           nix build '.#nixosConfigurations.validation-services.config.systemd.units."nixus-metrics.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-notifications.config.systemd.units."nixus-notify@.service".unit' --no-link
           nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
-      - name: Boot the Go broker and portal in a NixOS VM
-        run: nix build .#checks.x86_64-linux.portal --no-link -L
-      - name: Production networking DNS, NAT and Tunnel transport test
-        run: nix build .#checks.x86_64-linux.networking --no-link -L
-      - name: OCI build VM test
-        run: nix build .#checks.x86_64-linux.oci --no-link -L
-      - name: Build complete Incus-native hypervisor
-        run: nix build .#nixosConfigurations.validation-host.config.system.build.toplevel --no-link -L
+  integration:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: portal
+            target: .#checks.x86_64-linux.portal
+          - name: networking
+            target: .#checks.x86_64-linux.networking
+          - name: oci-and-cold-restore
+            target: .#checks.x86_64-linux.oci
+          - name: host
+            target: .#nixosConfigurations.validation-host.config.system.build.toplevel
+    name: integration (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b
+        with:
+          extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
+      - name: Enable KVM for VM tests
+        if: matrix.name != 'host'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: Run integration target
+        env:
+          NIXUS_CHECK_TARGET: ${{ matrix.target }}
+        run: nix build "$NIXUS_CHECK_TARGET" --no-link -L
+  validate:
+    if: always()
+    needs: [source, integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all source and integration checks
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          test "$SOURCE_RESULT" = success
+          test "$INTEGRATION_RESULT" = success
