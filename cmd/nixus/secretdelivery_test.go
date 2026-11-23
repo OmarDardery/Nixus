@@ -38,3 +38,42 @@ func TestSecretTargetsFollowBindings(t *testing.T) {
 		t.Fatal("delivered outside /run/secrets")
 	}
 }
+
+// With bindings, each instance receives only its own keys, as environment and
+// as files; a binding change moves a key (#105).
+func TestEnvDeliveryFollowsBindings(t *testing.T) {
+	values := M{"DB_PASSWORD": "db-secret", "SESSION": "web-secret"}
+	project := M{"secrets": M{"bindings": M{
+		"db":  M{"key": "DB_PASSWORD", "instance": "db", "destination": "/run/secrets/DB_PASSWORD"},
+		"web": M{"key": "SESSION", "instance": "web", "destination": "/run/secrets/SESSION"},
+	}}}
+	db := M{"name": "stack-db-1", "service": "db", "status": "Running"}
+	web := M{"name": "stack-web-1", "service": "web", "status": "Running"}
+	if got := envValuesFor(project, values, db); len(got) != 1 || got["DB_PASSWORD"] != "db-secret" {
+		t.Fatalf("db environment: %v", got)
+	}
+	if got := envValuesFor(project, values, web); len(got) != 1 || got["SESSION"] != "web-secret" {
+		t.Fatalf("web environment: %v", got)
+	}
+	targets, err := secretTargets(project, values, []M{db, web})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range targets {
+		if tg.Instance == "stack-web-1" && tg.Key != "SESSION" || tg.Instance == "stack-db-1" && tg.Key != "DB_PASSWORD" {
+			t.Fatalf("file delivery leaks: %v", targets)
+		}
+	}
+	// No bindings: every instance still gets every variable.
+	if got := envValuesFor(M{}, values, web); len(got) != 2 {
+		t.Fatalf("unbound app: %v", got)
+	}
+	// Rebinding DB_PASSWORD to web moves it.
+	project["secrets"].(M)["bindings"].(M)["db"] = M{"key": "DB_PASSWORD", "instance": "web", "destination": "/run/secrets/DB_PASSWORD"}
+	if got := envValuesFor(project, values, db); len(got) != 0 {
+		t.Fatalf("db should lose the key after rebinding: %v", got)
+	}
+	if got := envValuesFor(project, values, web); len(got) != 2 {
+		t.Fatalf("web should now have both: %v", got)
+	}
+}

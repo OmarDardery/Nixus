@@ -64,6 +64,26 @@ func secretTargets(project M, values M, instances []M) ([]secretTarget, error) {
 	return out, nil
 }
 
+// envValuesFor returns the variables one instance may receive. Without
+// bindings every instance gets every key; with bindings an instance only gets
+// the keys bound to it (by instance or service name), the same rule file
+// delivery follows, so a database credential never reaches the web container (#105).
+func envValuesFor(project M, values M, inst M) M {
+	bindings := obj(jget(project, "secrets", "bindings"))
+	if len(bindings) == 0 {
+		return values
+	}
+	out := M{}
+	for _, name := range keys(bindings) {
+		b := obj(bindings[name])
+		key := str(b["key"])
+		if v, ok := values[key]; ok && (str(inst["name"]) == str(b["instance"]) || str(inst["service"]) == str(b["instance"])) {
+			out[key] = v
+		}
+	}
+	return out
+}
+
 // appInstances lists an app's instances with their Compose service name.
 func appInstances(incus incusFunc, incusProject string) []M {
 	out, err := incus(0, "query", "/1.0/instances?recursion=1&project="+incusProject)
@@ -127,7 +147,7 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 		return 0, err
 	}
 	for _, inst := range instances {
-		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), values); err != nil {
+		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), envValuesFor(project, values, inst)); err != nil {
 			return 0, err
 		}
 	}
