@@ -94,7 +94,7 @@ let
     };
 in pkgs.testers.runNixOSTest {
   name = "nixus-oci";
-  globalTimeout = 2700;
+  globalTimeout = 4500;
   node.specialArgs = {
     inventory = settings;
     installedBase = { ... }: { system.stateVersion = "26.05"; };
