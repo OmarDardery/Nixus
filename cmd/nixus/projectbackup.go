@@ -155,22 +155,27 @@ func projectBackupStatus() M {
 	return status
 }
 
-// projectBackupHealth: disabled, never, ok, failed (last run had failed
-// phases) or overdue (no success for two schedule periods).
+// projectBackupHealth: disabled, never (no run yet), failed (the last run had
+// failed phases) or overdue (no success for two schedule periods). The outcome
+// of the last run is stored explicitly; comparing two timestamps taken a moment
+// apart made every success look like a failure.
 func projectBackupHealth() string {
-	status := projectBackupStatus()
+	return backupHealth(projectBackupStatus(), now())
+}
+
+func backupHealth(status M, at float64) string {
 	if !isTrue(status["enabled"]) {
 		return "disabled"
 	}
 	last, _ := num(status["lastSuccess"])
-	attempt, _ := num(status["lastAttempt"])
+	outcome := str(status["lastOutcome"])
 	period := scheduleSeconds(str(status["schedule"]))
 	switch {
+	case outcome == "failed":
+		return "failed"
 	case last == 0:
 		return "never"
-	case attempt > last:
-		return "failed"
-	case now()-last > 2*period:
+	case at-last > 2*period:
 		return "overdue"
 	}
 	return "ok"
@@ -438,10 +443,14 @@ func runProjectBackup(force bool) (M, error) {
 	}
 	pruneSnapshots(2)
 	status["restoreTest"] = "not performed; run an isolated restore drill to qualify recovery"
+	finished := now()
+	status["lastAttempt"] = finished
 	if ok {
-		status["lastSuccess"] = now()
+		status["lastSuccess"] = finished
+		status["lastOutcome"] = "success"
+	} else {
+		status["lastOutcome"] = "failed"
 	}
-	status["lastAttempt"] = now()
 	writeJSONMode(projectBackupStatusPath(), status, 0o640, "")
 	audit("project-backup-finished", M{"generation": generation, "success": ok})
 	if !ok {
