@@ -862,7 +862,9 @@ func composeJSON(spec M, dir, scratch, extra string) (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := parseObject(out)
+	// The model names paths under the materialised source; validation expects
+	// them under the fixed /context root.
+	m, err := parseObject([]byte(strings.ReplaceAll(string(out), dir, "/context")))
 	if err != nil {
 		return nil, Public("Pinned Compose parser produced an invalid model")
 	}
