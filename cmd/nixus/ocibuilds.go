@@ -383,7 +383,11 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	// service that needs a token or key at startup would otherwise exit and the
 	// deployment would fail verification. Create the instances stopped, set
 	// the variables, then start them.
-	if values := appStartEnv(sourceProject); len(values) > 0 {
+	values, err := appStartEnv(sourceProject)
+	if err != nil {
+		return Failed("Could not read the variables entered for this app", err)
+	}
+	if len(values) > 0 {
 		if err := runUp(append(append([]string{}, args...), "--no-start")); err != nil {
 			return err
 		}
@@ -391,6 +395,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			if _, err := injectEnv(incusProject, str(inst["name"]), values); err != nil {
 				return Failed("Could not set the app's variables before starting it", err)
 			}
+			fmt.Fprintf(os.Stderr, "nixus: set variables %v on %s before start\n", keys(values), str(inst["name"]))
 		}
 		args = startCommand(args)
 	}
@@ -433,24 +438,28 @@ var _ = path.Base
 // appStartEnv returns the variables an app needs before its containers start:
 // the ones already saved as encrypted secrets, overridden by those entered with
 // the deploy that has not applied them yet.
-func appStartEnv(project string) M {
+func appStartEnv(project string) (M, error) {
 	values := M{}
 	s := NewSecrets("", "", "")
 	if ciphertext, err := s.cipher(filepath.Join(s.projects, project)); err == nil && ciphertext != nil {
-		if saved, err := s.decode(ciphertext, ""); err == nil {
-			for k, v := range saved {
-				values[k] = v
-			}
+		saved, err := s.decode(ciphertext, "")
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range saved {
+			values[k] = v
 		}
 	}
 	if isFile(appEnvPath(project)) {
-		if pending, err := openDeployEnv(project); err == nil {
-			for k, v := range pending {
-				values[k] = v
-			}
+		pending, err := openDeployEnv(project)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range pending {
+			values[k] = v
 		}
 	}
-	return values
+	return values, nil
 }
 
 // startCommand turns an `up` invocation into one that only starts instances

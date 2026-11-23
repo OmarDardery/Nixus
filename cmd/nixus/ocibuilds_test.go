@@ -184,14 +184,21 @@ func TestAppStartEnvUsesPendingValues(t *testing.T) {
 	old := projectsIdentity
 	projectsIdentity = key
 	defer func() { projectsIdentity = old }()
-	if len(appStartEnv("web")) != 0 {
+	if v, err := appStartEnv("web"); err != nil || len(v) != 0 {
 		t.Fatal("an app without variables starts as before")
 	}
 	if err := sealDeployEnv("web", M{"TUNNEL_TOKEN": "t", "SECRET_KEY": "k"}); err != nil {
 		t.Fatal(err)
 	}
-	got := appStartEnv("web")
+	got, err := appStartEnv("web")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got["TUNNEL_TOKEN"] != "t" || got["SECRET_KEY"] != "k" {
 		t.Fatalf("pending variables must be available before the first start: %v", got)
+	}
+	os.WriteFile(appEnvPath("web"), []byte("not age data"), 0o600)
+	if _, err := appStartEnv("web"); err == nil {
+		t.Fatal("an unreadable pending file must be an error, not an app started without its variables")
 	}
 }
