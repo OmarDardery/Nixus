@@ -428,7 +428,8 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 		return nil, err
 	}
 	if str(verified["action"]) != "noop" {
-		return nil, Public("Compose services are not all running the reviewed images" + notRunning(verified))
+		return nil, Public("Compose services are not all running the reviewed images" + notRunning(verified) +
+			startDetail(a.incus, str(approved["sourceProject"]), str(approved["project"]), verified))
 	}
 	return M{"status": "verified", "newEtag": verified["etag"], "health": "Running"}, nil
 }
@@ -517,6 +518,38 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 
 // notRunning names the services that are not running after a deployment, with
 // their state, so a failure says which container to look at.
+// startDetail says which variables the containers were created with (names
+// only) and what each stopped container printed last, so a failed deployment
+// explains itself without a shell.
+func startDetail(incus func(time.Duration, ...string) (string, error), sourceProject, incusProject string, resource M) string {
+	var b strings.Builder
+	if values, err := appStartEnv(sourceProject); err == nil && len(values) > 0 {
+		b.WriteString("\n\nStarted with variables: " + strings.Join(keys(values), ", "))
+	} else {
+		b.WriteString("\n\nStarted with no variables. Add them in Environment Variables, then redeploy.")
+	}
+	for _, name := range keys(obj(resource["instances"])) {
+		inst := obj(obj(resource["instances"])[name])
+		if str(inst["status"]) == "Running" {
+			continue
+		}
+		out, err := incus(0, "console", name, "--project", incusProject, "--show-log")
+		if err != nil || strings.TrimSpace(out) == "" {
+			continue
+		}
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if len(lines) > 10 {
+			lines = lines[len(lines)-10:]
+		}
+		tail := strings.Join(lines, "\n")
+		if len(tail) > 1500 {
+			tail = tail[len(tail)-1500:]
+		}
+		b.WriteString("\n\n" + str(inst["service"]) + " log:\n" + tail)
+	}
+	return b.String()
+}
+
 func notRunning(resource M) string {
 	byService := map[string]string{}
 	for _, raw := range obj(resource["instances"]) {
