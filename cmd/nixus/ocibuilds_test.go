@@ -142,9 +142,22 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 
 // An app's variables are part of the Compose model, so each container is
 // created with them; "$" must reach the container literally.
+func TestServiceOverrideNamesContainersAfterServices(t *testing.T) {
+	var doc M
+	if err := json.Unmarshal(serviceOverride([]string{"web", "my_db"}, nil, nil, nil), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if got := obj(obj(doc["services"])["web"]); str(got["container_name"]) != "web" || got["environment"] != nil {
+		t.Fatalf("%v", got)
+	}
+	if got := obj(obj(doc["services"])["my_db"]); str(got["container_name"]) != "my-db" {
+		t.Fatalf("Incus names have no underscore: %v", got)
+	}
+}
+
 func TestEnvOverrideGivesEveryServiceTheVariables(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(envOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}), &doc); err != nil {
+	if err := json.Unmarshal(serviceOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"web", "tunnel"} {
@@ -216,5 +229,41 @@ func TestStartDetailNamesVariablesAndLogTail(t *testing.T) {
 	}
 	if len(asked) != 1 || asked[0] != "cf-1" {
 		t.Fatalf("only stopped containers are read: %v", asked)
+	}
+}
+
+// "Own IP on your router": only the chosen services get a LAN card.
+func TestServiceOverrideLANCard(t *testing.T) {
+	nic := M{"type": "nic", "nictype": "macvlan", "parent": "enp2s0", "name": "eth1"}
+	var doc M
+	if err := json.Unmarshal(serviceOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, nic), &doc); err != nil {
+		t.Fatal(err)
+	}
+	dev := obj(obj(jget(obj(obj(doc["services"])["aiostreams"]), "x-incus-compose", "devices"))["lan"])
+	if str(dev["nictype"]) != "macvlan" || str(dev["parent"]) != "enp2s0" {
+		t.Fatalf("%v", doc)
+	}
+	if jget(obj(obj(doc["services"])["cloudflared"]), "x-incus-compose") != nil {
+		t.Fatalf("cloudflared stays private: %v", doc)
+	}
+}
+
+func TestLANServicesAndNIC(t *testing.T) {
+	if got := lanServices(M{"network": M{"lan": M{"services": []any{"web", "db", "web"}}}}); got != "db,web" {
+		t.Fatalf("%q", got)
+	}
+	if lanServices(M{}) != "" {
+		t.Fatal("private by default")
+	}
+	dir := t.TempDir()
+	old := lanSettingsPath
+	defer func() { lanSettingsPath = old }()
+	lanSettingsPath = filepath.Join(dir, "lan.json")
+	if _, err := lanNIC(); err == nil {
+		t.Fatal("no LAN interface configured is an error")
+	}
+	os.WriteFile(lanSettingsPath, []byte(`{"parent":"br-lan","nictype":"bridged"}`), 0o644)
+	if nic, err := lanNIC(); err != nil || str(nic["parent"]) != "br-lan" || str(nic["nictype"]) != "bridged" {
+		t.Fatalf("%v %v", nic, err)
 	}
 }

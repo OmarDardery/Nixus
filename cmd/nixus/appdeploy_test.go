@@ -70,3 +70,20 @@ func TestInterruptedAppJobDoesNotBlockRedeploy(t *testing.T) {
 		t.Fatal("a brand-new job must count as active")
 	}
 }
+
+func TestLANModule(t *testing.T) {
+	names, err := lanSetting([]any{"web", "aiostreams", "web"})
+	if err != nil || strings.Join(names, ",") != "aiostreams,web" {
+		t.Fatalf("%v %v", names, err)
+	}
+	if _, err := lanSetting([]any{"Bad Name"}); err == nil {
+		t.Fatal("invalid service names are refused")
+	}
+	text := lanModuleText(names)
+	if !strings.Contains(text, `nixus.project.network.lan.services = [ "aiostreams" "web" ];`) {
+		t.Fatal(text)
+	}
+	if _, err := projectPatches(M{"app/modules/" + lanModule: text}); err != nil {
+		t.Fatalf("the module is a valid project edit: %v", err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -198,6 +199,32 @@ type composeAdapter struct {
 	builds *OCIBuilds
 	incus  incusFunc
 	up     func(sourceProject, incusProject, revision string) error
+	// lan is the services that get their own LAN address, as approved; nil
+	// keeps what the project has (image updates, restarts).
+	lan *string
+}
+
+// composeLANKey records on the Incus project which services have a LAN
+// card, so a change of the setting alone recreates the containers.
+const composeLANKey = "user.nixus.lan"
+
+// lanServices is the app's "own IP on your router" setting, sorted and
+// comma-joined as stored on the Incus project.
+func lanServices(project M) string {
+	names, _ := anyStrings(jget(project, "network", "lan", "services"))
+	return strings.Join(uniqueSorted(names), ",")
+}
+
+var lanSettingsPath = "/etc/nixus/lan.json"
+
+// lanNIC is the Incus network card that puts a container on the LAN.
+func lanNIC() (M, error) {
+	cfg := readObj(lanSettingsPath)
+	parent, nictype := str(cfg["parent"]), str(cfg["nictype"])
+	if !fullmatch(re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,14}`), parent) || (nictype != "macvlan" && nictype != "bridged") {
+		return nil, Public("This server has no LAN interface for apps; set Settings → Network first")
+	}
+	return M{"type": "nic", "nictype": nictype, "parent": parent, "name": "eth1"}, nil
 }
 
 func newComposeAdapter() *composeAdapter {
@@ -277,12 +304,6 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			recreates = append(recreates, s)
 		}
 	}
-	if !current && str(config[composeIntentKey]) != str(build["intentHash"]) {
-		// A new revision rebuilds its own services; incus-compose recreates them.
-		for s := range built {
-			recreates = append(recreates, s)
-		}
-	}
 	recreates = uniqueSorted(recreates)
 	before := map[string]bool{}
 	for _, o := range observed {
@@ -292,7 +313,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 	if current {
 		action, status = "noop", "Running"
 	}
-	resource := M{"kind": "compose", "project": incusProject, "name": "compose", "sourceProject": sourceProject,
+	resource := M{"kind": "compose", "project": incusProject, "name": "compose", "sourceProject": sourceProject, "lanCurrent": str(config[composeLANKey]),
 		"revision": revision, "buildId": build["id"], "intentHash": build["intentHash"],
 		"services": strings2any(nonNil(services)), "instances": observed, "action": action, "observedStatus": status,
 		"before": M{"services": strings2any(sortedKeys(before))}, "after": M{"services": strings2any(nonNil(services)), "revision": revision},
@@ -369,32 +390,52 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	// The app's variables go into the Compose model like any other
 	// environment entry, so incus-compose creates each container with them
 	// set, the way docker compose does with a stack's variables.
+	projectConfig := obj(incusQueryObj(a.incus, "/1.0/projects/"+incusProject)["config"])
+	previous := str(projectConfig[composeIntentKey])
+	storedLAN := str(projectConfig[composeLANKey])
+	wantLAN := storedLAN
+	if a.lan != nil {
+		wantLAN = *a.lan
+	}
 	values, err := appStartEnv(sourceProject)
 	if err != nil {
 		return Failed("Could not read the variables entered for this app", err)
 	}
-	if len(values) > 0 {
-		var names []string
-		for _, s := range list(build["services"]) {
-			names = append(names, str(obj(s)["service"]))
+	var names []string
+	for _, s := range list(build["services"]) {
+		names = append(names, str(obj(s)["service"]))
+	}
+	var lanFor map[string]bool
+	var nic M
+	if wantLAN != "" {
+		lanFor = map[string]bool{}
+		for _, s := range strings.Split(wantLAN, ",") {
+			if !slices.Contains(names, s) {
+				return Public("The app has no service named " + s + " to give a LAN address; check Settings → Network")
+			}
+			lanFor[s] = true
 		}
-		p := filepath.Join(scratch, "nixus-env.yaml")
-		if err := atomic(p, envOverride(names, values), 0o600, ""); err != nil {
+		if nic, err = lanNIC(); err != nil {
 			return err
 		}
-		flags = append(flags, "-f", p)
+	}
+	override := filepath.Join(scratch, "nixus-services.yaml")
+	if err := atomic(override, serviceOverride(names, values, lanFor, nic), 0o600, ""); err != nil {
+		return err
+	}
+	flags = append(flags, "-f", override)
+	if len(values) > 0 {
 		fmt.Fprintf(os.Stderr, "nixus: deploying %s with variables %v\n", sourceProject, keys(values))
 	}
 	binary := os.Getenv("NIXUS_OCI_COMPOSE_BIN")
 	if binary == "" {
 		binary = "incus-compose"
 	}
-	previous := str(obj(incusQueryObj(a.incus, "/1.0/projects/"+incusProject)["config"])[composeIntentKey])
 	args, env, err := composeUpCommand(binary, flags, build, scratch)
 	if err != nil {
 		return err
 	}
-	if previous != "" && previous != str(build["intentHash"]) {
+	if previous != "" && (previous != str(build["intentHash"]) || storedLAN != wantLAN) {
 		// A new revision replaces the running instances so the new images are
 		// used. incus-compose's own --recreate also tears down shared DNS wiring
 		// and fails when there is none, so remove them here; named volumes
@@ -429,7 +470,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err := runUp(args); err != nil {
 		return err
 	}
-	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]))
+	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN)
 	return err
 }
 
@@ -441,8 +482,13 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	if !equalJSON(composeStableOf(actual), composeStableOf(approved)) {
 		return nil, Public("The Compose project changed since review; re-review before deployment")
 	}
-	if str(actual["action"]) == "noop" {
+	lanChanged := approved["lan"] != nil && str(approved["lan"]) != str(actual["lanCurrent"])
+	if str(actual["action"]) == "noop" && !lanChanged {
 		return M{"status": "verified", "newEtag": actual["etag"], "health": "Running"}, nil
+	}
+	if approved["lan"] != nil {
+		lan := str(approved["lan"])
+		a.lan = &lan
 	}
 	if !verifyOnly && str(actual["etag"]) != str(approved["etag"]) {
 		return nil, Public("Compose instances changed since review; re-review before deployment")
@@ -454,7 +500,7 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	if err != nil {
 		return nil, err
 	}
-	if str(verified["action"]) != "noop" {
+	if str(verified["action"]) != "noop" || (approved["lan"] != nil && str(approved["lan"]) != str(verified["lanCurrent"])) {
 		return nil, Public("Compose services are not all running the reviewed images" + notRunning(verified) +
 			startDetail(a.incus, str(approved["sourceProject"]), str(approved["project"]), verified))
 	}
@@ -490,21 +536,41 @@ func appStartEnv(project string) (M, error) {
 	return values, nil
 }
 
-// envOverride is a Compose override that gives every service the app's
-// variables. JSON is valid YAML; "$" is doubled so Compose does not
-// interpolate values.
-func envOverride(services []string, values M) []byte {
+// serviceOverride is the Compose override Nixus adds to every app:
+//   - container_name is the service name, so each container is registered
+//     under it in the DNS of the app's own Incus network and services reach
+//     each other by name (http://aiostreams:3000), as with docker compose.
+//   - environment carries the app's variables; "$" is doubled so Compose does
+//     not interpolate them.
+//   - services set to "own IP on your router" get a second network card on the
+//     LAN.
+//
+// JSON is valid YAML.
+func serviceOverride(services []string, values M, lanFor map[string]bool, nic M) []byte {
 	env := map[string]string{}
 	for k, v := range values {
 		env[k] = strings.ReplaceAll(str(v), "$", "$$")
 	}
 	out := M{}
 	for _, name := range services {
-		out[name] = M{"environment": env}
+		svc := M{"container_name": instanceNameFor(name)}
+		if len(env) > 0 {
+			svc["environment"] = env
+		}
+		if lanFor[name] && nic != nil {
+			// incus-compose adds raw Incus devices from x-incus-compose.devices:
+			// a second card on the LAN, so the router gives it its own address.
+			svc["x-incus-compose"] = M{"devices": M{"lan": nic}}
+		}
+		out[name] = svc
 	}
 	b, _ := json.Marshal(M{"services": out})
 	return b
 }
+
+// instanceNameFor turns a Compose service name into a valid Incus instance
+// and DNS name ("_" is not allowed in either).
+func instanceNameFor(service string) string { return strings.ReplaceAll(service, "_", "-") }
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah.

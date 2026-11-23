@@ -185,11 +185,23 @@ func startAppDeploy(actor string, body M) (M, error) {
 			return nil, Public("Enter the app's Nix declaration")
 		}
 		job["kind"] = "nix"
+	case "network":
+		if body["lan"] == nil {
+			return nil, Public("Choose the services that get their own LAN address")
+		}
+		job["kind"] = "network"
 	default:
 		return nil, Public("Choose files or a Nix declaration")
 	}
 	if strings.TrimSpace(declaration) != "" {
 		job["declaration"] = declaration
+	}
+	if body["lan"] != nil {
+		lan, err := lanSetting(body["lan"])
+		if err != nil {
+			return nil, err
+		}
+		job["lan"] = strings2any(lan)
 	}
 	vars, err := deployEnv(body["env"])
 	if err != nil {
@@ -351,6 +363,20 @@ func runAppDeploy(project string) error {
 	if declaration != "" {
 		changes[project+"/default.nix"] = declaration
 	}
+	if lan, ok := job["lan"]; ok {
+		names, _ := anyStrings(lan)
+		module := filepath.Join(NewProjectTransactions("", "").workspace, project, "modules", lanModule)
+		if len(names) > 0 {
+			changes[project+"/modules/"+lanModule] = lanModuleText(names)
+		} else if isFile(module) {
+			changes[project+"/modules/"+lanModule] = nil
+		}
+	}
+	if len(changes) == 0 && len(refs) == 0 {
+		delete(job, "declaration")
+		save("deployed", M{"completedAt": now(), "error": nil})
+		return nil
+	}
 	save("deploying", nil)
 	id, err := deployChange(actor, changes, refs)
 	deploymentID = id
@@ -466,4 +492,29 @@ func appPower(actor string, body M) (M, error) {
 	}
 	audit("app-power", M{"principal": actor, "project": project, "action": action})
 	return M{"done": true}, nil
+}
+
+// The "own IP on your router" setting lives in the app's own Nix module, so
+// it is reviewed, published and backed up with the app.
+const lanModule = "nixus-network.nix"
+
+func lanSetting(raw any) ([]string, error) {
+	names, ok := anyStrings(raw)
+	if !ok || len(names) > 16 {
+		return nil, Public("Choose up to 16 services")
+	}
+	for _, n := range names {
+		if !fullmatch(composeServiceName, n) {
+			return nil, Public("Invalid service name: " + n)
+		}
+	}
+	return uniqueSorted(names), nil
+}
+
+func lanModuleText(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = "\"" + n + "\""
+	}
+	return "{ ... }: {\n  # Services that also get their own address on the LAN.\n  nixus.project.network.lan.services = [ " + strings.Join(quoted, " ") + " ];\n}\n"
 }

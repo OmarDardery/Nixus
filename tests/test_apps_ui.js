@@ -171,3 +171,39 @@ console.log("Apps page verified");
   assert.match(vm.runInContext("appView.message", ctx4), /Deleted web/);
   console.log("Delete app verified");
 })().catch(e => { console.error(e); process.exitCode = 1; });
+
+// Network: Private by default; "Own IP on your router" for ticked services.
+(async () => {
+  const sent = [];
+  const ctx5 = vm.createContext({ crypto: globalThis.crypto, TextEncoder, Blob, btoa, atob, setTimeout: () => 0, state: { page: "projects" }, shell: () => {}, File, console, esc: context.esc, card: context.card, title: context.title,
+    api: async (r, b) => { sent.push([r, b]); return { id: "x", manifestHash: "y" }; },
+    document: { querySelector: id => id === "#app-password" || id === "#net-password" ? { value: "pw" } : id === "#app-name" ? { value: "aio" } : null, querySelectorAll: () => [] } });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx5);
+  const services = vm.runInContext('composeServices([{ path: "compose.yaml", text: "services:\\n  aiostreams:\\n    image: x\\n    ports:\\n      - \\"3000:3000\\"\\n  cloudflared:\\n    image: y\\nvolumes:\\n  data: {}\\n" }])', ctx5);
+  assert.deepEqual(JSON.parse(JSON.stringify(services)), ["aiostreams", "cloudflared"]);
+  let html = vm.runInContext('networkEditor("new", ["aiostreams", "cloudflared"], null)', ctx5);
+  assert.match(html, /value="private" checked/);
+  assert.doesNotMatch(html, /data-net-service/);
+  html = vm.runInContext('networkEditor("new", ["aiostreams", "cloudflared"], ["aiostreams"])', ctx5);
+  assert.match(html, /value="lan" checked/);
+  assert.match(html, /data-net-service="new" value="aiostreams" checked/);
+  assert.doesNotMatch(html, /value="cloudflared" checked/);
+  // The choice goes with the deploy.
+  vm.runInContext('Object.assign(appView, { view: "new", name: "aio", mode: "files", overview: { projects: [] }, entries: [{ path: "compose.yaml", text: "services:\\n  aiostreams:\\n    image: x\\n" }], newLan: ["aiostreams"] })', ctx5);
+  vm.runInContext("syncNet = () => {}; stageAppFiles = async () => ({ id: \"x\", manifestHash: \"y\" })", ctx5);
+  await vm.runInContext("deployApp()", ctx5);
+  const deploy = sent.find(([r]) => r === "apps/deploy");
+  assert.ok(deploy, "deploy sent: " + vm.runInContext("appView.error", ctx5) + " " + JSON.stringify(sent.map(s => s[0])));
+  assert.deepEqual(JSON.parse(JSON.stringify(deploy[1].lan)), ["aiostreams"]);
+  // Settings: the card shows LAN addresses and saves as a network deploy.
+  vm.runInContext('appView.netEdit = null', ctx5);
+  html = vm.runInContext('networkCard({ name: "aio", backend: "incus-compose", lan: ["aiostreams"], instances: [{ name: "aiostreams", service: "aiostreams", lanAddress: "192.168.1.50" }, { name: "cloudflared", service: "cloudflared" }] })', ctx5);
+  assert.match(html, /192\.168\.1\.50/);
+  assert.match(html, /id="net-save"/);
+  assert.equal(vm.runInContext('networkCard({ name: "vm", backend: "incus-native", instances: [] })', ctx5), "", "native apps have their own network settings");
+  await vm.runInContext('saveNetwork("aio")', ctx5);
+  const net = sent.filter(([r]) => r === "apps/deploy").pop();
+  assert.equal(net[1].kind, "network");
+  assert.deepEqual(JSON.parse(JSON.stringify(net[1].lan)), ["aiostreams"]);
+  console.log("Network modes verified");
+})().catch(e => { console.error(e); process.exitCode = 1; });

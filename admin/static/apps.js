@@ -11,6 +11,7 @@ const appView = {
   importTarget: "", importError: "", importMessage: "",
   view: "list", tab: "deployments", filter: "", nixLoaded: "",
   newVars: [{ key: "", value: "", show: true }], newPaste: false, replaceOk: false,
+  newLan: null, netEdit: null,
   env: { project: "", names: null, rows: null, revision: null, paste: false, error: "", message: "" },
 };
 
@@ -350,6 +351,82 @@ function syncVars() {
   }
 }
 
+// composeServices lists the service names in the pasted compose file.
+function composeServices(entries) {
+  const file = (entries || []).find(e => /(^|\/)(docker-)?compose\.ya?ml$/.test(e.path || ""));
+  if (!file) return [];
+  const out = [];
+  let inServices = false;
+  for (const line of String(file.text || "").split(/\r?\n/)) {
+    if (/^services:\s*$/.test(line)) { inServices = true; continue; }
+    if (/^\S/.test(line)) inServices = false;
+    const m = inServices && line.match(/^  ([a-z][a-z0-9_-]{0,62}):\s*$/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+// networkEditor: Private, or "Own IP on your router" for the ticked services.
+function networkEditor(scope, services, lan) {
+  const own = Array.isArray(lan);
+  return '<div class="net-modes">' +
+    '<label class="check"><input type="radio" name="net-' + scope + '" data-net-mode="' + scope + '" value="private"' + (own ? "" : " checked") + '> ' +
+    "<span><b>Private</b> — reachable through this server's IP and the ports you publish. Services reach each other by name.</span></label>" +
+    '<label class="check"><input type="radio" name="net-' + scope + '" data-net-mode="' + scope + '" value="lan"' + (own ? " checked" : "") + '> ' +
+    "<span><b>Own IP on your router</b> — the ticked services also join your LAN and get their own address by DHCP.</span></label></div>" +
+    (own ? (services.length
+      ? '<div class="net-services">' + services.map(s => '<label class="check"><input type="checkbox" data-net-service="' + scope + '" value="' + esc(s) + '"' +
+          (lan.includes(s) ? " checked" : "") + "> <code>" + esc(s) + "</code></label>").join("") + "</div>"
+      : '<p class="hint">Add a compose.yaml to choose its services.</p>') +
+      '<p class="hint">Needs a wired LAN port. The server itself cannot open these addresses; other devices on your network can.</p>' : "");
+}
+
+// syncNet copies the Network choice from the page into state.
+function syncNet() {
+  for (const el of document.querySelectorAll("[data-net-mode]:checked")) {
+    const scope = el.dataset.netMode;
+    const target = scope === "new" ? appView : appView.netEdit;
+    if (!target) continue;
+    target[scope === "new" ? "newLan" : "lan"] = el.value === "private" ? null
+      : [...document.querySelectorAll('[data-net-service="' + scope + '"]:checked')].map(c => c.value);
+  }
+}
+
+// networkCard: an app's network setting and the LAN addresses it got.
+function networkCard(p) {
+  if (p.backend !== "incus-compose") return "";
+  if (!appView.netEdit || appView.netEdit.project !== p.name)
+    appView.netEdit = { project: p.name, lan: Array.isArray(p.lan) && p.lan.length ? [...p.lan] : null, error: "", message: "" };
+  const e = appView.netEdit;
+  const services = [...new Set((p.instances || []).map(i => i.service || i.name).filter(Boolean))].sort();
+  const addresses = (p.instances || []).filter(i => i.lanAddress)
+    .map(i => "<tr><td><code>" + esc(i.service || i.name) + '</code></td><td><a href="http://' + esc(i.lanAddress) + '" target="_blank" rel="noopener noreferrer">' + esc(i.lanAddress) + " ↗</a></td></tr>").join("");
+  return card("Network", networkEditor("app", services, e.lan) +
+    (addresses ? '<div class="table-wrap"><table><thead><tr><th>Service</th><th>LAN address</th></tr></thead><tbody>' + addresses + "</tbody></table></div>" : "") +
+    '<div class="toolbar"><input id="net-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+    '<button type="button" class="primary" id="net-save">Save & redeploy</button></div>' +
+    (e.error ? '<p class="error" role="alert">' + esc(e.error) + "</p>" : "") + (e.message ? '<p role="status">' + esc(e.message) + "</p>" : ""));
+}
+
+async function saveNetwork(name) {
+  syncNet();
+  const e = appView.netEdit;
+  const input = document.querySelector("#net-password");
+  const current = input?.value || "";
+  if (input) input.value = "";
+  e.error = e.message = "";
+  try {
+    if (Array.isArray(e.lan) && !e.lan.length) throw Error("Tick at least one service, or choose Private.");
+    if (!current) throw Error("Enter your password.");
+    await api("apps/deploy", { project: name, kind: "network", lan: e.lan || [], current });
+    e.message = "Saved. Redeploying…";
+    appView.tab = "deployments";
+  } catch (error) {
+    e.error = error.message || "Could not save.";
+  }
+  void refreshApps();
+}
+
 function envTab(p) {
   const e = appView.env;
   if (e.project !== p.name) Object.assign(e, { project: p.name, names: null, rows: null, revision: null, paste: false, error: "", message: "" });
@@ -389,7 +466,7 @@ function settingsTab(p) {
       '<button type="button" id="import-start">Import</button></div>' +
       (appView.importError ? '<p class="error" role="alert">' + esc(appView.importError) + "</p>" : "") +
       (appView.importMessage ? '<p role="status">' + esc(appView.importMessage) + "</p>" : "")) : "") +
-    devicesCard(p) + deleteCard(p);
+    networkCard(p) + devicesCard(p) + deleteCard(p);
 }
 
 // deleteCard removes the app with everything it has on this server.
@@ -487,6 +564,7 @@ function addAppCard() {
         (appView.uploads.length ? "<p>" + appView.uploads.length + " uploaded file(s)</p>" : "")
       : instanceForm() +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
+    (files ? '<section class="env-new"><h3>Network</h3>' + networkEditor("new", composeServices(appView.entries), appView.newLan) + "</section>" : "") +
     '<section class="env-new"><h3>Environment variables</h3>' +
     needsKey(varsEditor("new", appView.newVars, appView.newPaste) +
       '<p class="hint">Every service gets these. Saved encrypted with your secrets key; values never leave this server.</p>') + "</section>" +
@@ -580,10 +658,15 @@ async function deployApp() {
       body = { project, kind: "nix", declaration: appView.nix, current };
     }
     if (Object.keys(env).length) body.env = env;
+    syncNet();
+    if (appView.mode === "files" && Array.isArray(appView.newLan)) {
+      if (!appView.newLan.length) throw Error("Tick the services that get their own LAN address, or choose Private.");
+      body.lan = appView.newLan;
+    }
     await api("apps/deploy", body);
     appView.message = "";
     appView.uploads = [];
-    Object.assign(appView, { view: project, tab: "deployments", newVars: varsFrom({}), newPaste: false, replaceOk: false });
+    Object.assign(appView, { view: project, tab: "deployments", newVars: varsFrom({}), newPaste: false, replaceOk: false, newLan: null });
   } catch (error) {
     appView.error = error.message || "Deploy failed.";
   } finally {
@@ -861,6 +944,16 @@ function bindApps() {
   on("#app-deploy", () => void deployApp());
   on("#app-save-nix", () => void saveNix(appView.view));
   on("#app-delete", () => void deleteApp(appView.view));
+  on("#net-save", () => void saveNetwork(appView.view));
+  for (const el of document.querySelectorAll("[data-net-mode]")) el.addEventListener("change", () => {
+    syncForm();
+    const scope = el.dataset.netMode;
+    const target = scope === "new" ? appView : appView.netEdit;
+    const key = scope === "new" ? "newLan" : "lan";
+    if (target) target[key] = el.value === "private" ? null : (Array.isArray(target[key]) ? target[key] : []);
+    rerender();
+  });
+  for (const el of document.querySelectorAll("[data-net-service]")) el.addEventListener("change", () => syncNet());
   on("#app-add-file", () => { syncForm(); appView.entries.push({ path: "", text: "" }); rerender(); });
   on("#app-pin", () => void pinApp());
   on("#app-draft-save", () => void saveDraftApp());

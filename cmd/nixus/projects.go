@@ -539,6 +539,11 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 				if err != nil {
 					return nil, err
 				}
+				// A change of the app's LAN setting recreates its containers.
+				resource["lan"] = lanServices(project)
+				if str(resource["lan"]) != str(resource["lanCurrent"]) && str(resource["action"]) == "noop" {
+					resource["action"], resource["observedStatus"] = "compose-up", "Pending"
+				}
 				items = append(items, resource)
 			}
 			continue
