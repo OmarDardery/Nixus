@@ -132,6 +132,8 @@ function appStatus(p) {
   const job = appView.jobs[p.name];
   if (job && !["deployed", "failed", "interrupted"].includes(job.status)) return job.status;
   if (job?.status === "failed" || job?.status === "interrupted") return job.status;
+  if (instances.some(i => i.status === "Running" && i.health === "unhealthy")) return "Degraded";
+  if (running === instances.length && instances.some(i => i.health === "starting" || (i.healthCheck && i.health !== "healthy"))) return "Starting";
   return !instances.length ? "Stopped" : running === instances.length ? "Running" : running ? "Degraded" : "Stopped";
 }
 

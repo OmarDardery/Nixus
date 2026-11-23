@@ -58,11 +58,12 @@ in pkgs.testers.runNixOSTest {
   globalTimeout = 600;
   node.specialArgs = { inherit site; };
   nodes.machine = { ... }: {
-    imports = [ ../modules/networking.nix ];
+    imports = [ ../modules/networking.nix ../modules/compose-runtime.nix ];
     virtualisation = { memorySize = 2048; cores = 2; };
     virtualisation.incus = {
       enable = true;
       preseed = {
+        config."core.https_address" = "0.0.0.0:8443";
         storage_pools = [ { name = "default"; driver = "dir"; } ];
         profiles = [ { name = "default"; } ];
       };
@@ -95,7 +96,7 @@ in pkgs.testers.runNixOSTest {
         network = json.loads(machine.succeed(f"incus query /1.0/networks/{bridge}"))
         gateways[bridge] = network["config"]["ipv4.address"].split("/")[0]
 
-    for name, bridge in [("client", "nxa-testa"), ("peer", "nxa-testa"), ("isolated", "nxa-testb")]:
+    for name, bridge in [("client", "nxa-testa"), ("peer", "nxa-testa"), ("isolated", "nxa-testb"), ("controller", "icompose0")]:
         machine.succeed(f"ip netns add {name}; ip link add v-{name} type veth peer name eth0 netns {name}")
         machine.succeed(f"ip link set v-{name} master {bridge}; ip link set v-{name} up")
         machine.succeed(f"ip netns exec {name} ip link set lo up; ip netns exec {name} ip link set eth0 up")
@@ -121,6 +122,10 @@ in pkgs.testers.runNixOSTest {
         machine.fail("ip netns exec client python3 ${probe} tcp 10.20.0.1 7844")
         machine.fail("ip netns exec client python3 ${probe} connect 203.0.113.2 9440")
         machine.fail(f"ip netns exec isolated python3 ${probe} connect {client_ip} 7844")
+    with subtest("only the dedicated controller bridge reaches the authenticated Incus API"):
+        machine.succeed("ip netns exec controller python3 ${probe} connect 203.0.113.2 8443")
+        machine.fail("ip netns exec client python3 ${probe} connect 203.0.113.2 8443")
+        machine.fail("ip netns exec controller python3 ${probe} connect 203.0.113.2 9440")
     with subtest("firewall reload preserves Incus NAT and app connectivity"):
         machine.succeed("systemctl restart nftables.service")
         check_egress()

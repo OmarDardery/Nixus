@@ -175,26 +175,15 @@ func (b *OCIBuilds) review(project, revision any, principal string) (M, error) {
 
 const composeServiceLabel = "user.label.incus-compose.service"
 
-// defaultDNSImage is incus-compose's own DNS sidecar for this incus-compose
-// version, pinned by digest. It lets an app's services reach each other by
-// name, as with docker compose. NIXUS_COMPOSE_DNS_IMAGE overrides it (tests,
-// hosts with their own registry mirror).
+// The health/restart controller is pinned to the Compose release. Mirrors and
+// offline test registries can override NIXUS_COMPOSE_HEALTHD_IMAGE.
 const defaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:1.4.1@sha256:abb8261776b7a5eb966ca8db698e53dd7bf825ba1a630e2e6ebdbf1088f3d84b"
-
-const defaultDNSImage = "ghcr.io/lxc/incus-compose/ic-dns:1.4.1@sha256:854d0f70b643e7699e5abe39f86de30d58d148c5865489be67e7ea9b32d695a0"
 
 func composeHealthdImage() string {
 	if v := os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"); v != "" {
 		return v
 	}
 	return defaultHealthdImage
-}
-
-func composeDNSImage() string {
-	if v := os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"); v != "" {
-		return v
-	}
-	return defaultDNSImage
 }
 
 // isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
@@ -306,7 +295,8 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			return nil, Public("An instance not managed by incus-compose is inside the Compose project")
 		}
 		observed[str(instance["name"])] = M{"service": service, "status": truncate(str(instance["status"]), 32),
-			"image": str(settings["volatile.base_image"]), "health": str(settings["user.healthcheck.status"])}
+			"image": str(settings["volatile.base_image"]), "health": str(settings["user.healthcheck.status"]),
+			"healthCheck": str(settings["user.healthcheck.enabled"]) == "true" && str(settings["user.healthcheck.test"]) != ""}
 	}
 	current := str(config[composeIntentKey]) == str(build["intentHash"]) && str(config[composeRuntimeKey]) == composeRuntimeVersion
 	var recreates []string
@@ -318,7 +308,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 				continue
 			}
 			count++
-			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || str(om["health"]) == "starting" {
+			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || str(om["health"]) == "starting" || (isTrue(om["healthCheck"]) && str(om["health"]) != "healthy") {
 				current = false
 			}
 		}
@@ -641,7 +631,7 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing", "--healthd-scope", "global", "--no-dns")
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
-		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_DNS_IMAGE=" + composeDNSImage(), "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeHealthdImage()}
+		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeHealthdImage()}
 	return args, env, nil
 }
 
@@ -683,7 +673,11 @@ func notRunning(resource M) string {
 	byService := map[string]string{}
 	for _, raw := range obj(resource["instances"]) {
 		inst := obj(raw)
-		byService[str(inst["service"])] = str(inst["status"])
+		state := str(inst["status"])
+		if state == "Running" && (str(inst["health"]) == "unhealthy" || str(inst["health"]) == "starting" || isTrue(inst["healthCheck"]) && str(inst["health"]) != "healthy") {
+			state = "waiting for a healthy Incus health check"
+		}
+		byService[str(inst["service"])] = state
 	}
 	var problems []string
 	for _, raw := range list(resource["services"]) {

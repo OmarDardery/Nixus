@@ -357,3 +357,75 @@ func TestAppGatewayFailsClosed(t *testing.T) {
 		t.Fatal("unavailable inventory accepted")
 	}
 }
+
+// The initial Compose model must follow the same bindings as later delivery.
+// Preserve its managed-key marker when adding native network settings.
+func TestStartupEnvironmentFollowsBindings(t *testing.T) {
+	project := M{"secrets": M{"bindings": M{
+		"token":    M{"key": "TUNNEL_TOKEN", "instance": "cloudflared"},
+		"database": M{"key": "DB_PASSWORD", "instance": "my-db"},
+	}}}
+	values := M{"TUNNEL_TOKEN": "a$b", "DB_PASSWORD": "db", "UNBOUND": "private"}
+	var doc M
+	if err := json.Unmarshal(appOverride(serviceOverride([]string{"web", "cloudflared", "my_db"}, values, nil, nil, project), "10.120.9.1", "nxa-test"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for service, key := range map[string]string{"web": "", "cloudflared": "TUNNEL_TOKEN", "my_db": "DB_PASSWORD"} {
+		svc := obj(obj(doc["services"])[service])
+		env := obj(svc["environment"])
+		if key == "" && len(env) != 0 || key != "" && (len(env) != 1 || str(env[key]) != strings.ReplaceAll(str(values[key]), "$", "$$")) {
+			t.Fatalf("%s received wrong keys: %v", service, keys(env))
+		}
+		if str(obj(svc["x-incus"])[envKeysConfig]) != key {
+			t.Fatalf("%s lost its managed-key marker", service)
+		}
+	}
+}
+
+// A declared probe must report healthy before deployment is verified, while
+// services without a probe retain native process-state semantics.
+func TestComposeObservationWaitsForNativeHealth(t *testing.T) {
+	builds := NewOCIBuilds(t.TempDir(), nil)
+	id := strings.Repeat("a", 32)
+	dir := filepath.Join(builds.jobs, id)
+	os.MkdirAll(dir, 0o700)
+	if err := atomic(filepath.Join(dir, "job.json"), jsonFile(M{"id": id, "project": "web", "revision": "rev", "status": "imported", "intentHash": "intent", "services": []any{M{"service": "web"}}}), 0o600, ""); err != nil {
+		t.Fatal(err)
+	}
+	health, probe, runtime := "", true, composeRuntimeVersion
+	adapter := &composeAdapter{builds: builds, incus: func(_ time.Duration, args ...string) (string, error) {
+		if strings.HasPrefix(args[1], "/1.0/projects/") {
+			return string(jsonFile(M{"config": M{imageOwnerKey: "true", imageBackendKey: composeBackend, composeIntentKey: "intent", composeRuntimeKey: runtime}})), nil
+		}
+		config := M{composeServiceLabel: "web", "user.healthcheck.status": health}
+		if probe {
+			config["user.healthcheck.enabled"] = "true"
+			config["user.healthcheck.test"] = `["CMD","/bin/true"]`
+		}
+		raw, _ := json.Marshal([]any{M{"name": "web", "status": "Running", "config": config}})
+		return string(raw), nil
+	}}
+	for _, value := range []string{"", "unknown", "starting", "unhealthy", "stopped", "healthy"} {
+		health = value
+		got, err := adapter.observe("web", "web", "rev")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (str(got["action"]) == "noop") != (health == "healthy") {
+			t.Fatalf("health %q: %v", health, got)
+		}
+		if health != "healthy" && !strings.Contains(notRunning(got), "health check") {
+			t.Fatalf("health failure needs a useful explanation: %v", got)
+		}
+	}
+	probe, health = false, ""
+	got, err := adapter.observe("web", "web", "rev")
+	if err != nil || str(got["action"]) != "noop" {
+		t.Fatalf("no probe: %v %v", got, err)
+	}
+	runtime = ""
+	got, err = adapter.observe("web", "web", "rev")
+	if err != nil || len(list(got["recreates"])) != 1 {
+		t.Fatalf("old wiring must migrate through upstream recreation: %v %v", got, err)
+	}
+}

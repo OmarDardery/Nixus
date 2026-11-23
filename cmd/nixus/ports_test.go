@@ -44,14 +44,16 @@ func TestPortConflictsNameTheApp(t *testing.T) {
 	}
 }
 
-func TestComposeDNSSidecarSettings(t *testing.T) {
+func TestComposeControllerSettings(t *testing.T) {
 	args, env, err := composeUpCommand("incus-compose", []string{"-p", "x"}, M{"services": []any{}}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = args
-	if !strings.Contains(strings.Join(env, " "), "INCUS_COMPOSE_DNS_IMAGE="+defaultDNSImage) || !strings.Contains(defaultDNSImage, "@sha256:") {
-		t.Fatalf("the DNS sidecar image is pinned: %v", env)
+	if !strings.Contains(strings.Join(args, " "), "--healthd-scope global --no-dns") || strings.Contains(strings.Join(args, " "), "--no-healthd") {
+		t.Fatalf("native DNS and upstream health controller: %v", args)
+	}
+	if !strings.Contains(strings.Join(env, " "), "INCUS_COMPOSE_HEALTHD_IMAGE="+defaultHealthdImage) || !strings.Contains(defaultHealthdImage, "@sha256:") {
+		t.Fatalf("the health controller image is pinned: %v", env)
 	}
 	if !isDNSSidecar("web", "web-ic-dns") || isDNSSidecar("web", "web-1") {
 		t.Fatal("sidecar detection")

@@ -22,9 +22,10 @@ built-in connectivity prechecks described below. In **Environment Variables**,
 set `TUNNEL_TOKEN` to just the token from this tunnel's Cloudflare installation
 command. Enter it before the first deploy. Keep it out of Compose source,
 Dockerfile layers, command arguments, Git and troubleshooting transcripts.
-Nixus injects saved app variables when it creates the instances. Treat the whole app as a trusted boundary: the current Compose startup
-override supplies app variables to every service. File-delivery bindings alone
-do not restrict this startup environment.
+Nixus injects saved variables at instance creation and on later updates. Without
+secret bindings, every service receives every app variable. With bindings, only
+the bound service/instance receives each key, including at initial startup. Bind
+`TUNNEL_TOKEN` to `cloudflared` to keep it out of sibling containers.
 
 Set the tunnel's application route in the Cloudflare dashboard to, for example,
 `http://aiostreams:3000` when `aiostreams` is the web service in the **same app**.
@@ -34,9 +35,11 @@ resolve/reach this origin without an explicit networking design.
 
 Do not publish port 2000 or attach the connector to the LAN merely to make the
 tunnel connect. The metrics/readiness endpoint belongs on the private app
-network. Incus restart settings are provided, but Nixus currently disables
-incus-compose's health daemon; Docker-style continuous health/restart semantics
-are not fully provided by the deployment's short Running-state check.
+network. The pinned upstream incus-compose health controller enforces Compose
+restart policies and declared health checks. A Running process alone still does
+not prove a registered Tunnel session; use cloudflared's `/ready` or Cloudflare
+connection records. The official minimal image may need an external readiness
+probe rather than a shell-based Compose healthcheck.
 
 ## Diagnose a disconnected tunnel
 
@@ -84,6 +87,8 @@ curl or a shell. This does not prove the routed origin application is healthy.
 - Official cloudflared: authentication, edge discovery, QUIC/HTTP2 fallback,
   connection retry and readiness evidence.
 - Incus: private bridge address allocation, DHCP, dnsmasq and app NAT.
+- incus-compose: Compose interpretation, image builds, recreation, health checks
+  and restart scheduling through its shared controller.
 - NixOS: physical NICs/VLANs and the host's input/forwarding boundary.
 
 A single host-level `services.cloudflared` service is an alternative when one

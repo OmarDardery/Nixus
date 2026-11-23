@@ -207,3 +207,11 @@ console.log("Apps page verified");
   assert.deepEqual(JSON.parse(JSON.stringify(net[1].lan)), ["aiostreams"]);
   console.log("Network modes verified");
 })().catch(e => { console.error(e); process.exitCode = 1; });
+
+// Incus health is distinct from process state; job failures still take priority.
+for (const [health, expected] of [["unhealthy", "Degraded"], ["starting", "Starting"], ["unknown", "Starting"], ["healthy", "Running"], ["", "Running"]]) {
+  context.health = health;
+  assert.equal(vm.runInContext('appStatus({ name: "health-app", instances: [{ status: "Running", health, healthCheck: health !== "" }] })', context), expected);
+}
+assert.equal(vm.runInContext('appStatus({ name: "health-app", instances: [{ status: "Stopped", health: "unhealthy" }] })', context), "Stopped");
+assert.equal(vm.runInContext('appStatus({ name: "web", instances: [{ status: "Running", health: "healthy" }] })', context), "failed");

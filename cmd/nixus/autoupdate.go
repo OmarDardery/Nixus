@@ -509,7 +509,7 @@ func startImageUpdate(actor string, projectArg any) (M, error) {
 		return nil, Public("No unheld image update is available for this project")
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-image-update-" + project,
-		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "image-updates", "apply", project}, nil, 20*time.Second); err != nil {
 		return nil, Public("Could not start the update worker")
@@ -553,7 +553,7 @@ func startAllImageUpdates(actor string) (M, error) {
 		return nil, Public("All apps are up to date")
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-image-update-all",
-		"--property=RuntimeMaxSec=21600", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=21600", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "image-updates", "apply-all"}, nil, 20*time.Second); err != nil {
 		return nil, Public("App updates are already running")

@@ -25,7 +25,7 @@ inbound router ports is not the remedy for outbound Tunnel connections.
 | High | The OCI VM fixture imports the bootstrap role, so its successful app DNS checks do not exercise `modules/networking.nix` or `filterForward = true`. | Add a separate production-firewall VM check to CI. It uses real Incus bridges and isolated network namespaces to test DHCP, native service DNS, upstream DNS over UDP/TCP, NAT, TCP/UDP 7844, private/management denial, explicit private-access exceptions and connectivity after a firewall reload. It needs no public network or tunnel token. |
 | Medium | App subnet selection is a second IPAM implementation: a hashed slot in a fixed `10.120.0.0/16` pool, checking only network gateway addresses, without host routes or complete prefix overlaps. Malformed inventory could look empty. | Delegate allocation to Incus `network create … ipv4.address=auto`; read and validate the assigned gateway. Preserve existing addresses. Pass the resulting bridge to Compose as external, making Incus the single network authority. Refuse invalid/unavailable inventory and conflicting ownership. |
 | Medium | `privateAccess` exceptions precede private-range drops for registered native guest bridges, but not for `nxa-*` Compose app bridges. | Apply the same explicit destination/protocol/port exception to apps, retaining the default private-range and host-input restrictions. |
-| Medium | Running-state deployment verification is presented as application health. Nixus disables upstream `ic-healthd`; a running disconnected cloudflared can pass the current check. | Correct the operational documentation and use cloudflared's native prechecks, connection records and `/ready` for Tunnel health. Do not claim this change implements continuous health monitoring. |
+| Medium | Running-state deployment verification is presented as application health. Nixus disables upstream `ic-healthd`; a running disconnected cloudflared can pass the current check. | Enable the pinned upstream shared health/restart controller, respect native health results in reconciliation/UI, and coordinate intentional stops and cold exports with its stop-intent marker. Use cloudflared prechecks, connection records and `/ready` for actual Tunnel connectivity. |
 | Low | Networking documentation still describes a Docker applications VM, although Compose runs directly on Incus OCI containers. | Document the current data path, NAT owners, port input versus forwarding, macvlan limits and the existing preserved-bridge exemption. Add the Tunnel guide. |
 
 The network changes keep the reserved baseline bridge policy intact and do not
@@ -42,7 +42,7 @@ externally routed subnets.
 | Public hostnames, DNS routing and tunnel settings | Keep the existing remotely managed Cloudflare configuration. Do not add a second local ingress file or a custom Cloudflare reconciler. |
 | Tunnel connection retry, DNS/transport diagnostics, QUIC/HTTP2 selection | Use official cloudflared. Current releases provide these checks and a readiness endpoint; avoid a parallel Nixus connector-health implementation. |
 | Private subnet allocation, DHCP, bridge DNS and NAT | Use native Incus, including automatic subnet allocation. The default single-network app does not need an extra DNS daemon or proxy. |
-| App health/restart scheduling | Evaluate the pinned incus-compose `ic-healthd` integration before extending the custom three-sample Running-state check. Enabling it needs scoped identity, sidecar ownership and restore tests, not just deleting `--no-healthd`. |
+| App health/restart scheduling | Use pinned incus-compose `ic-healthd` with its shared controller identity, a dedicated API-only bridge, and explicit stop-intent coordination for backup/recovery. Native health results feed deployment verification and the UI. |
 | Multi-app, server-wide Tunnel | Consider maintained NixOS `services.cloudflared` when required. First change origin addressing: a host-level connector cannot assume that per-app short names resolve. For the current same-app origin, keeping the sidecar is simpler. |
 
 ## Remaining boundaries
@@ -55,25 +55,23 @@ externally routed subnets.
 - `preservedIncusBridges` accepts forwarding in both directions before private
   range drops. This is an intentional adoption compatibility exception, not
   equivalent to new-app isolation. Review its configured list.
-- Nixus currently distributes app startup variables to all Compose services.
-  Treat app siblings as one trust boundary; file secret bindings alone do not
-  isolate the startup environment. Scope-aware startup injection is follow-up
-  work before claiming per-service token isolation.
+- Unbound app variables are shared by all services. Explicit secret bindings
+  now restrict both startup environment and later delivery. Existing containers
+  are recreated on the next reviewed deployment to adopt the corrected wiring.
 - Multiple NICs/default routes, Wi-Fi macvlan, guest IPv6, externally routed
   networks and published host-port input permissions need their own topology
   tests. A tunnel connector normally needs none of these features.
 - The new VM check verifies transport reachability with echo listeners; it is
   not a Cloudflare authentication or QUIC-handshake test. Full Nix evaluation
-  and VM execution require CI; syntax checks alone do not establish them.
+  and VM execution are required CI gates; syntax checks alone do not establish them.
 
 References and the diagnostic sequence are in [Cloudflare Tunnel](../cloudflare-tunnel.md).
 
 ## Validation performed
 
-Go tests with the race detector and Go vet passed. All existing JavaScript
-checks passed. The documentation build checked 13 pages, internal links,
-anchors/assets and 10 search entries. Tree-sitter parsed the changed Nix files;
-the new VM fixture's embedded Python and 45 generated shell commands passed
-syntax checks. These are source-level checks. This environment has neither
-Nix nor KVM, so the new production-networking VM test and the modified OCI VM
-scenario have not been executed here and remain CI gates before merging.
+Go race tests, Go vet, all JavaScript checks and the documentation website's
+internal link/asset checks pass locally. Native Nix evaluation is available via
+a relocated store; KVM execution is delegated to GitHub Actions. The validation
+workflow runs source/contracts/packages first, then independently requires the
+portal, production-networking, OCI/cold-restore VM tests and host build. See the
+linked PR's final check runs for executed integration evidence.
