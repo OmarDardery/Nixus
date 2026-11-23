@@ -41,3 +41,10 @@ Custom orchestration remains for cross-system approval, scoped secret delivery,
 backup consistency groups and durable interruption recovery. Incus does not
 supply those application-level policies. Physical recovery and passthrough
 qualification still need the real hardware commissioning checks.
+
+Upstream prefetches its health, DNS and init/sleep tools even for apps with
+`--no-dns`. All three official images are pinned to release digests. Use the
+upstream `INCUS_COMPOSE_HEALTHD_IMAGE`, `INCUS_COMPOSE_DNS_IMAGE` and
+`INCUS_COMPOSE_SLEEP_IMAGE` environment variables for registry mirrors; Nixus
+forwards them to deployment/update workers. The offline VM fixture supplies all
+three official tools locally, including for commands invoked outside the broker.

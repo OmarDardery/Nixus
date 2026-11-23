@@ -9,6 +9,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -378,9 +379,9 @@ func applyImageUpdate(actor, project string) (M, error) {
 				}
 				return t.abandonDeployment(failedDeployment, "image update rollback")
 			},
-			// A failed service restarts on its own (boot.autorestart); stop the
-			// app so its state holds still while the rollback is planned.
-			func() error { stopApp(updateIncus, incusProject); return nil },
+			// Pause upstream restart intent before stopping the failed app so
+			// its state holds still while the rollback is planned.
+			func() error { return stopApp(updateIncus, incusProject) },
 			func() error { return republish(actor, project, previous) },
 			func() error { return restoreVolumes(updateIncus, incusProject, snaps) },
 			func() error { _, err := deployRevision(actor, project, previous); return err },
@@ -512,7 +513,7 @@ func startImageUpdate(actor string, projectArg any) (M, error) {
 		return nil, Public("No unheld image update is available for this project")
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-image-update-" + project,
-		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
+		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "image-updates", "apply", project}, nil, 20*time.Second); err != nil {
 		return nil, Public("Could not start the update worker")
@@ -556,7 +557,7 @@ func startAllImageUpdates(actor string) (M, error) {
 		return nil, Public("All apps are up to date")
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-image-update-all",
-		"--property=RuntimeMaxSec=21600", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
+		"--property=RuntimeMaxSec=21600", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "image-updates", "apply-all"}, nil, 20*time.Second); err != nil {
 		return nil, Public("App updates are already running")
@@ -565,11 +566,34 @@ func startAllImageUpdates(actor string) (M, error) {
 	return M{"started": true, "apps": pending}, nil
 }
 
-// stopApp force-stops every container of an app.
-func stopApp(incus incusFunc, incusProject string) {
-	for _, inst := range appInstances(incus, incusProject) {
+// stopApp pauses Compose restart intent before force-stopping an app for rollback.
+// Failed inventory, marker writes and stops must leave rollback incomplete.
+func stopApp(incus incusFunc, incusProject string) error {
+	raw, err := incus(0, "query", "/1.0/instances?recursion=1&project="+url.QueryEscape(incusProject))
+	if err != nil {
+		return Public("Could not verify app instances before rollback")
+	}
+	payload, err := parseJSON([]byte(raw))
+	instances, ok := payload.([]any)
+	if err != nil || !ok {
+		return Public("Invalid app inventory before rollback")
+	}
+	for _, raw := range instances {
+		inst := obj(raw)
+		name := str(inst["name"])
+		if name == "" {
+			return Public("Invalid app instance before rollback")
+		}
+		if str(jget(inst, "config", composeServiceLabel)) != "" {
+			if err := setComposeStopped(incus, incusProject, name, true); err != nil {
+				return Public("Could not pause the app restart policy before rollback")
+			}
+		}
 		if str(inst["status"]) != "Stopped" {
-			incus(0, "stop", str(inst["name"]), "--project", incusProject, "--force")
+			if _, err := incus(0, "stop", name, "--project", incusProject, "--force"); err != nil {
+				return Public("Could not stop the failed app before rollback")
+			}
 		}
 	}
+	return nil
 }

@@ -4,7 +4,12 @@
 # sandbox builds it, and the verified image is imported into Incus.
 { pkgs }:
 let
-  healthdImage = import ./healthd-image.nix { inherit pkgs; };
+  tools = import ./compose-tools.nix { inherit pkgs; };
+  toolEnv = {
+    INCUS_COMPOSE_HEALTHD_IMAGE = "localhost:5000/nixus/healthd:1";
+    INCUS_COMPOSE_DNS_IMAGE = "localhost:5000/nixus/dns:1";
+    INCUS_COMPOSE_SLEEP_IMAGE = "localhost:5000/nixus/sleep:1";
+  };
   defaults = import ../site-defaults.nix;
   settings = defaults // {
     hostName = "nixus-test"; cpuVendor = "intel";
@@ -70,7 +75,8 @@ let
       };
       networking.nftables.enable = true;
       # Surface isolated builder diagnostics in the journal.
-      systemd.services.nixus-admin-backend.environment = { NIXUS_OCI_VM_TEST = "1"; NIXUS_COMPOSE_HEALTHD_IMAGE = "localhost:5000/nixus/healthd:1"; };
+      environment.variables = toolEnv;
+      systemd.services.nixus-admin-backend.environment = toolEnv // { NIXUS_OCI_VM_TEST = "1"; };
       systemd.services.nixus-test-fixture = {
         wantedBy = [ "multi-user.target" ];
         after = [ "systemd-tmpfiles-setup.service" ];
@@ -118,6 +124,7 @@ in pkgs.testers.runNixOSTest {
     machine.start()
     machine.wait_for_unit("nixus-admin-backend.service")
     machine.wait_for_unit("docker-registry.service")
+    assert machine.succeed("printenv INCUS_COMPOSE_HEALTHD_IMAGE").strip() == "localhost:5000/nixus/healthd:1"
     machine.wait_for_unit("incus.service")
     machine.wait_for_open_port(5000)
 
@@ -125,7 +132,9 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${baseImage} docker://localhost:5000/nixus/base:1")
         digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
-        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${healthdImage} docker://localhost:5000/nixus/healthd:1")
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.healthd} docker://localhost:5000/nixus/healthd:1")
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.dns} docker://localhost:5000/nixus/dns:1")
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.sleep} docker://localhost:5000/nixus/sleep:1")
 
     with subtest("pin: unpinned references resolve to the registry's digest"):
         pinned = broker("/image-updates/pin", {"files": [{"path": "Dockerfile", "text": "FROM localhost:5000/nixus/base:1\nCOPY a /a\n"}]})

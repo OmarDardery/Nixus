@@ -237,7 +237,7 @@ func (m *Manager) spawn(phase, id string) error {
 	}
 	_, err = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-" + phase + "-" + id,
 		"--property=RuntimeMaxSec=10800", "--setenv=NIXUS_ROOT=" + m.root, "--setenv=NIXUS_STATE=" + m.state,
-		"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"), adminLauncher(), "admin", "job", phase, id}, nil, time.Minute)
+		"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"), adminLauncher(), "admin", "job", phase, id}, nil, time.Minute)
 	return err
 }
 

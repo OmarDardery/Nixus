@@ -395,7 +395,7 @@ func startAppsRepoDeploy(actor string, body M) (M, error) {
 	status["deploy"] = M{"status": "queued", "head": head, "actor": actor, "startedAt": now()}
 	saveAppsRepoStatus(status)
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-apps-repo-deploy",
-		"--property=RuntimeMaxSec=14400", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
+		"--property=RuntimeMaxSec=14400", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"),
 		adminLauncher(), "admin", "apps-repo", "deploy", head}, nil, 20*time.Second); err != nil {
 		return nil, Public("A repository deployment is already running")
 	}
@@ -789,7 +789,7 @@ var notifyAppsRepo = func() {
 	os.MkdirAll(appsRepoRoot(), 0o700)
 	os.WriteFile(filepath.Join(appsRepoRoot(), "dirty"), nil, 0o600)
 	run([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-apps-repo-push",
-		"--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"),
+		"--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"),
 		adminLauncher(), "admin", "apps-repo", "check"}, nil, 20*time.Second, nil, "")
 }
 

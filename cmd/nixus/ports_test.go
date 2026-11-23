@@ -45,6 +45,7 @@ func TestPortConflictsNameTheApp(t *testing.T) {
 }
 
 func TestComposeControllerSettings(t *testing.T) {
+	t.Setenv("INCUS_COMPOSE_HEALTHD_IMAGE", "")
 	args, env, err := composeUpCommand("incus-compose", []string{"-p", "x"}, M{"services": []any{}}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -57,5 +58,24 @@ func TestComposeControllerSettings(t *testing.T) {
 	}
 	if !isDNSSidecar("web", "web-ic-dns") || isDNSSidecar("web", "web-1") {
 		t.Fatal("sidecar detection")
+	}
+}
+
+func TestComposeUsesUpstreamToolMirrorVariables(t *testing.T) {
+	tools := map[string]string{"INCUS_COMPOSE_HEALTHD_IMAGE": defaultHealthdImage, "INCUS_COMPOSE_DNS_IMAGE": defaultDNSImage, "INCUS_COMPOSE_SLEEP_IMAGE": defaultSleepImage}
+	for name, fallback := range tools {
+		if !strings.Contains(fallback, "@sha256:") {
+			t.Fatalf("unpinned tool: %s", name)
+		}
+		t.Setenv(name, "localhost:5000/mirror:1")
+	}
+	_, env, err := composeUpCommand("incus-compose", nil, M{}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range tools {
+		if !strings.Contains(strings.Join(env, " "), name+"=localhost:5000/mirror:1") {
+			t.Fatalf("mirror not forwarded: %s", name)
+		}
 	}
 }

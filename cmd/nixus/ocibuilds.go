@@ -177,15 +177,17 @@ func (b *OCIBuilds) review(project, revision any, principal string) (M, error) {
 
 const composeServiceLabel = "user.label.incus-compose.service"
 
-// The health/restart controller is pinned to the Compose release. Mirrors and
-// offline test registries can override NIXUS_COMPOSE_HEALTHD_IMAGE.
+// Upstream prefetches all three tools even with --no-dns. Pin them together;
+// official INCUS_COMPOSE_*_IMAGE variables support mirrors/offline registries.
 const defaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:1.4.1@sha256:abb8261776b7a5eb966ca8db698e53dd7bf825ba1a630e2e6ebdbf1088f3d84b"
+const defaultDNSImage = "ghcr.io/lxc/incus-compose/ic-dns:1.4.1@sha256:854d0f70b643e7699e5abe39f86de30d58d148c5865489be67e7ea9b32d695a0"
+const defaultSleepImage = "ghcr.io/lxc/incus-compose/ic-sleep:1.4.1@sha256:dbf21a1f638ec9d8df9e09e0618bffae3f3364560b30a2cb2258d184924324ac"
 
-func composeHealthdImage() string {
-	if v := os.Getenv("NIXUS_COMPOSE_HEALTHD_IMAGE"); v != "" {
-		return v
+func composeToolImage(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
 	}
-	return defaultHealthdImage
+	return fallback
 }
 
 // isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
@@ -664,7 +666,7 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing", "--healthd-scope", "global", "--no-dns")
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
-		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeHealthdImage()}
+		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeToolImage("INCUS_COMPOSE_HEALTHD_IMAGE", defaultHealthdImage), "INCUS_COMPOSE_DNS_IMAGE=" + composeToolImage("INCUS_COMPOSE_DNS_IMAGE", defaultDNSImage), "INCUS_COMPOSE_SLEEP_IMAGE=" + composeToolImage("INCUS_COMPOSE_SLEEP_IMAGE", defaultSleepImage)}
 	return args, env, nil
 }
 
