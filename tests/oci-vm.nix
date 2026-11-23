@@ -420,6 +420,28 @@ in pkgs.testers.runNixOSTest {
         assert len(rrun) == 1 and rrun[0]["status"] == "Running", rrun
         assert machine.succeed("incus config get " + rrun[0]["name"] + " environment.REQUIRED --project needsenv").strip() == "present"
 
+    with subtest("services in one app reach each other by name, with no published ports"):
+        dockerfile = ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sh\", \"-c\", \"mkdir -p /www && echo reached-by-name > /www/index.html && exec httpd -f -p 8080 -h /www\"]\n").encode()
+        compose = b"services:\n  web:\n    build: .\n  client:\n    build: .\n    command: [\"/bin/sleep\", \"86400\"]\n"
+        dfiles = {"Dockerfile": dockerfile, "compose.yaml": compose}
+        dentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in dfiles.items()]
+        dp = broker("/project-import/prepare", {"project": "dnsapp", "files": dentries})
+        for p, d in dfiles.items():
+            broker("/project-import/chunk", {"id": dp["id"], "path": p, "offset": 0, "data": base64.b64encode(d).decode()})
+        ds = broker("/project-import/finish", {"id": dp["id"], "manifestHash": dp["manifestHash"]})
+        broker("/apps/deploy", {"project": "dnsapp", "kind": "source", "stagingId": ds["id"], "manifestHash": ds["manifestHash"]})
+        deadline = time.time() + 900
+        while broker("/apps")["dnsapp"]["status"] not in ("deployed", "failed"):
+            assert time.time() < deadline, broker("/apps")
+            time.sleep(3)
+        djob = broker("/apps")["dnsapp"]
+        if djob["status"] != "deployed":
+            machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
+        assert djob["status"] == "deployed", djob
+        names = sorted(i["name"] for i in json.loads(machine.succeed("incus list --project dnsapp --format=json")))
+        assert names == ["client", "web"], names
+        machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
+
     with subtest("delete app removes the Incus project and every Nixus record"):
         machine.fail("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "
                      "--data '{\"project\": \"needsenv\", \"confirm\": \"wrong\", \"_actor\": \"admin\"}' http://localhost/apps/delete")

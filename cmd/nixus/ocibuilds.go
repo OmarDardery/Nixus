@@ -373,16 +373,16 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err != nil {
 		return Failed("Could not read the variables entered for this app", err)
 	}
+	var names []string
+	for _, s := range list(build["services"]) {
+		names = append(names, str(obj(s)["service"]))
+	}
+	override := filepath.Join(scratch, "nixus-services.yaml")
+	if err := atomic(override, serviceOverride(names, values), 0o600, ""); err != nil {
+		return err
+	}
+	flags = append(flags, "-f", override)
 	if len(values) > 0 {
-		var names []string
-		for _, s := range list(build["services"]) {
-			names = append(names, str(obj(s)["service"]))
-		}
-		p := filepath.Join(scratch, "nixus-env.yaml")
-		if err := atomic(p, envOverride(names, values), 0o600, ""); err != nil {
-			return err
-		}
-		flags = append(flags, "-f", p)
 		fmt.Fprintf(os.Stderr, "nixus: deploying %s with variables %v\n", sourceProject, keys(values))
 	}
 	binary := os.Getenv("NIXUS_OCI_COMPOSE_BIN")
@@ -490,21 +490,34 @@ func appStartEnv(project string) (M, error) {
 	return values, nil
 }
 
-// envOverride is a Compose override that gives every service the app's
-// variables. JSON is valid YAML; "$" is doubled so Compose does not
-// interpolate values.
-func envOverride(services []string, values M) []byte {
+// serviceOverride is the Compose override Nixus adds to every app:
+//   - container_name is the service name, so each container is registered
+//     under it in the DNS of the app's own Incus network and services reach
+//     each other by name (http://aiostreams:3000), as with docker compose.
+//   - environment carries the app's variables; "$" is doubled so Compose does
+//     not interpolate them.
+//
+// JSON is valid YAML.
+func serviceOverride(services []string, values M) []byte {
 	env := map[string]string{}
 	for k, v := range values {
 		env[k] = strings.ReplaceAll(str(v), "$", "$$")
 	}
 	out := M{}
 	for _, name := range services {
-		out[name] = M{"environment": env}
+		svc := M{"container_name": instanceNameFor(name)}
+		if len(env) > 0 {
+			svc["environment"] = env
+		}
+		out[name] = svc
 	}
 	b, _ := json.Marshal(M{"services": out})
 	return b
 }
+
+// instanceNameFor turns a Compose service name into a valid Incus instance
+// and DNS name ("_" is not allowed in either).
+func instanceNameFor(service string) string { return strings.ReplaceAll(service, "_", "-") }
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah.

@@ -142,9 +142,22 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 
 // An app's variables are part of the Compose model, so each container is
 // created with them; "$" must reach the container literally.
+func TestServiceOverrideNamesContainersAfterServices(t *testing.T) {
+	var doc M
+	if err := json.Unmarshal(serviceOverride([]string{"web", "my_db"}, nil), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if got := obj(obj(doc["services"])["web"]); str(got["container_name"]) != "web" || got["environment"] != nil {
+		t.Fatalf("%v", got)
+	}
+	if got := obj(obj(doc["services"])["my_db"]); str(got["container_name"]) != "my-db" {
+		t.Fatalf("Incus names have no underscore: %v", got)
+	}
+}
+
 func TestEnvOverrideGivesEveryServiceTheVariables(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(envOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}), &doc); err != nil {
+	if err := json.Unmarshal(serviceOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}), &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"web", "tunnel"} {
