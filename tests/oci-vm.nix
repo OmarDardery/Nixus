@@ -390,7 +390,10 @@ in pkgs.testers.runNixOSTest {
         prun = json.loads(machine.succeed("incus list --project prefetch --format=json"))
         assert len(prun) == 1 and prun[0]["status"] == "Running", prun
         assert machine.succeed("incus exec " + prun[0]["name"] + " --project prefetch -- /bin/cat /srv/data/marker.txt") == "from-the-image\n"
-        machine.fail("journalctl -b --no-pager | grep -E 'apparmor=\"DENIED\".*gzip'")
+        code, denied = machine.execute("journalctl -b -k --no-pager | grep -E 'apparmor=\"DENIED\"'")
+        assert "gzip" not in denied, "AppArmor denied gzip:\n" + denied
+        if denied:
+            print("other AppArmor denials during the run:\n" + denied)
 
     with subtest("one-step app deploy, as the Apps page does it"):
         notes = {"Dockerfile": ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sleep\", \"86400\"]\n").encode()}
