@@ -429,3 +429,24 @@ func TestComposeObservationWaitsForNativeHealth(t *testing.T) {
 		t.Fatalf("old wiring must migrate through upstream recreation: %v %v", got, err)
 	}
 }
+
+func TestControllerEndpointForLocalIncus(t *testing.T) {
+	for _, tc := range []struct{ bind, gateway, want string }{
+		{"0.0.0.0:8443", "10.31.0.1/24", "https://10.31.0.1:8443"},
+		{"[::]:9443", "10.31.0.1/24", "https://10.31.0.1:9443"},
+		{"192.0.2.5:8443", "", "https://192.0.2.5:8443"},
+		{"127.0.0.1:8443", "10.31.0.1/24", ""},
+		{"0.0.0.0:8443", "", ""}, {"", "10.31.0.1/24", ""},
+	} {
+		fake := func(_ time.Duration, args ...string) (string, error) {
+			if args[0] == "config" {
+				return tc.bind, nil
+			}
+			return string(jsonFile(M{"config": M{"ipv4.address": tc.gateway}})), nil
+		}
+		got, err := composeControllerURL(fake)
+		if got != tc.want || (err != nil) != (tc.want == "") {
+			t.Fatalf("%s: %q %v", tc.bind, got, err)
+		}
+	}
+}

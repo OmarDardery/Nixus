@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -189,6 +191,32 @@ func composeHealthdImage() string {
 // isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
 // the project; it belongs to the project, not to any of the app's services.
 func isDNSSidecar(incusProject, name string) bool { return name == incusProject+"-ic-dns" }
+
+// A local Unix-socket client cannot use upstream's remote-URL fallback when
+// Incus listens on a wildcard. Supply the actual controller bridge endpoint.
+func composeControllerURL(incus incusFunc) (string, error) {
+	bind, err := incus(0, "config", "get", "core.https_address")
+	if err != nil {
+		return "", Public("Could not read the Incus HTTPS listener")
+	}
+	host, port, err := net.SplitHostPort(strings.TrimSpace(bind))
+	number, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || number < 1 || number > 65535 {
+		return "", Public("Configure a reachable Incus HTTPS listener before deploying Compose health policies")
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		network := incusQueryObj(incus, "/1.0/networks/icompose0?project=default")
+		cidr, err := netip.ParsePrefix(str(jget(network, "config", "ipv4.address")))
+		if err != nil || !cidr.Addr().Is4() || cidr.Addr().IsUnspecified() || cidr.Addr().IsLoopback() {
+			return "", Public("The Compose controller bridge is unavailable; apply the host configuration first")
+		}
+		host = cidr.Addr().String()
+	}
+	if address, err := netip.ParseAddr(host); err == nil && address.IsLoopback() {
+		return "", Public("The Incus HTTPS listener is loopback-only; the Compose controller needs a reachable listener")
+	}
+	return "https://" + net.JoinHostPort(host, port), nil
+}
 
 const composeStoppedKey = "user.healthcheck.stopped"
 
@@ -458,10 +486,15 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if binary == "" {
 		binary = "incus-compose"
 	}
+	controllerURL, err := composeControllerURL(a.incus)
+	if err != nil {
+		return err
+	}
 	args, env, err := composeUpCommand(binary, flags, build, scratch)
 	if err != nil {
 		return err
 	}
+	args = append(args, "--healthd-incus", controllerURL)
 	if previous != "" && (previous != str(build["intentHash"]) || storedLAN != wantLAN || str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion) {
 		// Name the services so upstream recreates instances while retaining
 		// external networking and the shared controller. Volumes stay intact.

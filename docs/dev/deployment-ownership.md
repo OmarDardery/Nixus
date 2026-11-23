@@ -17,6 +17,9 @@ the actual deployment mechanisms.
 
 The shared controller runs in the upstream `incus-compose` project. Its client
 certificate has host-wide Incus authority: treat it as host infrastructure.
+The local socket deployment supplies the controller an explicit reachable API
+URL, using the allocated bridge gateway for wildcard listeners and the actual
+configured HTTPS port. A loopback-only listener fails with an actionable error.
 Only its dedicated `icompose0` bridge gets DHCP/DNS and authenticated Incus API
 input access. Ordinary `nxa-*` app bridges retain management isolation. Do not
 attach untrusted workloads to the controller bridge/project. Nixus does not add
