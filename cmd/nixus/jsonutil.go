@@ -22,10 +22,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 )
 
 // M is a JSON object.
@@ -131,8 +129,6 @@ func isInt(v any) bool {
 	f, ok := num(v)
 	return ok && f == math.Trunc(f)
 }
-
-func boolean(v any) bool { b, _ := v.(bool); return b }
 
 func isTrue(v any) bool { b, ok := v.(bool); return ok && b }
 
@@ -253,17 +249,6 @@ func parseObject(raw []byte) (M, error) {
 }
 
 func now() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-
-// monotonic returns CLOCK_MONOTONIC seconds, shared by every process on a boot
-// (deadlines stored in state files are compared across processes).
-func monotonic() float64 {
-	var ts syscall.Timespec
-	_, _, errno := syscall.Syscall(syscall.SYS_CLOCK_GETTIME, 1, uintptr(unsafe.Pointer(&ts)), 0)
-	if errno != 0 {
-		return float64(time.Now().UnixNano()) / 1e9
-	}
-	return float64(ts.Sec) + float64(ts.Nsec)/1e9
-}
 
 func b64url(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 

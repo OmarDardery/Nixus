@@ -723,43 +723,6 @@ func runBackup() error {
 	return nil
 }
 
-// backupGenerations returns public summaries only.
-func backupGenerations(root string) []any {
-	result := []any{}
-	directory := filepath.Join(root, "generations")
-	if resolved, _ := filepath.EvalSymlinks(directory); resolved != directory || !isDir(directory) {
-		return result
-	}
-	entries, _ := os.ReadDir(directory)
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(names)))
-	for _, name := range names {
-		p := filepath.Join(directory, name)
-		inventory := filepath.Join(p, "inventory.json")
-		if !fullmatch(generationRe, name) || isSymlink(p) || isSymlink(inventory) || !isFile(inventory) {
-			continue
-		}
-		data, err := mustReadObj(inventory)
-		if err != nil || data["created"] == nil || data["guests"] == nil || data["archiveSHA256"] == nil {
-			continue
-		}
-		coverage := data["coverage"]
-		if coverage == nil {
-			coverage = "all"
-		}
-		excludedList := data["excluded"]
-		if excludedList == nil {
-			excludedList = []any{}
-		}
-		result = append(result, M{"id": name, "created": data["created"], "coverage": coverage, "excluded": excludedList,
-			"guests": len(list(data["guests"])), "archives": len(obj(data["archiveSHA256"]))})
-	}
-	return result
-}
-
 // backupMain: `nixus backup [--recover]`; --recover restarts guests a cancelled export stopped.
 func backupMain(args []string) int {
 	syscall.Umask(0o077)

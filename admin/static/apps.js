@@ -21,15 +21,6 @@ const APP_TEMPLATES = {
   ],
 };
 
-const NIX_TEMPLATES = {
-  native: name => "{ ... }: {\n  nixus.project = {\n    backend = \"incus-native\";\n" +
-    "    volumes.data.size = \"10GiB\";\n    instances." + name + " = {\n      image = \"images:debian/13\";\n" +
-    "      cpus = 2;\n      memory = \"2GiB\";\n      disks.data = { volume = \"data\"; path = \"/srv/data\"; };\n" +
-    "      # usb.device = { vendorId = \"1d50\"; productId = \"614e\"; };\n    };\n  };\n}\n",
-  compose: () => "{ ... }: {\n  nixus.project = {\n    backend = \"incus-compose\";\n" +
-    "    updates = { policy = \"auto\"; window = \"02:00-05:00\"; healthSeconds = 60; };\n  };\n}\n",
-};
-
 // nixInstance turns the VM/container form into a native app declaration.
 function nixInstance(name, o) {
   const usb = /^[0-9a-f]{4}:[0-9a-f]{4}$/.test(o.usb || "")

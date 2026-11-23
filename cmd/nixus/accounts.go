@@ -17,8 +17,6 @@ var hex64 = re(`[0-9a-f]{64}`)
 
 func sha256str(s string) string { return sha256hex([]byte(s)) }
 
-func present(name string) bool { return lexists(filepath.Join(STATE, name)) }
-
 // --- local host administrator proof ---------------------------------------
 
 const pamService = "nixus-enrollment"
