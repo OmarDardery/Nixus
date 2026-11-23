@@ -110,12 +110,16 @@ func setupBackups(actor string, body M) (M, error) {
 		verification = "metadata"
 	}
 	result := M{"repository": repository}
+	pendingPassword := backupPasswordPth + ".unacknowledged"
 	if !isFile(backupPasswordPth) {
 		raw := make([]byte, 32)
 		if _, err := rand.Read(raw); err != nil {
 			return nil, err
 		}
 		password := base64.RawURLEncoding.EncodeToString(raw)
+		if err := writeSecretFile(pendingPassword, []byte(password+"\n")); err != nil {
+			return nil, err
+		}
 		if err := writeSecretFile(backupPasswordPth, []byte(password+"\n")); err != nil {
 			return nil, err
 		}
@@ -144,6 +148,12 @@ func setupBackups(actor string, body M) (M, error) {
 	policy := backupPolicyText(repository, schedule, verification, body["data"] != false, rcloneFile, envFile)
 	if _, err := saveBackupPolicy(actor, policy); err != nil && !strings.Contains(publicError(err), "no changes") {
 		return nil, err
+	}
+	if pending, err := os.ReadFile(pendingPassword); err == nil {
+		result["password"] = strings.TrimSpace(string(pending))
+		if err := os.Remove(pendingPassword); err != nil {
+			return nil, err
+		}
 	}
 	audit("backup-destination-set", M{"principal": actor, "kind": body["kind"]})
 	return result, nil

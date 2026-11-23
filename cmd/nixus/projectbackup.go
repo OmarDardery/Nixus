@@ -103,7 +103,7 @@ func publishedProjectPolicy(t *ProjectTransactions) (M, M, error) {
 		return nil, nil, nil
 	}
 	live, err := validateWorkspace(t.workspace, true)
-	if err != nil || str(live["sourceHash"]) != str(record["candidateHash"]) {
+	if err != nil || (str(live["sourceHash"]) != str(record["candidateHash"]) && !approvedSecretChanges(t, id, live)) {
 		return nil, nil, Public("The live project workspace differs from its published review; re-review before backups run")
 	}
 	dir, _ := t.job(id)
@@ -113,6 +113,35 @@ func publishedProjectPolicy(t *ProjectTransactions) (M, M, error) {
 		return nil, nil, err
 	}
 	return policy, inventory, nil
+}
+
+// Accept secret publications only when their durable authenticated index matches
+// the changed bytes. All other workspace bytes must still match the review.
+func approvedSecretChanges(t *ProjectTransactions, id string, live M) bool {
+	dir, err := t.job(id)
+	if err != nil {
+		return false
+	}
+	baseline, err := validateWorkspace(filepath.Join(dir, "source"), true)
+	if err != nil {
+		return false
+	}
+	expected := cloneM(obj(baseline["files"]))
+	actual := obj(live["files"])
+	for _, name := range keys(obj(live["projects"])) {
+		index := readObj(filepath.Join(t.state, "project-secrets", "projects", name, "index.json"))
+		cipherPath := name + "/secrets.enc.yaml"
+		if str(obj(actual[cipherPath])["sha256"]) != str(index["revision"]) || str(index["revision"]) == "" {
+			continue
+		}
+		expected[cipherPath] = actual[cipherPath]
+		policyPath := name + "/.sops.yaml"
+		recipients, ok := anyStrings(index["recipients"])
+		if ok && str(obj(actual[policyPath])["sha256"]) == sha256hex(sopsPolicy(recipients)) {
+			expected[policyPath] = actual[policyPath]
+		}
+	}
+	return equalJSON(expected, actual)
 }
 
 func includedProjects(policy, inventory M) []string {
@@ -315,6 +344,18 @@ var resticRun = func(env []string, timeout time.Duration, args ...string) error 
 	return nil
 }
 
+func backupHostID() (string, error) {
+	path := filepath.Join(STATE, "backup-host-id")
+	if raw, err := os.ReadFile(path); err == nil && fullmatch(jobID, strings.TrimSpace(string(raw))) {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	id := tokenHex(16)
+	if err := atomic(path, []byte(id), 0o600, ""); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 func offHostBackup(policy M, paths []string) error {
 	env, err := resticEnv(policy)
 	if err != nil {
@@ -328,11 +369,15 @@ func offHostBackup(policy M, paths []string) error {
 			return err
 		}
 	}
-	if err := resticRun(env, 12*time.Hour, append([]string{"backup", "--tag", "nixus-project", "--host", "nixus"}, paths...)...); err != nil {
+	host, err := backupHostID()
+	if err != nil {
+		return err
+	}
+	if err := resticRun(env, 12*time.Hour, append([]string{"backup", "--tag", "nixus-project", "--tag", "nixus-project-complete", "--host", host}, paths...)...); err != nil {
 		return err
 	}
 	r := obj(policy["retention"])
-	return resticRun(env, 2*time.Hour, "forget", "--tag", "nixus-project", "--prune",
+	return resticRun(env, 2*time.Hour, "forget", "--tag", "nixus-project", "--host", host, "--group-by", "host", "--prune",
 		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"]))
 }
 
@@ -406,7 +451,11 @@ func runProjectBackup(force bool) (M, error) {
 				return err
 			}
 			defer release()
-			return runBackup()
+			selected := map[string]bool{}
+			for _, name := range includedProjects(policy, inventory) {
+				selected[str(jget(inventory, "projects", name, "incusProject"))] = true
+			}
+			return runSelectedBackup(selected)
 		}()
 		if err != nil {
 			ok = false
@@ -420,6 +469,11 @@ func runProjectBackup(force bool) (M, error) {
 		}
 	} else {
 		setPhase(status, "data", "skipped", "data excluded by policy")
+	}
+	if !ok {
+		status["lastAttempt"] = now()
+		setPhase(status, "offHost", "skipped", "required data export failed")
+		return status, Public("Required data export failed; no partial snapshot uploaded")
 	}
 	if err := offHostBackup(policy, paths); err != nil {
 		ok = false
@@ -438,10 +492,11 @@ func runProjectBackup(force bool) (M, error) {
 	}
 	pruneSnapshots(2)
 	status["restoreTest"] = "not performed; run an isolated restore drill to qualify recovery"
+	completed := now()
 	if ok {
-		status["lastSuccess"] = now()
+		status["lastSuccess"] = completed
 	}
-	status["lastAttempt"] = now()
+	status["lastAttempt"] = completed
 	writeJSONMode(projectBackupStatusPath(), status, 0o640, "")
 	audit("project-backup-finished", M{"generation": generation, "success": ok})
 	if !ok {

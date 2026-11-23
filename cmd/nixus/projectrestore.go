@@ -333,7 +333,7 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	args := []string{"restore", snapshot, "--target", target}
 	if snapshot == "latest" {
-		args = append(args, "--tag", "nixus-project")
+		args = append(args, "--tag", "nixus-project-complete")
 	}
 	if err := resticRun(env, 12*time.Hour, args...); err != nil {
 		return failWith("download", err)

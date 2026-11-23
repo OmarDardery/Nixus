@@ -118,16 +118,23 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(values) == 0 {
-		return 0, nil
-	}
 	instances := appInstances(updateIncus, str(project["incusProject"]))
 	targets, err := secretTargets(project, values, instances)
 	if err != nil {
 		return 0, err
 	}
 	for _, inst := range instances {
-		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), values); err != nil {
+		instanceValues := values
+		if len(obj(jget(project, "secrets", "bindings"))) > 0 {
+			instanceValues = M{}
+			for _, raw := range obj(jget(project, "secrets", "bindings")) {
+				b := obj(raw)
+				if str(b["instance"]) == str(inst["name"]) || str(b["instance"]) == str(inst["service"]) {
+					instanceValues[str(b["key"])] = values[str(b["key"])]
+				}
+			}
+		}
+		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), instanceValues); err != nil {
 			return 0, err
 		}
 	}

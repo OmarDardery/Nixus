@@ -12,7 +12,7 @@ What happens:
 
 1. Values are encrypted with [SOPS](https://github.com/getsops/sops) to the
    server's [age](https://age-encryption.org/) key and stored as
-   `secrets.enc.yaml` next to the app. Plaintext never touches disk.
+   `secrets.enc.yaml` next to the app. Runtime environment delivery also stores plaintext values in the root-accessible Incus database and native instance export archives. Local export staging is sensitive and root-only; restic encrypts it before off-host storage. The separate backup inventory omits environment values.
 2. Every container of the app gets them as **environment variables** and as
    files in `/run/secrets/<KEY>` (Docker's secrets convention, mode 0444).
 3. Containers whose variables changed are restarted.

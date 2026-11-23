@@ -74,7 +74,8 @@ var injectEnv = func(incusProject, instance string, values M) (bool, error) {
 	}
 	config := cloneM(obj(current["config"]))
 	for k, v := range patch {
-		if str(v) == "" && strings.HasPrefix(k, "environment.") {
+		_, retained := values[strings.TrimPrefix(k, "environment.")]
+		if !retained && strings.HasPrefix(k, "environment.") {
 			delete(config, k)
 		} else {
 			config[k] = v

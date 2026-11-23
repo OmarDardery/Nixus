@@ -316,7 +316,7 @@ func publicProgress(text string) string {
 var workerUnit = re(`nixus-(?:build|apply|rollback|operation|deploy|project-deploy|oci-build)-[0-9a-f]{32}`)
 
 func workerActive(unit string) (bool, error) {
-	if !fullmatch(workerUnit, unit) {
+	if !fullmatch(workerUnit, unit) && !fullmatch(re(`nixus-app-deploy-[a-z][a-z0-9-]{0,62}`), unit) {
 		return false, Hidden("Invalid worker unit")
 	}
 	res, err := run([]string{"systemctl", "is-active", "--quiet", unit}, nil, 10*time.Second, nil, "")
