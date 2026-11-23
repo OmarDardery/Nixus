@@ -53,6 +53,15 @@ in {
       profiles = [ base ];
     };
   };
+  # NixOS wraps gzip: bin/gzip is a script that execs bin/.gzip-wrapped. Incus
+  # generates an AppArmor profile per archive operation (it includes
+  # abstractions/base) that allows only the resolved `gzip`, so unpacking an
+  # image's gzip layer was denied at the wrapped binary (#117). Allow exactly
+  # that file, taken from the same gzip package Incus runs with, so it follows
+  # store-path changes on rebuild.
+  security.apparmor.includes."abstractions/base" = lib.mkIf config.security.apparmor.enable (lib.mkAfter ''
+    ${pkgs.gzip}/bin/.gzip-wrapped mixr,
+  '');
   systemd.services.nixus-incus-audit = {
     description = "Record Incus lifecycle events in the persistent journal";
     wantedBy = [ "multi-user.target" ];
