@@ -444,7 +444,7 @@ in pkgs.testers.runNixOSTest {
         resolv = machine.succeed("incus exec client --project dnsapp -- cat /etc/resolv.conf")
         gateway = json.loads(machine.succeed("incus query /1.0/networks/" + json.loads(machine.succeed("incus query '/1.0/instances/client?project=dnsapp'"))["expanded_devices"]["eth0"]["network"] + "?project=dnsapp"))["config"]["ipv4.address"].split("/")[0]
         assert "nameserver " + gateway in resolv, resolv
-        machine.wait_until_succeeds("incus exec client --project dnsapp -- ip -4 addr show eth0 | grep -q 'inet 10.120.'", timeout=120)
+        machine.wait_until_succeeds("incus exec client --project dnsapp -- ip -4 addr show eth0 | grep -q 'inet '", timeout=120)
         machine.wait_until_succeeds("incus exec client --project dnsapp -- wget -qO- http://web:8080/ | grep -q reached-by-name", timeout=120)
 
     with subtest("a service gets its own LAN address when the app asks for it"):

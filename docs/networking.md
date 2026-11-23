@@ -1,9 +1,13 @@
 # Networking and IP management
 
-The default keeps the physical management NIC intact. Incus creates a separate private
-bridge; NixOS owns its DHCP/DNS input permissions, forwarding and NAT. Incus bridge
-firewall/NAT rules are disabled so there is one explicit host policy. The NixOS nftables
-module does not flush unrelated tables. Docker's normal firewall runs inside the VM only.
+The physical management NIC stays intact. Compose apps run directly as Incus
+OCI containers, without a Docker daemon or an applications VM. Each app uses
+one private managed `nxa-*` bridge. Incus supplies its subnet, DHCP, DNS and
+NAT; NixOS permits DNS/DHCP input and enforces the outer forwarding boundary.
+The reserved `incusbr0` for native guests retains its separate host-owned NAT
+policy. NixOS does not flush Incus's nftables tables during firewall reload.
+
+For public app access, see [Cloudflare Tunnel](cloudflare-tunnel.md).
 
 ## Illustrative address plan — adapt every value
 
@@ -16,7 +20,7 @@ module does not flush unrelated tables. Docker's normal firewall runs inside the
 | Incus bridge | `10.77.0.1/24` | Host-side address for private guests/DNS/DHCP |
 | Incus DHCP | `10.77.0.100`–`10.77.0.199` | Dynamic guest reservations |
 | Example guest | `10.77.0.20` | Static DHCP reservation outside the range |
-| Compose project networks | Incus networks created by incus-compose | Internal app services, not LAN addresses |
+| Compose project networks | Incus-allocated `nxa-*` bridges | Internal app services, not LAN addresses |
 | Public hostname | `app.example.com` | Cloudflare endpoint routed to an application port |
 
 Guests use DHCP normally; Incus assigns the same reserved address
@@ -60,23 +64,33 @@ NICs can use an existing bridge's `nictype = "bridged"` and `parent = "br-apps"`
 attach an Incus-managed `network` and an unmanaged `parent` in the same NIC definition.
 No interface, VLAN tag, router route or IPv6 prefix is guessed here.
 
-## Docker networking choices
+## Compose networking choices
 
-Ordinary Docker bridge addresses are private to the VM's network namespace and its routing/NAT
-rules; they are not advertised to the LAN. Services in one Compose project resolve one another
-by service name (`postgres`, `redis`), without publishing their database/cache ports.
+Services in the same app reach one another by their Incus container names
+(the Compose service name, with underscores changed to hyphens). Native Incus
+bridge DNS handles those names and forwards external queries through the host's
+DNS configuration. Nixus sets this resolver before the OCI process starts.
+There is no second DNS sidecar in the default single-network setup.
 
-| Method | Trade-off |
+| Method | Use it for |
 |---|---|
-| Publish app port on VM | Simple; one stable guest IP and internal Compose network; default |
-| Reverse proxy inside VM | Useful for many hostnames/HTTPS endpoints on one VM IP; Cloudflare can also route per hostname/port directly |
-| macvlan | Gives containers LAN MAC/IPs, needs L2 support/IPAM; host-to-container communication needs extra handling |
-| ipvlan | Fewer MACs, still requires deliberate L2/L3 routing and IPAM |
-| Routed Docker networks | Possible with router routes and Docker forwarding policy; more operational work |
-| One VM/system container per application | Clear IP/resource/security boundary; more guest overhead; create additional applications guests as needed |
+| Same app, private bridge | Web service, database and cloudflared talking by name; no published database or tunnel port |
+| Publish an application port | Direct access on the host address; inspect the host input policy separately |
+| Cloudflare Tunnel in the same app | Public hostnames without inbound router ports or a LAN NIC on the connector |
+| Optional LAN NIC | A genuine router-managed address when needed; macvlan requires wired L2 support and cannot normally talk directly to its parent host |
+| Native Incus bridge/VLAN and ACLs | Explicit guest routing and isolation beyond the single app network |
 
-Do not allocate a LAN IP to PostgreSQL/Redis just to make a dashboard show individual addresses.
-Use one guest IP per application isolation boundary and Compose networking for its components.
+The host's forwarding policy does not automatically open a port published by
+an Incus proxy device: a non-NAT proxy listens on the host and takes the input
+path. A port binding, a firewall allowance and end-to-end reachability are
+separate facts. Keep host management ports private.
+
+New app bridges are created through Incus with automatic address allocation,
+then passed to Compose as external networks. Existing app bridge addresses are
+retained; redeploying does not renumber them. Incus remains the single address
+allocator and its network is removed by the app deletion path. Review VPN and
+router routes that are not present on the server; automatic allocation cannot
+know disconnected or externally configured networks.
 
 IPv4 is the supported default. Host IPv6 policy can follow the installer; the Incus bridge has
 `ipv6.address = "none"`. Enable guest IPv6 only with an allocated routed prefix, IPv6 firewall
@@ -120,8 +134,11 @@ to the LAN. Configure guest/native Incus policy as appropriate.
 Create additional private managed networks in Incus. Register their bridge names
 under `guestInterfaces` for outer host firewall integration. Incus owns NAT on
 those additional networks; only the reserved `incusbr0` baseline uses host NAT.
-Use `privateAccess` for selected guest access to LAN DNS/NTP/application servers.
-It never grants host management input. Guest Internet forwarding is IPv4-only;
+Use `privateAccess` for selected native-guest and Compose-app access to LAN DNS/NTP/application servers.
+It never grants host management input. Bridges in `preservedIncusBridges` are a compatibility
+exception: their forwarding is accepted in both directions before the private
+range drops. They retain their previous trust boundary and are not covered by
+the new-app isolation claim. Review this list after adoption. Guest Internet forwarding is IPv4-only;
 IPv6 needs a separate routed-prefix and firewall design.
 
 No demo-specific port is opened automatically. Without a router route, use native

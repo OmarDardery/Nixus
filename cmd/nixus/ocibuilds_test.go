@@ -270,22 +270,43 @@ func TestLANServicesAndNIC(t *testing.T) {
 
 // Every container is created with its app network's gateway as DNS server.
 func TestAppGatewayAndOverride(t *testing.T) {
-	nets := `[{"name":"incusbr0","config":{"ipv4.address":"10.0.100.1/24"}},{"name":"` + appNetworkName("aio") + `","config":{"ipv4.address":"10.120.7.1/24"}}]`
-	incus := func(_ time.Duration, args ...string) (string, error) { return nets, nil }
-	if gw, err := appGateway(incus, "aio"); err != nil || gw != "10.120.7.1" {
-		t.Fatalf("an existing app keeps its network: %q %v", gw, err)
+	existing := M{"name": appNetworkName("aio"), "managed": true, "type": "bridge", "config": M{"ipv4.address": "10.120.7.1/24", "ipv4.nat": "true"}}
+	allocated := M{"name": appNetworkName("web"), "managed": true, "type": "bridge", "config": M{"ipv4.address": "10.202.3.1/24", "ipv4.nat": "true", projectNameKey: "web"}}
+	created := false
+	incus := func(_ time.Duration, args ...string) (string, error) {
+		switch args[0] {
+		case "network":
+			if strings.Join(args, " ") != "network create "+appNetworkName("web")+" --project default --type=bridge ipv4.address=auto ipv4.nat=true ipv6.address=none "+projectNameKey+"=web" {
+				t.Fatalf("%v", args)
+			}
+			created = true
+			return "", nil
+		case "query":
+			if strings.Contains(args[1], "recursion=1") {
+				if created {
+					return canonical([]any{existing, allocated}), nil
+				}
+				return canonical([]any{existing}), nil
+			}
+			return canonical(allocated), nil
+		}
+		t.Fatalf("unexpected call: %v", args)
+		return "", nil
+	}
+	if gw, err := appGateway(incus, "aio"); err != nil || gw != "10.120.7.1" || created {
+		t.Fatalf("existing network changed: %q %v", gw, err)
 	}
 	gw, err := appGateway(incus, "web")
-	if err != nil || !strings.HasPrefix(gw, "10.120.") || gw == "10.120.7.1" {
-		t.Fatalf("a new app gets a free /24: %q %v", gw, err)
+	if err != nil || gw != "10.202.3.1" || !created {
+		t.Fatalf("native allocation: %q %v", gw, err)
 	}
-	if again, _ := appGateway(incus, "web"); again != gw {
-		t.Fatal("the choice is stable")
+	if again, err := appGateway(incus, "web"); err != nil || again != gw {
+		t.Fatalf("allocated network changed: %q %v", again, err)
 	}
 	var doc M
 	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
 	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "oci.dns.nameservers")) != "10.120.9.1" ||
-		str(jget(doc, "networks", "default", "x-incus", "ipv4.address")) != "10.120.9.1/24" ||
+		!isTrue(jget(doc, "networks", "default", "external")) ||
 		!strings.HasPrefix(str(jget(doc, "networks", "default", "name")), "nxa-") || len(appNetworkName("a-very-long-app-name-here")) != 12 {
 		t.Fatalf("%v", doc)
 	}
@@ -311,5 +332,28 @@ func TestSettledWaitsForStableRunning(t *testing.T) {
 	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
 	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart")) != "true" {
 		t.Fatalf("%v", doc)
+	}
+}
+
+func TestAppGatewayFailsClosed(t *testing.T) {
+	for _, raw := range []string{"null", "{}", "not-json", `[{}]`,
+		`[{"name":"` + appNetworkName("web") + `","type":"bridge","managed":true,"config":{"ipv4.address":"none","ipv4.nat":"true"}}]`,
+		`[{"name":"` + appNetworkName("web") + `","type":"bridge","managed":true,"config":{"ipv4.address":"10.1.1.1/24","ipv4.nat":"false"}}]`,
+		`[{"name":"` + appNetworkName("web") + `","type":"bridge","managed":true,"config":{"ipv4.address":"10.1.1.1/24","ipv4.nat":"true","user.nixus.project":"someone-else"}}]`,
+	} {
+		mutations := 0
+		fake := func(_ time.Duration, args ...string) (string, error) {
+			if args[0] != "query" {
+				mutations++
+			}
+			return raw, nil
+		}
+		if _, err := appGateway(fake, "web"); err == nil || mutations != 0 {
+			t.Fatalf("unsafe inventory accepted: %s (mutations=%d err=%v)", raw, mutations, err)
+		}
+	}
+	fake := func(_ time.Duration, args ...string) (string, error) { return "", Public("offline") }
+	if _, err := appGateway(fake, "web"); err == nil {
+		t.Fatal("unavailable inventory accepted")
 	}
 }

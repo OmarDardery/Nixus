@@ -75,6 +75,8 @@ jobs:
           nix build '.#nixosConfigurations.validation-setup.config.systemd.units."nixus-ui.service".unit' --no-link
       - name: Boot the Go broker and portal in a NixOS VM
         run: nix build .#checks.x86_64-linux.portal --no-link -L
+      - name: Production networking DNS, NAT and Tunnel transport test
+        run: nix build .#checks.x86_64-linux.networking --no-link -L
       - name: OCI build VM test
         run: nix build .#checks.x86_64-linux.oci --no-link -L
       - name: Build complete Incus-native hypervisor
