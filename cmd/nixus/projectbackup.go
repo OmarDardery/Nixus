@@ -310,7 +310,7 @@ func resticEnv(policy M) ([]string, error) {
 var resticRun = func(env []string, timeout time.Duration, args ...string) error {
 	res, err := run(append([]string{"restic"}, args...), nil, timeout, env, "")
 	if err != nil || res.Code != 0 {
-		return Public("restic " + args[0] + " failed; check the destination, credentials and quota")
+		return cmdFailed("restic "+args[0]+" failed; check the destination, credentials and quota", res, err)
 	}
 	return nil
 }

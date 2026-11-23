@@ -114,3 +114,16 @@ console.log("Apps page verified");
   assert.doesNotMatch(empty, /id="apps-filter"/, "no search box without apps");
   console.log("Apps empty state verified");
 }
+
+// Deploying over an existing app's name asks first.
+(async () => {
+  const calls = [];
+  const ctx3 = vm.createContext({ setTimeout: () => 0, state: { page: "projects" }, shell: () => {}, api: async (r, b) => { calls.push(r); return { id: "x", manifestHash: "y" }; }, File, console, esc: context.esc, card: context.card, title: context.title,
+    document: { querySelector: id => id === "#app-password" ? { value: "pw" } : id === "#app-name" ? { value: "web" } : null, querySelectorAll: () => [] } });
+  vm.runInContext(read("apps.js") + "\nthis.appView = appView;", ctx3);
+  vm.runInContext('Object.assign(appView, { view: "new", name: "web", mode: "nix", nix: "{}", overview: { projects: [{ name: "web", instances: [] }] } })', ctx3);
+  await vm.runInContext("deployApp()", ctx3);
+  assert.match(vm.runInContext("appView.error", ctx3), /already exists/);
+  assert.ok(!calls.includes("apps/deploy"), "nothing is sent before the second confirmation");
+  console.log("Replace confirmation verified");
+})().catch(e => { console.error(e); process.exitCode = 1; });

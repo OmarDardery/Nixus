@@ -37,7 +37,7 @@ function gated(stepId, reason, html) {
 
 function setupBanner() {
   const progress = setupView.progress;
-  if (!progress || progress.complete || state.page === "setup") return "";
+  if (!progress || progress.complete || state.page === "setup" || state.page === "overview") return ""; // Overview shows the next step itself
   return `<div class="banner"><b>Setup ${esc(progress.completed)}/${esc(progress.total)}</b> Finish the remaining setup steps to complete your hypervisor. <button class="small" data-go="setup">Continue setup</button></div>`;
 }
 

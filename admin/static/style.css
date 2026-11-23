@@ -649,6 +649,8 @@ details.card.panel > .panel-body { padding: 4px 18px 18px; border-top: 1px solid
 .quick-strip .quick-actions > div { display: flex; flex-direction: column; gap: 4px; }
 .quick-strip .quick-actions small { color: var(--muted); font-size: 11px; }
 .quick-strip .quick-password { margin: 0; min-width: 180px; flex: 1; max-width: 260px; }
+.quick-strip .quick-password input { height: 36px; }
+.quick-strip .quick-actions > div button { height: 36px; }
 .stats { margin-bottom: 12px; }
 
 /* ---- Staged bar and notifications -------------------------------------- */
@@ -788,7 +790,7 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
 .drafts li + li { border-top: 1px solid var(--line); }
 .draft-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px dashed var(--line-strong); color: var(--muted); }
 .draft-name { font-weight: 500; font-size: 14px; }
-.draft-when { color: var(--muted); font-size: 12.5px; flex: 1; }
+.draft-when { color: var(--muted); font-size: 12.5px; flex: 1; margin-left: 4px; }
 .draft-do { display: flex; gap: 4px; }
 .apps-empty { text-align: center; padding: 56px 24px; border: 1px dashed var(--line-strong); border-radius: 12px; }
 .apps-empty h2 { font: 600 18px/1.3 var(--body); margin: 0 0 6px; }
@@ -806,3 +808,6 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
   .draft-when { display: none; }
   .draft-name { flex: 1; }
 }
+.draft-password { max-width: 320px; margin: 0 0 10px; }
+.draft-env { font-size: 11.5px; color: var(--muted); }
+.draft-name-fill { flex: 0; }

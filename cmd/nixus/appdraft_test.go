@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,14 +23,14 @@ func TestDraftRoundTripAndList(t *testing.T) {
 	if strings.Contains(string(jsonFile(listDrafts())), "services") {
 		t.Fatal("the list must not return file contents")
 	}
-	got, err := readDraft("notes")
+	got, err := readDraft("notes", false)
 	if err != nil || str(obj(list(got["entries"])[0])["text"]) != "services: {}\n" || got["mode"] != "files" {
 		t.Fatalf("read: %v %v", got, err)
 	}
 	if _, err := deleteDraft("notes"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readDraft("notes"); err == nil {
+	if _, err := readDraft("notes", false); err == nil {
 		t.Fatal("deleted draft still readable")
 	}
 }
@@ -46,7 +47,7 @@ func TestDraftValidation(t *testing.T) {
 			t.Fatalf("%s accepted", name)
 		}
 	}
-	if _, err := readDraft("../etc"); err == nil {
+	if _, err := readDraft("../etc", false); err == nil {
 		t.Fatal("path traversal accepted")
 	}
 }
@@ -90,11 +91,31 @@ func TestDraftEnvIsSealedAndRestored(t *testing.T) {
 			t.Fatalf("plaintext variable on disk in %s", p)
 		}
 	}
-	got, err := readDraft("app")
+	if plain, _ := readDraft("app", false); plain["env"] != nil {
+		t.Fatal("variables returned without reauthentication")
+	}
+	got, err := readDraft("app", true)
 	if err != nil || obj(got["env"])["API_KEY"] != "sk-plain-value" || got["envCount"] != float64(1) && got["envCount"] != 1 {
 		t.Fatalf("%v %v", got, err)
 	}
 	if _, err := deleteDraft("app"); err != nil || isFile(draftEnvPath("app")) {
 		t.Fatalf("env file left behind: %v", err)
+	}
+}
+
+func TestFailedAddsTheCausesLastLine(t *testing.T) {
+	got := publicError(Failed("Incus operation failed", errors.New("Error: first\nError: Instance not found")))
+	if got != "Incus operation failed: Error: Instance not found" {
+		t.Fatalf("%q", got)
+	}
+	if got := publicError(Failed("Could not run", nil)); got != "Could not run" {
+		t.Fatalf("%q", got)
+	}
+	if got := publicError(Failed("Outer", Public("inner reason"))); got != "Outer: inner reason" {
+		t.Fatalf("%q", got)
+	}
+	res := CmdResult{Stderr: []byte("noise\nrestic: wrong password\n")}
+	if got := publicError(cmdFailed("restic check failed", res, nil)); got != "restic check failed: restic: wrong password" {
+		t.Fatalf("%q", got)
 	}
 }

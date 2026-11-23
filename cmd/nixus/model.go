@@ -24,7 +24,7 @@ func command(argv []string, timeout time.Duration) (string, error) {
 	}
 	res, err := run(argv, nil, timeout, nil, "")
 	if err != nil || res.Code != 0 {
-		return "", Public("Host command failed")
+		return "", cmdFailed("Host command failed", res, err)
 	}
 	return string(res.Stdout), nil
 }

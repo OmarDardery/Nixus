@@ -209,8 +209,12 @@ function appsList() {
 function draftsCard() {
   const drafts = appView.drafts || [];
   if (!drafts.length) return "";
-  return '<section class="drafts" aria-label="Drafts"><h2>Drafts</h2><ul>' + drafts.map(d =>
-    '<li><span class="draft-tag">Draft</span><span class="draft-name">' + esc(d.name) + '</span><span class="draft-when">saved ' + esc(ago(d.updatedAt)) + "</span>" +
+  const withEnv = drafts.some(d => d.envCount > 0);
+  return '<section class="drafts" aria-label="Drafts"><h2>Drafts</h2>' +
+    (withEnv ? '<label class="field draft-password"><span>Password, to open saved variables</span><input id="draft-password" type="password" autocomplete="current-password"></label>' : "") +
+    "<ul>" + drafts.map(d =>
+    '<li><span class="draft-tag">Draft</span><span class="draft-name">' + esc(d.name) + "</span>" + (d.envCount > 0 ? '<span class="draft-env" title="Has saved variables">' + d.envCount + " vars</span>" : "") +
+    '<span class="draft-name-fill"></span><span class="draft-when">saved ' + esc(ago(d.updatedAt)) + "</span>" +
     '<span class="draft-do"><button type="button" class="small" data-draft-resume="' + esc(d.name) + '">Resume</button>' +
     '<button type="button" class="small icon-button ghost" data-draft-delete="' + esc(d.name) + '" aria-label="Delete draft ' + esc(d.name) + '" title="Delete">' +
     icon("trash") + "</button></span></li>").join("") + "</ul></section>";
@@ -450,7 +454,9 @@ async function refreshApps() {
 }
 
 function syncForm() {
-  appView.name = document.querySelector("#app-name")?.value.trim() ?? appView.name;
+  const typed = document.querySelector("#app-name")?.value.trim() ?? appView.name;
+  if (typed !== appView.name) appView.replaceConfirmed = "";
+  appView.name = typed;
   for (const input of document.querySelectorAll("[data-app-path]")) appView.entries[Number(input.dataset.appPath)].path = input.value.trim();
   for (const area of document.querySelectorAll("[data-app-text]")) appView.entries[Number(area.dataset.appText)].text = area.value;
   const nix = document.querySelector("#app-nix");
@@ -469,6 +475,11 @@ async function deployApp() {
   try {
     if (!/^[a-z][a-z0-9-]{0,62}$/.test(project)) throw Error("Name: lowercase letters, digits and dashes.");
     if (!current) throw Error("Enter your password.");
+    if (appProjects().some(p => p.name === project) && appView.replaceConfirmed !== project) {
+      appView.replaceConfirmed = project;
+      throw Error("An app named " + project + " already exists. Deploying replaces its files. Press Deploy again to continue.");
+    }
+    appView.replaceConfirmed = "";
     const env = {};
     for (const { key, value } of parseEnv(appView.newEnv || "")) env[key] = value;
     appView.busy = true;
@@ -523,7 +534,12 @@ async function saveDraftApp() {
 async function resumeDraft(name) {
   appView.error = appView.message = "";
   try {
-    const d = await api("apps/draft-read", { name });
+    const input = document.querySelector("#draft-password");
+    const current = input?.value || "";
+    if (input) input.value = "";
+    const listed = (appView.drafts || []).find(x => x.name === name);
+    if (listed?.envCount > 0 && !current) throw Error("Enter your password to open this draft's variables.");
+    const d = await api("apps/draft-read", current ? { name, current } : { name });
     const envText = Object.entries(d.env || {}).map(([k, v]) => k + "=" + v).join("\n");
     Object.assign(appView, { name, mode: d.mode === "nix" ? "nix" : "files", uploads: [], nix: d.nix || "", newEnv: envText, view: "new",
       entries: (d.entries || []).length ? d.entries.map(e => ({ path: e.path, text: e.text })) : [{ path: "Dockerfile", text: "" }],

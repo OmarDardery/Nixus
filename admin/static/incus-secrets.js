@@ -4,7 +4,7 @@
 // inputs until a reauthenticated POST, never in browser-visible JS state.
 const nativeSecretsView = {
   loaded: false, loading: false, busy: false, data: null, selected: "",
-  error: "", message: "", review: null, editKey: "",
+  error: "", message: "", review: null,
   choice: "create", haveVia: "key", kit: "export",
 };
 
@@ -164,38 +164,6 @@ async function nativeEnrollIdentity() {
   }
 }
 
-async function nativeSecretReview() {
-  const v = nativeSecretsView, project = nativeSecretProject();
-  if (v.busy || !project || v.review) return;
-  const key = document.getElementById("native-secret-key")?.value?.trim();
-  const action = document.getElementById("native-secret-action")?.value;
-  const valueEl = document.getElementById("native-secret-value");
-  const passwordEl = document.getElementById("native-secret-review-password");
-  const value = valueEl?.value;
-  const current = passwordEl?.value;
-  if (valueEl) valueEl.value = "";
-  if (passwordEl) passwordEl.value = "";
-  v.busy = true; v.error = ""; v.message = "";
-  try {
-    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(key || "")) throw Error("Invalid variable name.");
-    if (!current) throw Error("Administrator password is required.");
-    if (action === "set" && (!value || new TextEncoder().encode(value).length > 8192))
-      throw Error("Enter a secret of at most 8192 UTF-8 bytes.");
-    v.review = await api("project-secrets/review", {
-      project: project.project, key, action,
-      value: action === "set" ? value : null,
-      expectedRevision: project.revision, current,
-    });
-    v.editKey = "";
-    v.message = "Encrypted review prepared. No running workload changed.";
-  } catch (error) {
-    v.error = error.message || "Encrypted review failed.";
-  } finally {
-    v.busy = false;
-    if (state.page === "operations") shell();
-  }
-}
-
 async function nativeRecipientReview() {
   const v = nativeSecretsView, project = nativeSecretProject();
   if (v.busy || !project || v.review) return;
@@ -246,64 +214,6 @@ async function nativeSecretPublish() {
     v.error = error.message || "Secret publication failed. Refresh metadata before retry.";
     v.review = null; // never reuse a possibly stale approved review
     await nativeSecretsRefresh();
-  } finally {
-    v.busy = false;
-    if (state.page === "operations") shell();
-  }
-}
-
-function nativeParseEnv(text) {
-  if (typeof text !== "string" || text.length > 64 * 1024)
-    throw Error(".env import exceeds the 64 KiB limit.");
-  const values = Object.create(null);
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith("#")) continue;
-    const match = line.match(/^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*)$/);
-    if (!match) throw Error("Unsupported .env syntax at line " + (i + 1) + ".");
-    const key = match[1];
-    if (Object.hasOwn(values, key)) throw Error("Duplicate secret name at line " + (i + 1) + ".");
-    let value = match[2];
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    } else if (value.startsWith('"') || value.startsWith("'")) {
-      throw Error("Unclosed .env quoted value at line " + (i + 1) + ".");
-    }
-    if (/[\u0000-\u001f]/.test(value) || value.includes("$" + "{") ||
-        value.includes("$(") || value.includes(String.fromCharCode(96)))
-      throw Error("Unsupported control characters or interpolation at line " + (i + 1) + ".");
-    if (new TextEncoder().encode(value).length > 8192)
-      throw Error("A secret value exceeds 8192 bytes.");
-    values[key] = value;
-    if (Object.keys(values).length > 64) throw Error("Import limit is 64 variables.");
-  }
-  if (!Object.keys(values).length) throw Error("The .env file has no importable variables.");
-  return values;
-}
-
-async function nativeEnvImportReview() {
-  const v = nativeSecretsView, project = nativeSecretProject();
-  if (v.busy || !project || v.review) return;
-  const fileInput = document.getElementById("native-env-import-file");
-  const file = fileInput?.files?.[0];
-  const password = document.getElementById("native-env-import-password");
-  const current = password?.value;
-  if (password) password.value = "";
-  if (fileInput) fileInput.value = "";
-  v.busy = true; v.error = ""; v.message = "";
-  try {
-    if (!file || file.size > 64 * 1024 || !current)
-      throw Error("Select a .env file of at most 64 KiB and enter the administrator password.");
-    const values = nativeParseEnv(await file.text());
-    v.review = await api("project-secrets/review", {
-      project: project.project, action: "import", key: null, value: values,
-      expectedRevision: project.revision, current,
-    });
-    v.message = "Environment values encrypted in a review; the original .env was not stored.";
-  } catch (error) {
-    v.error = error.message || "Environment import failed.";
   } finally {
     v.busy = false;
     if (state.page === "operations") shell();
@@ -414,9 +324,6 @@ function bindNativeSecrets() {
   document.querySelector("#native-recovery-export")?.addEventListener("click", () => {
     void nativeRecoveryExport();
   });
-  document.querySelector("#native-env-import-review")?.addEventListener("click", () => {
-    void nativeEnvImportReview();
-  });
   document.querySelector("#native-recovery-verify")?.addEventListener("click", () => {
     void nativeRecoveryImport("verify");
   });
@@ -425,23 +332,6 @@ function bindNativeSecrets() {
   });
   document.querySelector("#native-secret-reindex")?.addEventListener("click", () => {
     void nativeSecretsReindex();
-  });
-  document.querySelector("#native-secret-project")?.addEventListener("change", event => {
-    nativeSecretsView.selected = event.currentTarget.value;
-    nativeSecretsView.editKey = "";
-    nativeSecretsView.review = null;
-    nativeSecretsView.error = "";
-    shell();
-  });
-  for (const button of document.querySelectorAll("[data-native-secret-rotate]")) {
-    button.addEventListener("click", () => {
-      nativeSecretsView.editKey = button.dataset.nativeSecretRotate;
-      nativeSecretsView.review = null;
-      shell();
-    });
-  }
-  document.querySelector("#native-secret-review")?.addEventListener("click", () => {
-    void nativeSecretReview();
   });
   document.querySelector("#native-recipient-review")?.addEventListener("click", () => {
     void nativeRecipientReview();

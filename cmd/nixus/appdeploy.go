@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -127,7 +128,13 @@ func appJobActive(project string) bool {
 }
 
 // startAppDeploy validates a request, records it and starts the worker unit.
+// appDeployMu keeps two requests for the same app from both passing the
+// "already running" check before either has recorded its job.
+var appDeployMu sync.Mutex
+
 func startAppDeploy(actor string, body M) (M, error) {
+	appDeployMu.Lock()
+	defer appDeployMu.Unlock()
 	project, _ := body["project"].(string)
 	if !fullmatch(projectName, project) {
 		return nil, Public("Use a lowercase name: letters, digits and dashes")

@@ -217,7 +217,7 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 			args = append(args, "-c", k+"="+str(config[k]))
 		}
 		if _, err := incus(0, args...); err != nil {
-			return nil, Public("Could not recreate Incus project " + name)
+			return nil, Failed("Could not recreate Incus project "+name, err)
 		}
 		created = append(created, name)
 	}
@@ -230,14 +230,14 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 		v := obj(raw)
 		if _, err := incus(0, "storage", "volume", "import", str(v["pool"]), filepath.Join(generation, str(v["archive"])), str(v["name"]),
 			"--project", str(v["project"])); err != nil {
-			return nil, Public("Could not import volume " + str(v["name"]))
+			return nil, Failed("Could not import volume "+str(v["name"]), err)
 		}
 		volumes = append(volumes, str(v["project"])+"/"+str(v["pool"])+"/"+str(v["name"]))
 	}
 	for _, raw := range list(inventory["guests"]) {
 		g := obj(raw)
 		if _, err := incus(0, "import", filepath.Join(generation, str(g["archive"])), str(g["name"]), "--project", str(g["project"])); err != nil {
-			return nil, Public("Could not import instance " + str(g["name"]))
+			return nil, Failed("Could not import instance "+str(g["name"]), err)
 		}
 		instances = append(instances, str(g["project"])+"/"+str(g["name"]))
 	}
@@ -247,7 +247,7 @@ func restoreIncus(incus incusFunc, generation string) (M, error) {
 			continue
 		}
 		if _, err := incus(0, "start", str(g["name"]), "--project", str(g["project"])); err != nil {
-			return nil, Public("Imported instance " + str(g["name"]) + " did not start")
+			return nil, Failed("Imported instance "+str(g["name"])+" did not start", err)
 		}
 		started = append(started, str(g["project"])+"/"+str(g["name"]))
 	}
@@ -292,7 +292,7 @@ func restoreNetworks(incus incusFunc, inventory M) ([]any, error) {
 				}
 			}
 			if _, err := incus(0, args...); err != nil {
-				return nil, Public("Could not recreate network " + name)
+				return nil, Failed("Could not recreate network "+name, err)
 			}
 			created = append(created, owner+"/"+name)
 		}

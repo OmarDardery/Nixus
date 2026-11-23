@@ -38,6 +38,8 @@ in {
       # Restorable declarative projects are intentionally outside /etc/nixos
       # and the world-readable Nix store. Only the root broker may write them.
       "d /srv/nixus 0700 root root -"
+      # The removed sandboxed builder left its work directory behind.
+      "R /var/lib/nixus-oci - - - - -"
       "d /var/lib/nixus-admin 0710 root nixus-ui -"
       "d /var/lib/nixus-admin/jobs 0700 root root -"
       "d /run/nixus-admin 0750 root nixus-ui -"

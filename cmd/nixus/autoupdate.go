@@ -248,14 +248,14 @@ var updateIncus incusFunc = func(timeout time.Duration, args ...string) (string,
 func customVolumes(incus incusFunc, project string) ([]volumeSnapshot, error) {
 	out, err := incus(0, "storage", "list", "--format=json")
 	if err != nil {
-		return nil, Public("Could not list storage pools")
+		return nil, Failed("Could not list storage pools", err)
 	}
 	var vols []volumeSnapshot
 	for _, rawPool := range list(must(parseJSON([]byte(out)))) {
 		pool := str(obj(rawPool)["name"])
 		listed, err := incus(0, "storage", "volume", "list", pool, "--project", project, "--format=json")
 		if err != nil {
-			return nil, Public("Could not list the volumes of pool " + pool)
+			return nil, Failed("Could not list the volumes of pool "+pool, err)
 		}
 		for _, raw := range list(must(parseJSON([]byte(listed)))) {
 			v := obj(raw)

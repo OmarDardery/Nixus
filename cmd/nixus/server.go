@@ -319,7 +319,7 @@ func brokerPost(p string, body M, actor string) (any, error) {
 	case "/apps/draft-save":
 		return saveDraft(actor, body)
 	case "/apps/draft-read":
-		return readDraft(body["name"])
+		return readDraft(body["name"], ack(body["withEnv"]))
 	case "/apps/draft-delete":
 		return deleteDraft(body["name"])
 	case "/apps/env-read":
@@ -896,6 +896,15 @@ func (p *portal) post(w http.ResponseWriter, r *http.Request) error {
 	case "/api/project-import/prepare", "/api/image-updates/apply", "/api/apps/deploy", "/api/apps/backup-setup", "/api/image-updates/apply-all", "/api/backups/restore", "/api/apps/import-data/start", "/api/apps/env-read", "/api/apps/env", "/api/apps-repo/connect", "/api/apps-repo/deploy", "/api/apps-repo/disconnect":
 		if err := reauth("current", "Reauthenticate before changing project source"); err != nil {
 			return err
+		}
+	case "/api/apps/draft-read":
+		// Saved variables are only returned after the password is checked.
+		delete(body, "withEnv")
+		if body["current"] != nil {
+			if err := reauth("current", "Reauthenticate to open saved variables"); err != nil {
+				return err
+			}
+			body["withEnv"] = true
 		}
 	case "/api/browser-certificate/download":
 		p.auth.mu.Lock()

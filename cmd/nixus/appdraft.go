@@ -126,7 +126,7 @@ func listDrafts() M {
 	return M{"drafts": drafts}
 }
 
-func readDraft(raw any) (M, error) {
+func readDraft(raw any, withEnv bool) (M, error) {
 	name, err := draftName(raw)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func readDraft(raw any) (M, error) {
 		return nil, Public("No draft with that name")
 	}
 	draft := readObj(draftPath(name))
-	if isFile(draftEnvPath(name)) {
+	if withEnv && isFile(draftEnvPath(name)) {
 		vars, err := openVars(draftEnvPath(name))
 		if err != nil {
 			draft["envError"] = "The saved variables could not be decrypted with this server's key."

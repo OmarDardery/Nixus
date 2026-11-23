@@ -21,7 +21,7 @@ var sha40 = re(`[0-9a-f]{40}`)
 func mainRevision() (string, error) {
 	out, err := check([]string{"git", "-c", "core.hooksPath=/dev/null", "ls-remote", "--refs", upstream, "refs/heads/main"}, nil, 30*time.Second)
 	if err != nil {
-		return "", Public("Could not resolve Nixus main to one exact revision")
+		return "", Failed("Could not resolve Nixus main to one exact revision", err)
 	}
 	fields := strings.Fields(string(out))
 	if len(fields) != 2 || !fullmatch(sha40, fields[0]) || fields[1] != "refs/heads/main" {

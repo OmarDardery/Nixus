@@ -37,6 +37,23 @@ func (e *PublicError) Error() string { return e.msg }
 // Public returns an error whose message is safe to show to the browser.
 func Public(msg string) error { return &PublicError{msg} }
 
+// cmdFailed reports a finished command that did not succeed. The stderr tail
+// goes to the journal and its last line is added to the message.
+func cmdFailed(msg string, res CmdResult, err error) error {
+	if err != nil && len(res.Stderr) == 0 {
+		return Failed(msg, err)
+	}
+	tail := strings.TrimSpace(string(res.Stderr))
+	if len(tail) > 2000 {
+		tail = tail[len(tail)-2000:]
+	}
+	fmt.Fprintf(os.Stderr, "nixus: %s: %s\n", msg, tail)
+	if line := lastLine(tail); line != "" {
+		return Public(msg + ": " + line)
+	}
+	return Public(msg)
+}
+
 // Failed keeps a public message and appends the cause's last line, so a failed
 // tool says why. Use it only where the cause cannot carry secrets.
 func Failed(msg string, cause error) error {

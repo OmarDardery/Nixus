@@ -47,6 +47,14 @@ const run = code => vm.runInContext(code, context);
   assert.equal(run("appView.entries[0].path"), "compose.yaml");
   assert.equal(run("appView.newEnv"), "GREETING=hello\nTOKEN=abc");
 
+  // Drafts with saved variables need the password to open them.
+  run('appView.drafts = [{ name: "notes", updatedAt: 1, envCount: 2 }]');
+  calls.length = 0;
+  await run('resumeDraft("notes")');
+  assert.equal(calls.length, 0, "no request without a password");
+  assert.match(run("appView.error"), /password/i);
+  run('appView.drafts = []');
+
   // A name is required, and nothing is sent without one.
   calls.length = 0;
   run('appView.name = ""; appView.view = "new"');

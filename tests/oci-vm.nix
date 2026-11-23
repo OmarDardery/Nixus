@@ -371,7 +371,7 @@ in pkgs.testers.runNixOSTest {
         ns = broker("/project-import/finish", {"id": np_["id"], "manifestHash": np_["manifestHash"]})
         broker("/apps/draft-save", {"name": "notes", "mode": "files", "entries": [{"path": "Dockerfile", "text": "FROM scratch\n"}], "env": {"GREETING": "hello from deploy"}})
         assert [d["name"] for d in broker("/apps/drafts")["drafts"]] == ["notes"]
-        assert broker("/apps/draft-read", {"name": "notes"})["env"]["GREETING"] == "hello from deploy"
+        assert broker("/apps/draft-read", {"name": "notes", "withEnv": True})["env"]["GREETING"] == "hello from deploy"
         broker("/apps/deploy", {"project": "notes", "kind": "source", "stagingId": ns["id"], "manifestHash": ns["manifestHash"],
                                 "env": {"GREETING": "hello from deploy"}})
         deadline = time.time() + 900
