@@ -369,6 +369,9 @@ in pkgs.testers.runNixOSTest {
         np_ = broker("/project-import/prepare", {"project": "notes", "files": nentries})
         broker("/project-import/chunk", {"id": np_["id"], "path": "Dockerfile", "offset": 0, "data": base64.b64encode(notes["Dockerfile"]).decode()})
         ns = broker("/project-import/finish", {"id": np_["id"], "manifestHash": np_["manifestHash"]})
+        broker("/apps/draft-save", {"name": "notes", "mode": "files", "entries": [{"path": "Dockerfile", "text": "FROM scratch\n"}], "env": {"GREETING": "hello from deploy"}})
+        assert [d["name"] for d in broker("/apps/drafts")["drafts"]] == ["notes"]
+        assert broker("/apps/draft-read", {"name": "notes"})["env"]["GREETING"] == "hello from deploy"
         broker("/apps/deploy", {"project": "notes", "kind": "source", "stagingId": ns["id"], "manifestHash": ns["manifestHash"],
                                 "env": {"GREETING": "hello from deploy"}})
         deadline = time.time() + 900
@@ -385,6 +388,7 @@ in pkgs.testers.runNixOSTest {
         assert machine.succeed("incus config get " + running[0]["name"] + " environment.GREETING --project notes").strip() == "hello from deploy"
         assert machine.succeed("test -s /srv/nixus/projects/notes/secrets.enc.yaml && echo ok").strip() == "ok"
         machine.fail("ls /var/lib/nixus-admin/app-deploy-notes.env.age")
+        assert broker("/apps/drafts")["drafts"] == [], "a deployed app's draft is removed"
         assert machine.succeed("cat /srv/nixus/projects/notes/default.nix").strip().endswith("}")
         # Nothing left to update: the one-click action refuses instead of starting a worker.
         code, out = machine.execute("curl -sS --fail-with-body --unix-socket /run/nixus-admin/backend.sock -H 'Content-Type: application/json' "

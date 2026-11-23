@@ -5,7 +5,7 @@
 
 const appView = {
   overview: null, jobs: {}, updates: null, backups: null, loading: false, error: "", message: "",
-  busy: false, log: null, mode: "files",
+  busy: false, log: null, mode: "files", drafts: [],
   entries: [{ path: "Dockerfile", text: "" }], uploads: [], nix: "",
   instance: { type: "container", image: "images:debian/13", cpus: 2, memory: 2, disk: 10, usb: "" },
   importTarget: "", importError: "", importMessage: "",
@@ -150,8 +150,19 @@ function appsList() {
     '<div class="toolbar"><input type="search" id="apps-filter" placeholder="Search apps…" value="' + esc(appView.filter) + '" aria-label="Search apps">' +
     '<span><button type="button" class="small" id="apps-refresh">Refresh</button> <button type="button" class="primary" data-app-new>New app</button></span></div>' +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
+    draftsCard() +
     (projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
       : card("No apps yet", '<p><button type="button" class="primary" data-app-new>New app</button> <button type="button" data-go="operations">Restore from a backup</button></p>'));
+}
+
+function draftsCard() {
+  const drafts = appView.drafts || [];
+  if (!drafts.length) return "";
+  const when = t => t ? new Date(t * 1000).toLocaleString() : "";
+  return card("Drafts", '<div class="table-wrap"><table><tbody>' + drafts.map(d =>
+    "<tr><td><code>" + esc(d.name) + "</code></td><td>" + esc(when(d.updatedAt)) + "</td><td>" +
+    '<button type="button" class="small" data-draft-resume="' + esc(d.name) + '">Resume</button> ' +
+    '<button type="button" class="small" data-draft-delete="' + esc(d.name) + '">Delete</button></td></tr>').join("") + "</tbody></table></div>");
 }
 
 function appTabs() {
@@ -328,6 +339,7 @@ function addAppCard() {
     needsKey('<textarea id="app-env" rows="5" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER_KEY=value" aria-label="Environment variables">' +
     esc(appView.newEnv || "") + '</textarea><p class="hint">One KEY=value per line, or paste a .env file. Saved encrypted with your secrets key.</p>') + "</details>" +
     '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
+    '<button type="button" id="app-draft-save"' + (appView.busy ? " disabled" : "") + '>Save draft</button> ' +
     '<button type="button" class="primary" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button></div>" +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
     (appView.message ? '<p role="status">' + esc(appView.message) + "</p>" : ""));
@@ -362,9 +374,9 @@ async function refreshApps() {
   if (appView.loading) return;
   appView.loading = true;
   try {
-    const [overview, jobs, updates, backups] = await Promise.all([
-      api("project-overview"), api("apps"), api("image-updates"), api("project-backups")]);
-    Object.assign(appView, { overview, jobs, updates, backups });
+    const [overview, jobs, updates, backups, drafts] = await Promise.all([
+      api("project-overview"), api("apps"), api("image-updates"), api("project-backups"), api("apps/drafts")]);
+    Object.assign(appView, { overview, jobs, updates, backups, drafts: drafts?.drafts || [] });
   } catch (error) {
     appView.error = error.message || "Could not load appView.";
   } finally {
@@ -418,6 +430,57 @@ async function deployApp() {
     appView.busy = false;
     void refreshApps();
   }
+}
+
+async function saveDraftApp() {
+  syncForm();
+  appView.error = appView.message = "";
+  try {
+    const name = appView.name || "";
+    if (!/^[a-z][a-z0-9-]{0,62}$/.test(name)) throw Error("Name: lowercase letters, digits and dashes.");
+    const entries = appView.entries.map(e => ({ path: e.path, text: e.text })).filter(e => e.path || e.text);
+    let skipped = 0;
+    for (const file of appView.uploads) {
+      const text = file.size > 256 * 1024 ? null : await file.text();
+      if (text === null || text.includes("\u0000")) { skipped++; continue; }
+      entries.push({ path: file.webkitRelativePath || file.name, text });
+    }
+    const env = {};
+    for (const { key, value } of parseEnv(appView.newEnv || "")) env[key] = value;
+    const result = await api("apps/draft-save", { name, mode: appView.mode, entries, nix: appView.nix, instance: appView.instance,
+      env: Object.keys(env).length ? env : undefined });
+    appView.message = "Draft saved." + (skipped ? " " + skipped + " file(s) were too large or binary and were not saved." : "") + (result?.note ? " " + result.note : "");
+    const listed = await api("apps/drafts");
+    appView.drafts = listed?.drafts || [];
+  } catch (error) {
+    appView.error = error.message || "Could not save the draft.";
+  }
+  rerender();
+}
+
+async function resumeDraft(name) {
+  appView.error = appView.message = "";
+  try {
+    const d = await api("apps/draft-read", { name });
+    const envText = Object.entries(d.env || {}).map(([k, v]) => k + "=" + v).join("\n");
+    Object.assign(appView, { name, mode: d.mode === "nix" ? "nix" : "files", uploads: [], nix: d.nix || "", newEnv: envText, view: "new",
+      entries: (d.entries || []).length ? d.entries.map(e => ({ path: e.path, text: e.text })) : [{ path: "Dockerfile", text: "" }],
+      message: d.envError || "" });
+    Object.assign(appView.instance, d.instance || {});
+  } catch (error) {
+    appView.error = error.message || "Could not open the draft.";
+  }
+  rerender();
+}
+
+async function deleteDraftApp(name) {
+  try {
+    await api("apps/draft-delete", { name });
+    appView.drafts = (appView.drafts || []).filter(d => d.name !== name);
+  } catch (error) {
+    appView.error = error.message || "Could not delete the draft.";
+  }
+  rerender();
 }
 
 async function loadNix(name) {
@@ -617,6 +680,9 @@ function bindApps() {
   on("#app-save-nix", () => void saveNix(appView.view));
   on("#app-add-file", () => { syncForm(); appView.entries.push({ path: "", text: "" }); rerender(); });
   on("#app-pin", () => void pinApp());
+  on("#app-draft-save", () => void saveDraftApp());
+  each("[data-draft-resume]", el => void resumeDraft(el.dataset.draftResume));
+  each("[data-draft-delete]", el => void deleteDraftApp(el.dataset.draftDelete));
   on("#vm-generate", generateInstance);
   on("#import-start", () => void importData());
   on("#image-updates-check", () => void appRequest("image-updates/check", {}, "Checked."));

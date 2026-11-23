@@ -145,6 +145,8 @@ func brokerGet(p string, query url.Values) (any, error) {
 		return appJobs(), nil
 	case p == "/apps/env":
 		return envNames(query.Get("project"))
+	case p == "/apps/drafts":
+		return listDrafts(), nil
 	case p == "/devices":
 		return hostDevices(), nil
 	case p == "/apps-repo":
@@ -314,6 +316,12 @@ func brokerPost(p string, body M, actor string) (any, error) {
 		return chunkDataImport(body)
 	case "/apps/import-data/finish":
 		return finishDataImport(actor, body)
+	case "/apps/draft-save":
+		return saveDraft(actor, body)
+	case "/apps/draft-read":
+		return readDraft(body["name"])
+	case "/apps/draft-delete":
+		return deleteDraft(body["name"])
 	case "/apps/env-read":
 		return readEnv(body["project"])
 	case "/apps/env":
@@ -612,7 +620,7 @@ var staticAssets = map[string][2]string{
 }
 
 var adminGets = map[string]bool{"/api/main-revision": true,
-	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true}
+	"/api/project-secrets": true, "/api/project-backups": true, "/api/project-overview": true, "/api/image-updates": true, "/api/apps": true, "/api/apps/env": true, "/api/apps/drafts": true, "/api/devices": true, "/api/apps-repo": true, "/api/backups/snapshots": true, "/api/backups/restore-status": true, "/api/project-file": true, "/api/project-logs": true, "/api/setup-progress": true}
 var sharedGets = map[string]bool{"/api/status": true, "/api/inventory": true, "/api/ca": true,
 	"/api/guest-network": true, "/api/health": true}
 var portalActions = map[string]bool{}
@@ -623,7 +631,7 @@ func init() {
 		/api/project-secrets/enroll /api/project-secrets/review /api/project-secrets/publish /api/project-secrets/reindex
 		/api/project-secrets/recovery-export /api/project-secrets/recovery-verify /api/project-secrets/recovery-restore /api/image-updates/check
 		/api/image-updates/apply /api/image-updates/hold /api/apps/deploy /api/apps/backup-run /api/apps/backup-setup /api/image-updates/apply-all
-		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/env /api/apps/power /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
+		/api/backups/restore /api/apps/import-data/start /api/apps/import-data/chunk /api/apps/import-data/finish /api/image-updates/pin /api/apps/env-read /api/apps/draft-save /api/apps/draft-read /api/apps/draft-delete /api/apps/env /api/apps/power /api/apps-repo/key /api/apps-repo/scan /api/apps-repo/connect /api/apps-repo/check /api/apps-repo/deploy /api/apps-repo/disconnect`) {
 		portalActions[a] = true
 	}
 }

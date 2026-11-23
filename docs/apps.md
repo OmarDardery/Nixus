@@ -9,6 +9,10 @@ describe. Each app gets its own Incus project, network and storage.
 `Dockerfile` and any files it copies. Or push the folder to your
 [apps repository](apps-repo.md).
 
+Not ready to deploy? **Save draft** keeps the form on the server, including environment
+variables (encrypted with your secrets key), so you can finish from another device. Drafts
+list on the Apps page and are removed when the app deploys.
+
 Rules, checked before anything runs:
 
 - Images are pinned by digest: `image: ghcr.io/org/app@sha256:…`. Use
