@@ -737,3 +737,9 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
 .env-new summary { cursor: pointer; font-size: 13px; color: var(--text); }
 .env-new textarea { width: 100%; margin-top: 10px; font-family: var(--mono); font-size: 13px; }
 .env-new .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+/* Controls that wait for an unfinished setup step. */
+.locked { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; }
+.locked fieldset { border: 0; margin: 0; padding: 0; min-width: 0; opacity: .55; }
+.lock-note { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.lock-icon { flex: none; }

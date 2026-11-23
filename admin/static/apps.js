@@ -207,11 +207,11 @@ function envTab(p) {
   const status = (e.error ? '<p class="error" role="alert">' + esc(e.error) + "</p>" : "") + (e.message ? '<p role="status">' + esc(e.message) + "</p>" : "");
   if (!e.rows) {
     const names = e.names || [];
-    return card("Environment Variables",
+    return card("Environment Variables", needsKey(
       (names.length ? '<div class="table-wrap"><table><tbody>' + names.map(n => "<tr><td><code>" + esc(n) + "</code></td><td>••••••••</td></tr>").join("") +
         "</tbody></table></div>" : "<p>No variables.</p>") +
       '<div class="toolbar"><input id="env-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
-      '<button type="button" class="primary" id="env-reveal">' + (names.length ? "Reveal & edit" : "Add variables") + "</button></div>" + status);
+      '<button type="button" class="primary" id="env-reveal">' + (names.length ? "Reveal & edit" : "Add variables") + "</button></div>") + status);
   }
   const rows = e.rows.map((r, i) => '<div class="env-row"><input data-env-key="' + i + '" value="' + esc(r.key) + '" placeholder="KEY" spellcheck="false" aria-label="Name">' +
     '<input data-env-value="' + i + '" type="' + (r.show ? "text" : "password") + '" value="' + esc(r.value) + '" placeholder="value" spellcheck="false" autocomplete="off" aria-label="Value">' +
@@ -293,6 +293,11 @@ function appPowerButtons(p) {
     (running ? '<button type="button" data-app-power="stop">Stop</button>' : '<button type="button" data-app-power="start">Start</button>');
 }
 
+// needsKey locks a control until the secrets encryption key exists.
+function needsKey(html) {
+  return typeof gated === "function" ? gated("secretsKey", "Create the encryption key first.", html) : html;
+}
+
 function newAppView() {
   return '<p><button type="button" class="link" data-app-back>← Apps</button></p>' + title("", "New app", "Paste or upload a Dockerfile and Compose file, or describe a VM or container.") + addAppCard();
 }
@@ -320,8 +325,8 @@ function addAppCard() {
       : instanceForm() +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
     '<details class="env-new"' + (appView.newEnv ? " open" : "") + '><summary>Environment variables (optional)</summary>' +
-    '<textarea id="app-env" rows="5" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER_KEY=value" aria-label="Environment variables">' +
-    esc(appView.newEnv || "") + '</textarea><p class="hint">One KEY=value per line, or paste a .env file. Saved encrypted with your secrets key.</p></details>' +
+    needsKey('<textarea id="app-env" rows="5" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER_KEY=value" aria-label="Environment variables">' +
+    esc(appView.newEnv || "") + '</textarea><p class="hint">One KEY=value per line, or paste a .env file. Saved encrypted with your secrets key.</p>') + "</details>" +
     '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
     '<button type="button" class="primary" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button></div>" +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +

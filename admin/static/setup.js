@@ -17,6 +17,24 @@ function setupIncomplete() {
   return Boolean(setupView.progress && !setupView.progress.complete);
 }
 
+// setupPending returns the unfinished setup step with this id. It is null when
+// the step is done or progress is not known, so nothing is locked on a guess.
+function setupPending(stepId) {
+  const item = setupView.progress?.items?.find(i => i.id === stepId);
+  return item && !item.done ? item : null;
+}
+
+// gated wraps a control that needs a setup step. While the step is unfinished
+// the control is disabled and a lock note links to the step.
+function gated(stepId, reason, html) {
+  const item = setupPending(stepId);
+  if (!item) return html;
+  return '<div class="locked" aria-disabled="true"><p class="lock-note"><svg class="lock-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">' +
+    '<path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3 7h10v7H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg> ' +
+    '<b>Locked.</b> ' + esc(reason) + ' <button type="button" class="link" data-go="' + esc(item.page) + '">Open setup</button></p>' +
+    '<fieldset disabled>' + html + "</fieldset></div>";
+}
+
 function setupBanner() {
   const progress = setupView.progress;
   if (!progress || progress.complete || state.page === "setup") return "";

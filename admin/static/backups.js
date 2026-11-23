@@ -56,7 +56,8 @@ function backupStatusCard() {
   return card("Status",
     "<p>Last success: " + esc(last) + "</p><p>" +
     BACKUP_PHASE_LABELS.map(([id, label]) => esc(label) + " " + badge(phases[id]?.state || "—")).join(" · ") + "</p>" +
-    '<button type="button" id="backups-run">Back up now</button>');
+    (typeof gated === "function" ? gated("backup", "Set up backups first.", '<button type="button" id="backups-run">Back up now</button>')
+      : '<button type="button" id="backups-run">Back up now</button>'));
 }
 
 function backupDestinationCard() {

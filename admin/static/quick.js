@@ -51,7 +51,8 @@ function quickActions() {
       esc(release.version || "") + " <code>" + esc((release.revision || "").slice(0, 12)) + "</code></small></div>" +
     '<div><button type="button" id="quick-update-apps"' + busy + (appUpdates ? "" : " disabled") + '>Update all apps</button><small>' +
       (appUpdates ? esc(appUpdates) + " with updates" : "Up to date") + "</small></div>" +
-    '<div><button type="button" id="quick-backup"' + busy + '>Back up now</button><small>Last: ' + esc(lastBackup) + "</small></div>" +
+    "<div>" + (typeof gated === "function" ? gated("backup", "Set up backups first.", '<button type="button" id="quick-backup"' + busy + ">Back up now</button>")
+      : '<button type="button" id="quick-backup"' + busy + ">Back up now</button>") + "<small>Last: " + esc(lastBackup) + "</small></div>" +
     '<label class="field quick-password"><span>Password</span><input id="quick-password" type="password" autocomplete="current-password"></label>' +
     "</div>" +
     (quick.phase ? '<p role="status">' + esc(quick.phase) + "</p>" : "") +
