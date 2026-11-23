@@ -155,7 +155,7 @@ func TestRetentionExpiresGenerationsPerInstallation(t *testing.T) {
 			gen := filepath.Join(work, host, "generation-"+strconv.Itoa(d))
 			os.MkdirAll(gen, 0o700)
 			os.WriteFile(filepath.Join(gen, "file"), []byte(strconv.Itoa(d)), 0o600)
-			args := resticBackupArgs(host, []string{gen})
+			args := resticBackupArgs(host, []string{gen}, true)
 			args = append(args, "--time", day.AddDate(0, 0, d).Format("2006-01-02 15:04:05"))
 			run1(args...)
 		}
@@ -178,5 +178,53 @@ func TestRetentionExpiresGenerationsPerInstallation(t *testing.T) {
 	}
 	if got := count("nixus-bbbbbbbbbbbbbbbb"); got != 6 {
 		t.Fatalf("installation b lost snapshots: %d", got)
+	}
+}
+
+// A failed data export must not become the default restore, while a deliberately
+// config-only backup does (#106). Uses the real restic when available.
+func TestDefaultRestoreSkipsPartialSnapshots(t *testing.T) {
+	restic := "/nix/store/kglf8qzqjmf2jandyqxkr0l57jwiix2n-restic-0.18.1/bin/restic"
+	if _, err := os.Stat(restic); err != nil {
+		t.Skip("restic not available")
+	}
+	work := t.TempDir()
+	env := []string{"PATH=" + filepath.Dir(restic) + ":/usr/bin:/bin", "HOME=" + work, "RESTIC_REPOSITORY=" + filepath.Join(work, "repo"), "RESTIC_PASSWORD=test"}
+	run1 := func(args ...string) string {
+		res, err := run(append([]string{restic}, args...), nil, 2*time.Minute, env, "")
+		if err != nil || res.Code != 0 {
+			t.Fatalf("restic %v: %v %s", args, err, res.Stderr)
+		}
+		return string(res.Stdout)
+	}
+	run1("init")
+	snap := func(name string, complete bool, at string) {
+		dir := filepath.Join(work, name)
+		os.MkdirAll(dir, 0o700)
+		os.WriteFile(filepath.Join(dir, "f"), []byte(name), 0o600)
+		run1(append(resticBackupArgs("nixus-test", []string{dir}, complete), "--time", at)...)
+	}
+	snap("complete", true, "2026-10-01 10:00:00")
+	snap("partial-after-complete", false, "2026-10-02 10:00:00")
+	// restic's "latest" with the same tag filter the restore uses.
+	latest := func() string {
+		target := t.TempDir()
+		run1("restore", "latest", "--tag", snapshotComplete, "--target", target)
+		for _, name := range []string{"complete", "partial-after-complete", "config-only"} {
+			if matches, _ := filepath.Glob(filepath.Join(target, "*", "*", "*", name)); len(matches) > 0 {
+				return name
+			}
+			if raw, _ := os.ReadFile(filepath.Join(target, work, name, "f")); raw != nil {
+				return name
+			}
+		}
+		return ""
+	}
+	if got := latest(); got != "complete" {
+		t.Fatalf("the default restore picked %q, want the complete snapshot", got)
+	}
+	snap("config-only", true, "2026-10-03 10:00:00") // a policy without data is complete by definition
+	if got := latest(); got != "config-only" {
+		t.Fatalf("a config-only policy is a complete backup: %s", got)
 	}
 }

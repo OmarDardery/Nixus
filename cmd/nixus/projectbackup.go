@@ -364,7 +364,16 @@ var resticRun = func(env []string, timeout time.Duration, args ...string) error 
 	return nil
 }
 
-func offHostBackup(policy M, paths []string) error {
+// A snapshot is tagged nixus-complete when the backup fulfilled its policy (a
+// config-only policy counts), and nixus-partial when requested data could not be
+// exported. The default restore only picks complete snapshots (#106).
+const (
+	snapshotTag      = "nixus-project"
+	snapshotComplete = "nixus-complete"
+	snapshotPartial  = "nixus-partial"
+)
+
+func offHostBackup(policy M, paths []string, complete bool) error {
 	env, err := resticEnv(policy)
 	if err != nil {
 		return err
@@ -378,7 +387,7 @@ func offHostBackup(policy M, paths []string) error {
 		}
 	}
 	host := backupHost()
-	if err := resticRun(env, 12*time.Hour, resticBackupArgs(host, paths)...); err != nil {
+	if err := resticRun(env, 12*time.Hour, resticBackupArgs(host, paths, complete)...); err != nil {
 		return err
 	}
 	r := obj(policy["retention"])
@@ -397,12 +406,16 @@ func offHostBackup(policy M, paths []string) error {
 // independently.
 const legacyBackupHost = "nixus"
 
-func resticBackupArgs(host string, paths []string) []string {
-	return append([]string{"backup", "--tag", "nixus-project", "--host", host}, paths...)
+func resticBackupArgs(host string, paths []string, complete bool) []string {
+	state := snapshotPartial
+	if complete {
+		state = snapshotComplete
+	}
+	return append([]string{"backup", "--tag", snapshotTag, "--tag", state, "--host", host}, paths...)
 }
 
 func resticForgetArgs(host string, r M) []string {
-	return []string{"forget", "--tag", "nixus-project", "--host", host, "--group-by", "host,tags", "--prune",
+	return []string{"forget", "--tag", snapshotTag, "--host", host, "--group-by", "host,tags", "--prune",
 		"--keep-daily", fmt.Sprint(r["daily"]), "--keep-weekly", fmt.Sprint(r["weekly"]), "--keep-monthly", fmt.Sprint(r["monthly"])}
 }
 
@@ -508,7 +521,7 @@ func runProjectBackup(force bool) (M, error) {
 	} else {
 		setPhase(status, "data", "skipped", "data excluded by policy")
 	}
-	if err := offHostBackup(policy, paths); err != nil {
+	if err := offHostBackup(policy, paths, ok); err != nil {
 		ok = false
 		setPhase(status, "offHost", "failed", publicError(err))
 		setPhase(status, "verification", "skipped", "no completed upload to verify")

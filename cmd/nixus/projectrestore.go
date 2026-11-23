@@ -333,9 +333,14 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	args := []string{"restore", snapshot, "--target", target}
 	if snapshot == "latest" {
-		args = append(args, "--tag", "nixus-project")
+		// Only a backup that fulfilled its policy is restored by default; a
+		// partial one needs an explicit snapshot ID.
+		args = append(args, "--tag", snapshotComplete)
 	}
 	if err := resticRun(env, 12*time.Hour, args...); err != nil {
+		if snapshot == "latest" {
+			return failWith("download", Public("No complete backup was found to restore. Choose a snapshot ID to restore a partial or older backup. "+publicError(err)))
+		}
 		return failWith("download", err)
 	}
 	config := findOne(target, "/config/", "MANIFEST.json")

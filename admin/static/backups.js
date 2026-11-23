@@ -80,8 +80,9 @@ function snapshotsCard() {
   if (!s?.configured) return "";
   if (s.error) return card("Snapshots", '<p class="error">' + esc(s.error) + "</p>");
   const rows = (s.snapshots || []).slice().reverse().map(x =>
-    "<tr><td><code>" + esc(x.id) + "</code></td><td>" + esc(new Date(x.time).toLocaleString()) + "</td></tr>").join("");
-  return card("Snapshots", rows ? '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Time</th></tr></thead><tbody>' + rows +
+    "<tr><td><code>" + esc(x.id) + "</code></td><td>" + esc(new Date(x.time).toLocaleString()) + "</td><td>" +
+      (x.complete === false ? '<span class="badge bad" title="Data could not be exported; not used by default restore">Partial</span>' : badge("complete")) + "</td></tr>").join("");
+  return card("Snapshots", rows ? '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Time</th><th>State</th></tr></thead><tbody>' + rows +
     "</tbody></table></div>" : "<p>No snapshots yet.</p>");
 }
 

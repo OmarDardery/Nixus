@@ -25,14 +25,18 @@ func backupSnapshots() (M, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := run([]string{"restic", "snapshots", "--json", "--tag", "nixus-project"}, nil, 2*time.Minute, env, "")
+	res, err := run([]string{"restic", "snapshots", "--json", "--tag", snapshotTag}, nil, 2*time.Minute, env, "")
 	if err != nil || res.Code != 0 {
 		return nil, cmdFailed("Could not list snapshots; check the destination and credentials", res, err)
 	}
 	out := []any{}
 	for _, raw := range list(must(parseJSON(res.Stdout))) {
 		s := obj(raw)
-		out = append(out, M{"id": s["short_id"], "time": s["time"]})
+		complete := false
+		for _, tag := range list(s["tags"]) {
+			complete = complete || str(tag) == snapshotComplete
+		}
+		out = append(out, M{"id": s["short_id"], "time": s["time"], "complete": complete})
 	}
 	return M{"snapshots": out, "configured": true, "repository": jget(policy, "restic", "repository")}, nil
 }
