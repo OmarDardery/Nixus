@@ -27,6 +27,9 @@ func TestStartAppDeployValidatesRequests(t *testing.T) {
 
 func TestAppJobsHideDeclarationsAndTrackActivity(t *testing.T) {
 	useState(t)
+	old := appWorkerActive
+	appWorkerActive = func(string) bool { return true }
+	defer func() { appWorkerActive = old }()
 	writeJSON(appJobPath("web"), M{"project": "web", "status": "building", "declaration": "{ }"})
 	writeJSON(appJobPath("db"), M{"project": "db", "status": "deployed"})
 	jobs := appJobs()
@@ -39,5 +42,31 @@ func TestAppJobsHideDeclarationsAndTrackActivity(t *testing.T) {
 	if _, err := startAppDeploy("admin", M{"project": "web", "kind": "nix", "declaration": "{ }"}); err == nil ||
 		!strings.Contains(publicError(err), "already running") {
 		t.Fatalf("started a second deployment: %v", err)
+	}
+}
+
+// A saved job whose worker is gone must not block redeployment (#115), while a
+// live worker still does.
+func TestInterruptedAppJobDoesNotBlockRedeploy(t *testing.T) {
+	useState(t)
+	old := appWorkerActive
+	defer func() { appWorkerActive = old }()
+	writeJSON(appJobPath("web"), M{"project": "web", "status": "deploying", "startedAt": now() - 3600, "updatedAt": now() - 3600})
+	appWorkerActive = func(string) bool { return true }
+	if !appJobActive("web") {
+		t.Fatal("a running worker must still block a second deployment")
+	}
+	appWorkerActive = func(string) bool { return false }
+	if appJobActive("web") {
+		t.Fatal("a job without a worker still blocks")
+	}
+	job := readObj(appJobPath("web"))
+	if str(job["status"]) != "interrupted" || !strings.Contains(str(job["error"]), "Deploy again") {
+		t.Fatalf("job after reconcile: %v", job)
+	}
+	// A job that was only just written has not started its worker yet.
+	writeJSON(appJobPath("fresh"), M{"project": "fresh", "status": "queued", "startedAt": now(), "updatedAt": now()})
+	if !appJobActive("fresh") {
+		t.Fatal("a brand-new job must count as active")
 	}
 }
