@@ -62,3 +62,17 @@ func TestAppIncusProjectsOnlyOwned(t *testing.T) {
 		t.Fatalf("never the default project: %v", got)
 	}
 }
+
+// The CLI's `project delete --force` prompts on stdin; the API does not.
+func TestDeleteIncusProjectUsesTheAPI(t *testing.T) {
+	var got []string
+	old := updateIncus
+	defer func() { updateIncus = old }()
+	updateIncus = func(_ time.Duration, args ...string) (string, error) { got = args; return "", nil }
+	if err := deleteIncusProject("web"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, " ") != "query -X DELETE /1.0/projects/web?force=true" {
+		t.Fatalf("%v", got)
+	}
+}

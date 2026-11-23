@@ -9,7 +9,7 @@ import (
 // deleteApp removes an app and everything Nixus and Incus hold for it: its
 // files in the project workspace (with its encrypted variables), the Incus
 // project with all instances, snapshots, volumes, images, profiles and
-// networks (`incus project delete --force`), published source revisions,
+// networks (Incus's force delete), published source revisions,
 // image build records, deployment and update records, drafts and holds.
 // Every step skips what is already gone, so a failed delete can be retried.
 // Off-host backups are kept: each snapshot holds all apps together and ages
@@ -43,7 +43,7 @@ func deleteApp(actor string, body M) (M, error) {
 	}
 	// 2. Incus removes the project and everything in it.
 	for _, name := range incusProjects {
-		if _, err := updateIncus(0, "project", "delete", name, "--force"); err != nil {
+		if err := deleteIncusProject(name); err != nil {
 			return nil, Failed("The app's files were removed, but Incus could not delete project "+name+"; retry the delete", err)
 		}
 	}
@@ -101,6 +101,14 @@ func appIncusProjects(project string, declared M) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+// deleteIncusProject removes an Incus project and everything in it through the
+// API (projects_force_delete). The CLI's `project delete --force` always asks
+// for confirmation on stdin, which a service cannot answer.
+func deleteIncusProject(name string) error {
+	_, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/projects/"+name+"?force=true")
+	return err
 }
 
 func forgetKey(path, key string) {
