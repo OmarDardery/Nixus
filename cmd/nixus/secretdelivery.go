@@ -141,9 +141,6 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(values) == 0 {
-		return 0, nil
-	}
 	instances := appInstances(updateIncus, str(project["incusProject"]))
 	targets, err := secretTargets(project, values, instances)
 	if err != nil {
