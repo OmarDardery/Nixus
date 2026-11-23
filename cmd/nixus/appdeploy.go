@@ -140,7 +140,15 @@ func startAppDeploy(actor string, body M) (M, error) {
 		return nil, Public("Use a lowercase name: letters, digits and dashes")
 	}
 	if appJobActive(project) {
-		return nil, Public("A deployment for this app is already running")
+		active, err := workerActive("nixus-app-deploy-" + project)
+		if err != nil || active {
+			return nil, Public("A deployment for this app is already running or its worker cannot be inspected")
+		}
+		previous := readObj(appJobPath(project))
+		previous["status"], previous["error"] = "failed", "Deployment worker stopped; retry requested"
+		if err := writeJSONMode(appJobPath(project), previous, 0o600, ""); err != nil {
+			return nil, err
+		}
 	}
 	job := M{"format": 1, "project": project, "actor": actor, "status": "queued", "startedAt": now()}
 	declaration, _ := body["declaration"].(string)

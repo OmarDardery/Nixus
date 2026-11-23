@@ -67,3 +67,8 @@ import the repository.
 with a passphrase you choose. Store it away from the server (a password
 manager attachment or a USB stick). It is the fallback if the backup
 password is lost.
+
+Default restore selects snapshots tagged `nixus-project-complete`, written after
+all requested export phases succeed. For older backups, select a snapshot ID
+explicitly after checking its coverage. A policy that excludes data creates a
+complete configuration-only snapshot.

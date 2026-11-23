@@ -30,6 +30,7 @@ in {
   environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON config.virtualisation.incus.preseed;
   virtualisation.incus = {
     enable = true;
+    package = import ../pkgs/incus.nix { inherit pkgs; };
     ui.enable = true;
     preseed = {
       config."core.https_address" = "0.0.0.0:8443";

@@ -469,7 +469,9 @@ func fileSHA256(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runBackup() error {
+func runBackup() error { return runSelectedBackup(nil) }
+
+func runSelectedBackup(selectedProjects map[string]bool) error {
 	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
 		return err
 	}
@@ -509,11 +511,25 @@ func runBackup() error {
 		}
 		namespaces[str(pm["name"])] = ns
 	}
+	if selectedProjects != nil {
+		for project, namespace := range namespaces {
+			if selectedProjects[project] && namespace == "default" {
+				for other, otherNamespace := range namespaces {
+					if !selectedProjects[other] && otherNamespace == namespace {
+						return Public("Selected project shares the default volume namespace with an excluded project; isolate its storage before selective backup")
+					}
+				}
+			}
+		}
+	}
 	var guests, volumes []M
 	profiles, networks := M{}, M{}
 	seen := map[volumeKey]bool{}
 	for _, p := range projects {
 		project := str(obj(p)["name"])
+		if selectedProjects != nil && !selectedProjects[project] {
+			continue
+		}
 		if profiles[project], err = backupList("profile", "list", "--project", project, "--format=json"); err != nil {
 			return err
 		}
@@ -631,10 +647,12 @@ func runBackup() error {
 			return err
 		}
 		started := now()
-		err := func() error {
+		err := func() (exportErr error) {
 			defer func() {
 				backupProgress("recovering", M{"generation": generation, "members": members})
-				backupRecover()
+				if recoveryErr := backupRecover(); recoveryErr != nil {
+					exportErr = recoveryErr
+				}
 			}()
 			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
 			for _, raw := range pending {
@@ -672,6 +690,19 @@ func runBackup() error {
 	coverageName := "selected"
 	if isTrue(coverage["complete"]) {
 		coverageName = "all"
+	}
+	// Runtime environment values are persisted by Incus. Keep them out of
+	// the separate plaintext inventory; native export archives remain sensitive.
+	for _, guest := range selectedGuests {
+		for _, field := range []string{"config", "expanded_config"} {
+			config := cloneM(obj(guest[field]))
+			for key := range config {
+				if strings.HasPrefix(key, "environment.") {
+					delete(config, key)
+				}
+			}
+			guest[field] = config
+		}
 	}
 	manifest := M{"format": 2, "generation": generation, "created": now(), "consistencyGroups": windows,
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
