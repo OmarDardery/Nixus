@@ -371,6 +371,9 @@ func applyImageUpdate(actor, project string) (M, error) {
 				}
 				return t.abandonDeployment(failedDeployment, "image update rollback")
 			},
+			// A failed service restarts on its own (boot.autorestart); stop the
+			// app so its state holds still while the rollback is planned.
+			func() error { stopApp(updateIncus, incusProject); return nil },
 			func() error { return republish(actor, project, previous) },
 			func() error { return restoreVolumes(updateIncus, incusProject, snaps) },
 			func() error { _, err := deployRevision(actor, project, previous); return err },
@@ -553,4 +556,13 @@ func startAllImageUpdates(actor string) (M, error) {
 	}
 	audit("image-update-all-requested", M{"principal": actor, "apps": pending})
 	return M{"started": true, "apps": pending}, nil
+}
+
+// stopApp force-stops every container of an app.
+func stopApp(incus incusFunc, incusProject string) {
+	for _, inst := range appInstances(incus, incusProject) {
+		if str(inst["status"]) != "Stopped" {
+			incus(0, "stop", str(inst["name"]), "--project", incusProject, "--force")
+		}
+	}
 }
