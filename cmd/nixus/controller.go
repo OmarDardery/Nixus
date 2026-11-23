@@ -285,7 +285,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 	if err := checkIdle(m.state, ""); err != nil {
 		return nil, err
 	}
-	if str(readObj(filepath.Join(m.state, "project-deploy-active.json"))["id"]) != "" {
+	if activeProjectDeployment(m.state) != "" {
 		return nil, Public("Finish or recover the project deployment before rebuilding the host")
 	}
 	if o.Revision != nil && !fullmatch(re(`[0-9a-f]{40}`), str(o.Revision)) {
@@ -546,7 +546,7 @@ func (m *Manager) reviewLocked(changes M, o ReviewOptions) (M, error) {
 }
 
 func (m *Manager) noProjectDeploy() error {
-	if str(readObj(filepath.Join(m.state, "project-deploy-active.json"))["id"]) != "" {
+	if activeProjectDeployment(m.state) != "" {
 		return Public("Finish or recover the project deployment before rebuilding the host")
 	}
 	return nil

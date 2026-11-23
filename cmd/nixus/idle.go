@@ -12,8 +12,7 @@ const incusLock = "/run/lock/nixus-incus.lock"
 
 // checkIdle refuses host changes during project deployments.
 func checkIdle(state, allowProject string) error {
-	project := readObj(filepath.Join(state, "project-deploy-active.json"))
-	if len(project) > 0 && str(project["id"]) != allowProject {
+	if id := activeProjectDeployment(state); id != "" && id != allowProject {
 		return Public("Finish or recover the active project deployment before changing host configuration")
 	}
 	return nil
@@ -46,7 +45,7 @@ func checkConfigIdle(state string) error {
 	if pending != nil && !equalJSON(pending, M{}) {
 		return Public("Finish the configuration transaction before changing guest state")
 	}
-	if str(readObj(filepath.Join(state, "project-deploy-active.json"))["id"]) != "" {
+	if activeProjectDeployment(state) != "" {
 		return Public("Finish or recover the project deployment before changing guest state")
 	}
 	return nil
