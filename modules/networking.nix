@@ -26,6 +26,9 @@ in {
       iifname ${iface} ip saddr { ${trusted} } icmp type echo-request accept
       iifname { ${guestIfaces} } udp dport { 53, 67 } accept
       iifname { ${guestIfaces} } tcp dport 53 accept
+      # App networks (nxa-*): DHCP and DNS from their own Incus dnsmasq.
+      iifname "nxa-*" udp dport { 53, 67 } accept
+      iifname "nxa-*" tcp dport 53 accept
       ${lib.concatMapStringsSep "\n" (bridge: ''
         iifname ${builtins.toJSON bridge} udp dport { 53, 67 } accept
         iifname ${builtins.toJSON bridge} tcp dport 53 accept
@@ -42,6 +45,9 @@ in {
       '') site.connectivity.privateAccess}
       iifname { ${guestIfaces} } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
       iifname { ${guestIfaces} } oifname ${iface} meta nfproto ipv4 accept
+      # App networks reach the internet, not each other or the LAN.
+      iifname "nxa-*" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
+      iifname "nxa-*" oifname ${iface} meta nfproto ipv4 accept
     '' + lib.optionalString site.connectivity.trustedLANAccess ''
       # Incus owns guest forwarding/ACLs; this is the outer host trust boundary.
       iifname ${iface} ip saddr { ${trusted} } oifname { ${guestIfaces} } accept

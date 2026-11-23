@@ -270,7 +270,7 @@ func TestLANServicesAndNIC(t *testing.T) {
 
 // Every container is created with its app network's gateway as DNS server.
 func TestAppGatewayAndOverride(t *testing.T) {
-	nets := `[{"name":"incusbr0","config":{"ipv4.address":"10.0.100.1/24"}},{"name":"aio_default","config":{"ipv4.address":"10.120.7.1/24"}}]`
+	nets := `[{"name":"incusbr0","config":{"ipv4.address":"10.0.100.1/24"}},{"name":"` + appNetworkName("aio") + `","config":{"ipv4.address":"10.120.7.1/24"}}]`
 	incus := func(_ time.Duration, args ...string) (string, error) { return nets, nil }
 	if gw, err := appGateway(incus, "aio"); err != nil || gw != "10.120.7.1" {
 		t.Fatalf("an existing app keeps its network: %q %v", gw, err)
@@ -283,9 +283,10 @@ func TestAppGatewayAndOverride(t *testing.T) {
 		t.Fatal("the choice is stable")
 	}
 	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1"), &doc)
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
 	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "oci.dns.nameservers")) != "10.120.9.1" ||
-		str(jget(doc, "networks", "default", "x-incus", "ipv4.address")) != "10.120.9.1/24" {
+		str(jget(doc, "networks", "default", "x-incus", "ipv4.address")) != "10.120.9.1/24" ||
+		!strings.HasPrefix(str(jget(doc, "networks", "default", "name")), "nxa-") || len(appNetworkName("a-very-long-app-name-here")) != 12 {
 		t.Fatalf("%v", doc)
 	}
 }
@@ -307,7 +308,7 @@ func TestSettledWaitsForStableRunning(t *testing.T) {
 		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
 	}
 	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1"), &doc)
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
 	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart")) != "true" {
 		t.Fatalf("%v", doc)
 	}

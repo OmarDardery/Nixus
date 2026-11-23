@@ -110,6 +110,13 @@ func deleteIncusProject(name string) error {
 	if _, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/projects/"+name+"?force=true"); err != nil {
 		return err
 	}
+	// The app's network lives in the default project (features.networks is
+	// off), so the project delete leaves it.
+	if incusQueryObj(updateIncus, "/1.0/networks/"+appNetworkName(name)) != nil {
+		if _, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/networks/"+appNetworkName(name)); err != nil {
+			return Failed("Could not delete the app's network", err)
+		}
+	}
 	// incus-compose's DNS sidecar holds a client certificate restricted to the
 	// project; the trust store is outside the project, so remove it too.
 	out, err := updateIncus(0, "query", "/1.0/certificates?recursion=1")

@@ -426,7 +426,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		return err
 	}
 	override := filepath.Join(scratch, "nixus-services.yaml")
-	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic), gateway), 0o600, ""); err != nil {
+	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic), gateway, appNetworkName(incusProject)), 0o600, ""); err != nil {
 		return err
 	}
 	flags = append(flags, "-f", override)
@@ -693,7 +693,7 @@ func appGateway(incus incusFunc, incusProject string) (string, error) {
 	for _, raw := range list(nets) {
 		n := obj(raw)
 		gw, _, _ := strings.Cut(str(jget(n, "config", "ipv4.address")), "/")
-		if name := str(n["name"]); (name == incusProject+"_default" || name == incusProject+"-default") && net.ParseIP(gw) != nil {
+		if str(n["name"]) == appNetworkName(incusProject) && net.ParseIP(gw) != nil {
 			return gw, nil
 		}
 		if ip := net.ParseIP(gw).To4(); ip != nil && ip[0] == 10 && ip[1] == 120 {
@@ -713,7 +713,7 @@ func appGateway(incus incusFunc, incusProject string) (string, error) {
 
 // appOverride adds the app network's address and, for every service, that
 // address as its DNS server (dnsmasq: service names, then upstream).
-func appOverride(services []byte, gateway string) []byte {
+func appOverride(services []byte, gateway, network string) []byte {
 	var doc M
 	json.Unmarshal(services, &doc)
 	for _, raw := range obj(doc["services"]) {
@@ -722,7 +722,7 @@ func appOverride(services []byte, gateway string) []byte {
 		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus",
 			"boot.autorestart": "true", "boot.autostart": "true"}
 	}
-	doc["networks"] = M{"default": M{"x-incus": M{"ipv4.address": gateway + "/24", "ipv4.nat": "true", "ipv6.address": "none"}}}
+	doc["networks"] = M{"default": M{"name": network, "x-incus": M{"ipv4.address": gateway + "/24", "ipv4.nat": "true", "ipv6.address": "none"}}}
 	b, _ := json.Marshal(doc)
 	return b
 }
@@ -753,4 +753,13 @@ func settled(observe func() (M, error), ok func(M) bool) (M, error) {
 		}
 	}
 	return last, nil
+}
+
+// appNetworkName is the Incus network (and bridge interface) of an app. The
+// fixed "nxa-" prefix lets the host firewall give every app network DHCP, DNS
+// and internet access the way it does the guest bridge.
+func appNetworkName(incusProject string) string {
+	h := fnv.New32a()
+	h.Write([]byte(incusProject))
+	return fmt.Sprintf("nxa-%08x", h.Sum32())
 }
