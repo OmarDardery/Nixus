@@ -328,6 +328,9 @@ function addAppCard() {
         (appView.uploads.length ? "<p>" + appView.uploads.length + " uploaded file(s)</p>" : "")
       : instanceForm() +
         '<textarea id="app-nix" rows="14" spellcheck="false" aria-label="Nix declaration">' + esc(appView.nix) + "</textarea>") +
+    '<details class="env-new"' + (appView.newEnv ? " open" : "") + '><summary>Environment variables (optional)</summary>' +
+    '<textarea id="app-env" rows="5" spellcheck="false" autocomplete="off" placeholder="KEY=value&#10;OTHER_KEY=value" aria-label="Environment variables">' +
+    esc(appView.newEnv || "") + '</textarea><p class="hint">One KEY=value per line, or paste a .env file. Saved encrypted with your secrets key.</p></details>' +
     '<div class="toolbar"><input id="app-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Password">' +
     '<button type="button" class="primary" id="app-deploy"' + (appView.busy ? " disabled" : "") + ">Deploy</button></div>" +
     (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
@@ -382,6 +385,8 @@ function syncForm() {
   for (const area of document.querySelectorAll("[data-app-text]")) appView.entries[Number(area.dataset.appText)].text = area.value;
   const nix = document.querySelector("#app-nix");
   if (nix) appView.nix = nix.value;
+  const env = document.querySelector("#app-env");
+  if (env) appView.newEnv = env.value;
 }
 
 async function deployApp() {
@@ -394,6 +399,8 @@ async function deployApp() {
   try {
     if (!/^[a-z][a-z0-9-]{0,62}$/.test(project)) throw Error("Name: lowercase letters, digits and dashes.");
     if (!current) throw Error("Enter your password.");
+    const env = {};
+    for (const { key, value } of parseEnv(appView.newEnv || "")) env[key] = value;
     appView.busy = true;
     rerender();
     let body;
@@ -403,9 +410,11 @@ async function deployApp() {
     } else {
       body = { project, kind: "nix", declaration: appView.nix, current };
     }
+    if (Object.keys(env).length) body.env = env;
     await api("apps/deploy", body);
     appView.message = "";
     appView.uploads = [];
+    appView.newEnv = "";
     Object.assign(appView, { view: project, tab: "deployments" });
   } catch (error) {
     appView.error = error.message || "Deploy failed.";

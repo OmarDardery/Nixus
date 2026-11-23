@@ -733,3 +733,7 @@ progress.setup-meter::-moz-progress-bar { background: var(--green); border-radiu
 .grid:not(.overview-grid) { display: flex; flex-direction: column; gap: 0; }
 .grid:not(.overview-grid) > .card { width: 100%; }
 .overview-grid { align-items: start; }
+.env-new { margin: 16px 0 4px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.env-new summary { cursor: pointer; font-size: 13px; color: var(--text); }
+.env-new textarea { width: 100%; margin-top: 10px; font-family: var(--mono); font-size: 13px; }
+.env-new .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
