@@ -172,6 +172,24 @@ func (b *OCIBuilds) review(project, revision any, principal string) (M, error) {
 // --- Compose deploy adapter (#45) ------------------------------------------
 
 const composeServiceLabel = "user.label.incus-compose.service"
+
+// defaultDNSImage is incus-compose's own DNS sidecar for this incus-compose
+// version, pinned by digest. It lets an app's services reach each other by
+// name, as with docker compose. NIXUS_COMPOSE_DNS_IMAGE overrides it (tests,
+// hosts with their own registry mirror).
+const defaultDNSImage = "ghcr.io/lxc/incus-compose/ic-dns:1.4.1@sha256:854d0f70b643e7699e5abe39f86de30d58d148c5865489be67e7ea9b32d695a0"
+
+func composeDNSImage() string {
+	if v := os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"); v != "" {
+		return v
+	}
+	return defaultDNSImage
+}
+
+// isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
+// the project; it belongs to the project, not to any of the app's services.
+func isDNSSidecar(incusProject, name string) bool { return name == incusProject+"-ic-dns" }
+
 const composeIntentKey = "user.nixus.compose-intent"
 
 var composeStable = []string{"kind", "project", "name", "sourceProject", "revision", "buildId", "intentHash", "services"}
@@ -221,6 +239,9 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 	observed := M{}
 	for _, raw := range instances {
 		instance := obj(raw)
+		if isDNSSidecar(incusProject, str(instance["name"])) {
+			continue
+		}
 		settings := obj(instance["config"])
 		if str(settings[OWNER]) == "true" {
 			return nil, Public("A native Nixus-owned instance is inside the Compose project")
@@ -384,6 +405,9 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			}
 		}
 	}
+	if msg := portConflicts(a.incus, incusProject, composeHostPorts(list(build["services"]))); msg != "" {
+		return Public(msg)
+	}
 	runUp := func(args []string) error {
 		res, err := run(args, nil, 1800*time.Second, env, source)
 		if err != nil || res.Code != 0 {
@@ -394,6 +418,9 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			fmt.Fprintln(os.Stderr, "nixus: incus-compose up failed:", tail)
 			if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
 				os.Stdout.WriteString("COMPOSE-VM-STDERR: " + tail + "\n")
+			}
+			if msg := explainBindError(a.incus, incusProject, tail); msg != "" {
+				return Public(msg)
 			}
 			return Public("incus-compose could not bring the project up: " + lastLine(tail))
 		}
@@ -512,7 +539,7 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing", "--no-healthd", "--no-dns")
 	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
-		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch}
+		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_DNS_IMAGE=" + composeDNSImage()}
 	return args, env, nil
 }
 

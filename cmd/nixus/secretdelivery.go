@@ -93,6 +93,9 @@ func appInstances(incus incusFunc, incusProject string) []M {
 	var result []M
 	for _, raw := range list(must(parseJSON([]byte(out)))) {
 		inst := obj(raw)
+		if isDNSSidecar(incusProject, str(inst["name"])) {
+			continue
+		}
 		result = append(result, M{"name": inst["name"], "service": obj(inst["config"])[composeServiceLabel], "status": inst["status"]})
 	}
 	return result

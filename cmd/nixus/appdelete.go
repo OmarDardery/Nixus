@@ -107,8 +107,26 @@ func appIncusProjects(project string, declared M) []string {
 // API (projects_force_delete). The CLI's `project delete --force` always asks
 // for confirmation on stdin, which a service cannot answer.
 func deleteIncusProject(name string) error {
-	_, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/projects/"+name+"?force=true")
-	return err
+	if _, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/projects/"+name+"?force=true"); err != nil {
+		return err
+	}
+	// incus-compose's DNS sidecar holds a client certificate restricted to the
+	// project; the trust store is outside the project, so remove it too.
+	out, err := updateIncus(0, "query", "/1.0/certificates?recursion=1")
+	if err != nil {
+		return nil
+	}
+	certs, err := parseJSON([]byte(out))
+	if err != nil {
+		return nil
+	}
+	for _, raw := range list(certs) {
+		cert := obj(raw)
+		if str(cert["name"]) == "ic-dns-"+name && fullmatch(re(`[0-9a-f]{64}`), str(cert["fingerprint"])) {
+			updateIncus(0, "query", "-X", "DELETE", "/1.0/certificates/"+str(cert["fingerprint"]))
+		}
+	}
+	return nil
 }
 
 func forgetKey(path, key string) {

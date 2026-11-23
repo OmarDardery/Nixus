@@ -36,6 +36,9 @@ func runtimeInstances(incusProject string) []any {
 	out := []any{}
 	for _, raw := range incusQueryList(nativeIncus, "/1.0/instances?recursion=1&project="+url.QueryEscape(incusProject)) {
 		i := obj(raw)
+		if isDNSSidecar(incusProject, str(i["name"])) {
+			continue
+		}
 		out = append(out, M{"name": i["name"], "type": i["type"], "status": truncate(str(i["status"]), 32),
 			"owned": str(jget(i, "config", OWNER)) == "true", "compose": str(jget(i, "config", composeServiceLabel)) != "",
 			"ports": publishedPorts(obj(i["devices"]))})

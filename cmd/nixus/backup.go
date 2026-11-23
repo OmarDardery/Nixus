@@ -605,6 +605,9 @@ func runBackup(only []string) error {
 		}
 		for _, raw := range instances {
 			g := obj(raw)
+			if isDNSSidecar(project, str(g["name"])) {
+				continue // recreated by the next deployment
+			}
 			g["project"] = project
 			if s := str(g["status"]); s != "Running" && s != "Stopped" {
 				return Hidden("Refusing backup of frozen/error-state guest: " + str(g["name"]))
