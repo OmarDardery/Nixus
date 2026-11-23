@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -46,5 +48,30 @@ func TestBackupPolicyTextValidates(t *testing.T) {
 	}
 	if strings.Contains(text, "github") {
 		t.Fatal("unexpected github mirror")
+	}
+}
+
+// The generated password survives a failed first attempt and is shown by the
+// first successful one (#116).
+func TestFirstBackupPasswordSurvivesAFailedSetup(t *testing.T) {
+	dir := useState(t)
+	oldDir, oldPw := backupSecretsDir, backupPasswordPth
+	backupSecretsDir, backupPasswordPth = dir, filepath.Join(dir, "pw")
+	defer func() { backupSecretsDir, backupPasswordPth = oldDir, oldPw }()
+	// First attempt: the folder cannot be created, so setup fails after the password exists.
+	if _, err := setupBackups("admin", M{"kind": "local", "path": "/proc/nixus-no-such/backup"}); err == nil {
+		t.Fatal("setup into an impossible folder succeeded")
+	}
+	if !isFile(backupPasswordPth) || !isFile(pendingBackupPasswordMarker()) {
+		t.Fatal("the password must be kept and marked as not yet shown")
+	}
+	first, _ := os.ReadFile(backupPasswordPth)
+	// Nothing is handed out while setup is still failing.
+	if got := takePendingBackupPassword(); got == "" || got != strings.TrimSpace(string(first)) {
+		t.Fatalf("pending password: %q", got)
+	}
+	// Once handed over, it is not shown again.
+	if takePendingBackupPassword() != "" {
+		t.Fatal("password shown twice")
 	}
 }
