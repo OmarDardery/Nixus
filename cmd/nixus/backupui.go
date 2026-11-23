@@ -46,7 +46,8 @@ var restoreReportPath = func() string { return filepath.Join(STATE, "project-res
 // startRestore writes the destination credentials and starts a cold-host
 // restore worker. Only for a host without a project workspace.
 func startRestore(actor string, body M) (M, error) {
-	if lexists(NewProjectTransactions("", "").workspace) {
+	// Retrying a failed restore is allowed: its journal lets it resume.
+	if lexists(NewProjectTransactions("", "").workspace) && !isFile(restoreJournalPath()) {
 		return nil, Public("This server already has apps; restore onto a fresh install")
 	}
 	if s := str(readObj(restoreReportPath())["status"]); s == "restoring" || s == "starting" {

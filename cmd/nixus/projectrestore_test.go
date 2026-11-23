@@ -113,3 +113,81 @@ func TestRestoreNetworksRecreatesMissingManagedBridges(t *testing.T) {
 		t.Fatalf("calls %v", calls)
 	}
 }
+
+// A restore that fails after importing one guest resumes from the journal: the
+// imported guest is kept, not re-imported or reported as a collision, while an
+// unrelated instance with the same name is still refused (#111).
+func TestRestoreResumesAfterAFailedImport(t *testing.T) {
+	state := useState(t)
+	generation := t.TempDir()
+	archive := func(letter string) string {
+		name := "instance-" + strings.Repeat(letter, 64) + ".tar.gz"
+		os.WriteFile(filepath.Join(generation, name), []byte("archive-"+letter), 0o600)
+		return name
+	}
+	one, two := archive("a"), archive("b")
+	writeJSON(filepath.Join(generation, "inventory.json"), M{
+		"archiveSHA256": M{one: sha256hex([]byte("archive-a")), two: sha256hex([]byte("archive-b"))},
+		"projects":      []any{M{"name": "web", "config": M{}}},
+		"guests": []any{
+			M{"name": "one", "project": "web", "archive": one, "status": "Stopped"},
+			M{"name": "two", "project": "web", "archive": two, "status": "Stopped"},
+		},
+	})
+	existing := map[string]bool{}
+	imports := map[string]int{}
+	failSecond := true
+	fake := func(_ time.Duration, args ...string) (string, error) {
+		switch {
+		case args[0] == "storage" && args[1] == "list":
+			return `[{"name":"default"}]`, nil
+		case args[0] == "query" && strings.HasPrefix(args[1], "/1.0/instances/"):
+			name := strings.TrimPrefix(strings.SplitN(args[1], "?", 2)[0], "/1.0/instances/")
+			if existing[name] {
+				return `{"name":"` + name + `"}`, nil
+			}
+			return "", Public("not found")
+		case args[0] == "query":
+			return "", Public("not found")
+		case args[0] == "import":
+			name := args[2]
+			if name == "two" && failSecond {
+				return "", Hidden("disk full")
+			}
+			imports[name]++
+			existing[name] = true
+		}
+		return "", nil
+	}
+	run1 := func(j *restoreJournal) error {
+		inventory, err := restoreIncusPreflight(fake, generation, j)
+		if err != nil {
+			return err
+		}
+		_, err = restoreIncusApply(fake, generation, inventory, j)
+		return err
+	}
+	identity := "snapshot-content-hash"
+	if err := run1(openRestoreJournal(identity)); err == nil {
+		t.Fatal("the first attempt should fail on the second import")
+	}
+	if !existing["one"] || existing["two"] {
+		t.Fatalf("after the failure: %v", existing)
+	}
+	// Retry the same snapshot: resumes, does not collide on "one" and does not import it twice.
+	failSecond = false
+	if err := run1(openRestoreJournal(identity)); err != nil {
+		t.Fatalf("resume failed: %v", err)
+	}
+	if imports["one"] != 1 || imports["two"] != 1 {
+		t.Fatalf("imports: %v", imports)
+	}
+	// A different snapshot gets no credit for what exists: the collision is refused.
+	if _, err := restoreIncusPreflight(fake, generation, openRestoreJournal("another-snapshot")); err == nil ||
+		!strings.Contains(publicError(err), "already exists") {
+		t.Fatalf("an unrelated collision must still be refused: %v", err)
+	}
+	if !isFile(filepath.Join(state, "project-restore-journal.json")) {
+		t.Fatal("the journal must persist between attempts")
+	}
+}
