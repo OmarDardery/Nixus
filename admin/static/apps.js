@@ -4,7 +4,7 @@
 // Deploy runs the same reviewed, hash-checked steps as the broker API.
 
 const appView = {
-  overview: null, jobs: {}, updates: null, backups: null, loading: false, error: "", message: "",
+  overview: null, jobs: {}, updates: null, backups: null, loading: false, loadError: "", error: "", message: "",
   busy: false, log: null, mode: "files", drafts: [],
   entries: [{ path: "Dockerfile", text: "" }], uploads: [], nix: "",
   instance: { type: "container", image: "images:debian/13", cpus: 2, memory: 2, disk: 10, usb: "" },
@@ -204,8 +204,9 @@ function appsList() {
     '<button type="button" class="icon-button" data-import="repo">' + icon("git") + '<span class="label">From Git</span></button>' +
     '<button type="button" class="icon-button" data-import="backup">' + icon("archive") + '<span class="label">From a backup</span></button></div></div>';
   return head + (appView.error ? '<p class="error" role="alert">' + esc(appView.error) + "</p>" : "") +
+    (appView.loadError ? '<p class="error" role="alert">' + esc(appView.loadError) + "</p>" : "") +
     (appView.message ? '<p role="status" class="notice">' + esc(appView.message) + "</p>" : "") + tools + draftsCard() +
-    (projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
+    (!appView.overview ? (appView.loading ? '<p role="status">Loading apps…</p>' : '<button type="button" id="apps-refresh">Retry loading apps</button>') : projects.length ? '<div class="app-grid">' + projects.map(appCard).join("") + "</div>"
       : all.length ? '<p class="apps-none">No apps match “' + esc(appView.filter) + "”.</p>" : empty);
 }
 
@@ -590,7 +591,7 @@ function instanceForm() {
 }
 
 function appsPage() {
-  if (!appView.overview && !appView.loading) void refreshApps();
+  if (!appView.overview && !appView.loading && !appView.loadError) void refreshApps();
   if (appView.view === "new") return newAppView();
   if (appView.view !== "list") return appDetail(appView.view);
   return appsList();
@@ -614,8 +615,9 @@ async function refreshApps() {
     const [overview, jobs, updates, backups, drafts] = await Promise.all([
       api("project-overview"), api("apps"), api("image-updates"), api("project-backups"), api("apps/drafts")]);
     Object.assign(appView, { overview, jobs, updates, backups, drafts: drafts?.drafts || [] });
+    appView.loadError = "";
   } catch (error) {
-    appView.error = error.message || "Could not load appView.";
+    appView.loadError = error.message || "Could not load apps.";
   } finally {
     appView.loading = false;
     if (!typing()) rerender();

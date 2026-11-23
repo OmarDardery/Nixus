@@ -10,7 +10,7 @@ function makeContext(responses) {
   const context = vm.createContext({
     console, setTimeout: (fn) => fn(), Date,
     state: { page: "overview", status: { release: { version: "0.1", revision: "a".repeat(40) }, settings: { x: 1 }, job: null } },
-    administrator: () => true, stagedCount: () => 0, shell: () => {},
+    administrator: () => true, stagedCount: () => 0, shell: () => {}, navigateTo: page => { context.state.page = page; },
     esc: v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]),
     card: (t, b) => "<section><h2>" + t + "</h2>" + b + "</section>",
     api: async (p, body) => { calls.push([p, body]); const r = responses(p, body, context); if (r instanceof Error) throw r; return r; },
@@ -36,7 +36,7 @@ function makeContext(responses) {
   assert.match(html, /id="quick-update-apps" disabled/, "no app updates → button disabled");
   assert.doesNotMatch(html, /Next step/);
 
-  // Update Nixus: builds, activates, confirms from this browser.
+  // Update Nixus: builds and activates, then requires a fresh login.
   let statuses = ["building", "ready", "applying", "awaiting-confirmation", "confirmed"];
   ({ context, calls } = makeContext((p) => {
     if (p === "main-revision") return { revision: "b".repeat(40) };
@@ -49,12 +49,13 @@ function makeContext(responses) {
   var calls;
   await vm.runInContext('updateNixus("pw")', context);
   const names = calls.map(c => c[0]);
-  assert.deepEqual(names.filter(n => ["review", "apply", "confirm"].includes(n)), ["review", "apply", "confirm"]);
+  assert.deepEqual(names.filter(n => ["review", "apply", "confirm"].includes(n)), ["review", "apply"]);
   const review = calls.find(c => c[0] === "review")[1];
   assert.equal(review.revision, "b".repeat(40));
   assert.equal(review.updateInputs, true);
   assert.equal(review.adminPassword, "pw");
-  assert.match(vm.runInContext("quick.message", context), /Updated to bbbbbbbbbbbb/);
+  assert.match(vm.runInContext("quick.message", context), /Sign out.*sign in again/);
+  assert.equal(context.state.page, "review");
 
   // A blocked impact plan never activates.
   ({ context, calls } = makeContext((p) => p === "main-revision" ? { revision: "b".repeat(40) }

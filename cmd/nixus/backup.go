@@ -192,8 +192,7 @@ func consistencyGroups(guests []M, volumes []M, configured []any, namespaces map
 		byID[k] = g
 		parents[k] = k
 	}
-	var find func(key) key
-	find = func(k key) key {
+	find := func(k key) key {
 		for parents[k] != k {
 			parents[k] = parents[parents[k]]
 			k = parents[k]
