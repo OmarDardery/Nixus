@@ -81,12 +81,14 @@ in pkgs.testers.runNixOSTest {
     machine.succeed("ip address add 203.0.113.2/24 dev uplink; ip link set uplink up")
     machine.succeed("ip netns exec edge ip link set lo up; ip netns exec edge ip address add 203.0.113.1/24 dev edge0; ip netns exec edge ip link set edge0 up")
     machine.succeed("ip netns exec edge ip address add 10.20.0.1/32 dev lo; ip route add 10.20.0.1/32 via 203.0.113.1")
-    machine.succeed("systemd-run --unit=edge-echo ip netns exec edge python3 ${echo}")
-    machine.succeed("systemd-run --unit=edge-dns ip netns exec edge dnsmasq --keep-in-foreground --user=root --no-resolv --bind-interfaces --listen-address=203.0.113.1 --address=/edge.example/203.0.113.1")
+    machine.succeed("systemd-run --unit=edge-echo ip netns exec edge ${pkgs.python3}/bin/python3 ${echo}")
+    machine.succeed("systemd-run --unit=edge-dns ip netns exec edge ${pkgs.dnsmasq}/bin/dnsmasq --keep-in-foreground --user=root --no-resolv --bind-interfaces --listen-address=203.0.113.1 --address=/edge.example/203.0.113.1")
     machine.succeed("systemd-run --unit=host-listener python3 -m http.server 9440 --bind 0.0.0.0")
+    machine.wait_for_unit("edge-echo.service")
+    machine.wait_for_unit("edge-dns.service")
     machine.wait_for_open_port(9440)
     machine.succeed("python3 ${probe} connect 203.0.113.2 9440")
-    machine.wait_until_succeeds("python3 ${probe} tcp 203.0.113.1 7844")
+    machine.wait_until_succeeds("python3 ${probe} tcp 203.0.113.1 7844", timeout=30)
     machine.succeed("python3 ${probe} udp 203.0.113.1 7844")
     machine.succeed("python3 ${probe} tcp 10.20.0.1 7844")
 
@@ -103,7 +105,7 @@ in pkgs.testers.runNixOSTest {
         machine.succeed(f"ip netns exec {name} udhcpc -f -n -q -i eth0 -x hostname:{name} -s ${lease}")
 
     client_ip = json.loads(machine.succeed("ip -n client -j -4 address show eth0"))[0]["addr_info"][0]["local"]
-    machine.succeed("systemd-run --unit=client-echo ip netns exec client python3 ${echo}")
+    machine.succeed("systemd-run --unit=client-echo ip netns exec client ${pkgs.python3}/bin/python3 ${echo}")
     machine.wait_until_succeeds(f"ip netns exec peer python3 ${probe} tcp {client_ip} 7844")
 
     def check_egress():
