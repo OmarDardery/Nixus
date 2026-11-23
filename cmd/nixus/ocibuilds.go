@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"path"
@@ -420,8 +421,12 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			return err
 		}
 	}
+	gateway, err := appGateway(a.incus, incusProject)
+	if err != nil {
+		return err
+	}
 	override := filepath.Join(scratch, "nixus-services.yaml")
-	if err := atomic(override, serviceOverride(names, values, lanFor, nic), 0o600, ""); err != nil {
+	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic), gateway), 0o600, ""); err != nil {
 		return err
 	}
 	flags = append(flags, "-f", override)
@@ -468,17 +473,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		}
 		return nil
 	}
-	// Create everything stopped, give each container the DNS server of the
-	// app's network, then start: OCI containers only read DNS settings when
-	// they start, and a service such as a tunnel client exits at once when it
-	// cannot resolve names.
-	if err := runUp(append(append([]string{}, args...), "--no-start")); err != nil {
-		return err
-	}
-	if err := setContainerDNS(a.incus, incusProject); err != nil {
-		return err
-	}
-	if err := runUp(startCommand(args)); err != nil {
+	if err := runUp(args); err != nil {
 		return err
 	}
 	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN)
@@ -583,71 +578,6 @@ func serviceOverride(services []string, values M, lanFor map[string]bool, nic M)
 // and DNS name ("_" is not allowed in either).
 func instanceNameFor(service string) string { return strings.ReplaceAll(service, "_", "-") }
 
-// startCommand turns an `up` invocation into one that only starts instances
-// that already exist: no build, nothing new to create.
-func startCommand(args []string) []string {
-	out := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--build", "--no-build":
-			continue
-		case "--builder":
-			i++
-			continue
-		}
-		out = append(out, args[i])
-	}
-	return append(out, "--no-build")
-}
-
-// setContainerDNS points each app container at the DNS server (dnsmasq) of
-// the Incus network its eth0 is on. It resolves the app's service names and
-// forwards everything else.
-func setContainerDNS(incus incusFunc, incusProject string) error {
-	out, err := incus(0, "query", "/1.0/instances?recursion=1&project="+incusProject)
-	if err != nil {
-		return Failed("Could not read the app's containers", err)
-	}
-	instances, err := parseJSON([]byte(out))
-	if err != nil {
-		return Failed("Could not read the app's containers", err)
-	}
-	networks := map[string][2]string{}
-	for _, raw := range list(instances) {
-		inst := obj(raw)
-		name := str(inst["name"])
-		if isDNSSidecar(incusProject, name) || str(inst["type"]) != "container" {
-			continue
-		}
-		network := str(jget(inst, "expanded_devices", "eth0", "network"))
-		if network == "" {
-			continue // no managed network, e.g. only a LAN card
-		}
-		dns, ok := networks[network]
-		if !ok {
-			cfg := obj(incusQueryObj(incus, "/1.0/networks/"+network+"?project="+incusProject)["config"])
-			gateway, _, _ := strings.Cut(str(cfg["ipv4.address"]), "/")
-			if net.ParseIP(gateway) == nil {
-				gateway, _, _ = strings.Cut(str(cfg["ipv6.address"]), "/")
-			}
-			if net.ParseIP(gateway) == nil {
-				return Public("Could not find the DNS server of the app's network " + network)
-			}
-			domain := str(cfg["dns.domain"])
-			if domain == "" {
-				domain = "incus"
-			}
-			dns = [2]string{gateway, domain}
-			networks[network] = dns
-		}
-		body, _ := json.Marshal(M{"config": M{"oci.dns.nameservers": dns[0], "oci.dns.search": dns[1]}})
-		if _, err := incus(0, "query", "-X", "PATCH", "-d", string(body), "/1.0/instances/"+name+"?project="+incusProject); err != nil {
-			return Failed("Could not set the DNS server of "+name, err)
-		}
-	}
-	return nil
-}
-
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah.
 func composeUpCommand(binary string, flags []string, build M, scratch string) ([]string, []string, error) {
@@ -739,4 +669,52 @@ func notRunning(resource M) string {
 		return ""
 	}
 	return ": " + strings.Join(problems, ", ") + ". A container that stops right after starting usually needs a variable or a setting; check its logs"
+}
+
+// appGateway is the gateway of the app's own network: the address of the
+// existing one, or a free /24 in 10.120.0.0/16 chosen from the app's name.
+// Knowing it up front lets every container be created with it as its DNS
+// server (OCI containers read DNS settings only when they start).
+func appGateway(incus incusFunc, incusProject string) (string, error) {
+	out, err := incus(0, "query", "/1.0/networks?recursion=1")
+	if err != nil {
+		return "", Failed("Could not list Incus networks", err)
+	}
+	nets, err := parseJSON([]byte(out))
+	if err != nil {
+		return "", Failed("Could not list Incus networks", err)
+	}
+	used := map[string]bool{}
+	for _, raw := range list(nets) {
+		n := obj(raw)
+		gw, _, _ := strings.Cut(str(jget(n, "config", "ipv4.address")), "/")
+		if name := str(n["name"]); (name == incusProject+"_default" || name == incusProject+"-default") && net.ParseIP(gw) != nil {
+			return gw, nil
+		}
+		if ip := net.ParseIP(gw).To4(); ip != nil && ip[0] == 10 && ip[1] == 120 {
+			used[fmt.Sprint(ip[2])] = true
+		}
+	}
+	h := fnv.New32a()
+	h.Write([]byte(incusProject))
+	for i := uint32(0); i < 254; i++ {
+		third := fmt.Sprint((h.Sum32()+i)%254 + 1)
+		if !used[third] {
+			return "10.120." + third + ".1", nil
+		}
+	}
+	return "", Public("No free private network left for this app (10.120.0.0/16 is full)")
+}
+
+// appOverride adds the app network's address and, for every service, that
+// address as its DNS server (dnsmasq: service names, then upstream).
+func appOverride(services []byte, gateway string) []byte {
+	var doc M
+	json.Unmarshal(services, &doc)
+	for _, raw := range obj(doc["services"]) {
+		obj(raw)["x-incus"] = M{"oci.dns.nameservers": gateway, "oci.dns.search": "incus"}
+	}
+	doc["networks"] = M{"default": M{"x-incus": M{"ipv4.address": gateway + "/24", "ipv4.nat": "true", "ipv6.address": "none"}}}
+	b, _ := json.Marshal(doc)
+	return b
 }

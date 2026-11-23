@@ -268,49 +268,24 @@ func TestLANServicesAndNIC(t *testing.T) {
 	}
 }
 
-// Containers get the DNS server of the app's network before they start.
-func TestSetContainerDNS(t *testing.T) {
-	var patches []string
-	incus := func(_ time.Duration, args ...string) (string, error) {
-		path := args[len(args)-1]
-		switch {
-		case strings.HasPrefix(path, "/1.0/instances?recursion=1"):
-			return `[{"name":"cloudflared","type":"container","expanded_devices":{"eth0":{"type":"nic","network":"aio_default"}}},
-			         {"name":"aiostreams","type":"container","expanded_devices":{"eth0":{"type":"nic","network":"aio_default"},"lan":{"type":"nic","nictype":"macvlan"}}},
-			         {"name":"aio-ic-dns","type":"container","expanded_devices":{"eth0":{"network":"aio_default"}}}]`, nil
-		case strings.HasPrefix(path, "/1.0/networks/aio_default"):
-			return `{"config":{"ipv4.address":"10.88.0.1/24"}}`, nil
-		case args[1] == "-X" && args[2] == "PATCH":
-			patches = append(patches, path+" "+args[4])
-			return "", nil
-		}
-		return "", Public("unexpected " + strings.Join(args, " "))
+// Every container is created with its app network's gateway as DNS server.
+func TestAppGatewayAndOverride(t *testing.T) {
+	nets := `[{"name":"incusbr0","config":{"ipv4.address":"10.0.100.1/24"}},{"name":"aio_default","config":{"ipv4.address":"10.120.7.1/24"}}]`
+	incus := func(_ time.Duration, args ...string) (string, error) { return nets, nil }
+	if gw, err := appGateway(incus, "aio"); err != nil || gw != "10.120.7.1" {
+		t.Fatalf("an existing app keeps its network: %q %v", gw, err)
 	}
-	if err := setContainerDNS(incus, "aio"); err != nil {
-		t.Fatal(err)
+	gw, err := appGateway(incus, "web")
+	if err != nil || !strings.HasPrefix(gw, "10.120.") || gw == "10.120.7.1" {
+		t.Fatalf("a new app gets a free /24: %q %v", gw, err)
 	}
-	if len(patches) != 2 {
-		t.Fatalf("the two service containers, not the sidecar: %v", patches)
+	if again, _ := appGateway(incus, "web"); again != gw {
+		t.Fatal("the choice is stable")
 	}
-	for _, p := range patches {
-		if !strings.Contains(p, `"oci.dns.nameservers":"10.88.0.1"`) || !strings.Contains(p, `"oci.dns.search":"incus"`) {
-			t.Fatalf("%s", p)
-		}
-	}
-	noGateway := func(_ time.Duration, args ...string) (string, error) {
-		if strings.HasPrefix(args[len(args)-1], "/1.0/instances") {
-			return `[{"name":"web","type":"container","expanded_devices":{"eth0":{"network":"x"}}}]`, nil
-		}
-		return `{"config":{}}`, nil
-	}
-	if err := setContainerDNS(noGateway, "aio"); err == nil || !strings.Contains(publicError(err), "DNS server") {
-		t.Fatalf("%v", err)
-	}
-}
-
-func TestStartCommandOnlyStarts(t *testing.T) {
-	got := strings.Join(startCommand([]string{"incus-compose", "-p", "x", "up", "--detach", "--build", "--builder", "/b/buildah", "--pull", "missing"}), " ")
-	if got != "incus-compose -p x up --detach --pull missing --no-build" {
-		t.Fatal(got)
+	var doc M
+	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1"), &doc)
+	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "oci.dns.nameservers")) != "10.120.9.1" ||
+		str(jget(doc, "networks", "default", "x-incus", "ipv4.address")) != "10.120.9.1/24" {
+		t.Fatalf("%v", doc)
 	}
 }
