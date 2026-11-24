@@ -479,17 +479,19 @@ func projectRestore(o restoreOptions) (M, error) {
 	}
 	report["keys"] = keysReport
 	report["host"] = restoreHost(config, files, keysReport)
+	// Materialize /run/nixus-secrets/<project> BEFORE starting restored Incus
+	// containers so their read-only /run/secrets disk mounts are ready at start.
+	if delivered, err := deliverAllSecrets(); err != nil {
+		report["secretDelivery"] = M{"error": publicError(err)}
+	} else {
+		report["secretDelivery"] = delivered["projects"]
+	}
 	if generation != "" {
 		incusReport, err := restoreIncusApply(updateIncus, generation, inventory, journal)
 		if err != nil {
 			return failWith("incus", err)
 		}
 		report["incus"] = incusReport
-		if delivered, err := deliverAllSecrets(); err != nil {
-			report["secretDelivery"] = M{"error": publicError(err)}
-		} else {
-			report["secretDelivery"] = delivered["projects"]
-		}
 	} else {
 		report["incus"] = M{"skipped": "the snapshot holds no Incus data export"}
 	}

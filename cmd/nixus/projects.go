@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,8 +21,6 @@ import (
 )
 
 var projectsWorkspace = envPath("NIXUS_PROJECTS", "/srv/nixus/projects")
-
-const hostDesired = "/etc/nixus/desired-instances.json"
 
 var ciphertextName = regexp.MustCompile(`(?i)^secrets\.enc\.(yaml|yml|json)$`)
 
@@ -426,92 +423,7 @@ func validateInventory(raw M) (M, error) {
 
 // --- plans ----------------------------------------------------------------------
 
-func nativeSpec(project M, name string, current M) (M, error) {
-	if str(jget(current, "config", OWNER)) != "true" {
-		return nil, Public("Refusing to adopt an Incus instance without Nixus ownership")
-	}
-	if t := str(current["type"]); t != "container" && t != "virtual-machine" {
-		return nil, Public("Unsupported existing Incus instance type")
-	}
-	last, err := parseObject([]byte(str(jget(current, "config", LAST_APPLIED))))
-	if err != nil {
-		if str(jget(current, "config", LAST_APPLIED)) == "" {
-			last = M{}
-		} else {
-			return nil, Public("Invalid previous Incus ownership metadata")
-		}
-	}
-	if v, _ := num(last["version"]); v != 1 {
-		return nil, Public("Existing instance must have last-applied Nixus ownership")
-	}
-	if obj(last["config"]) == nil || obj(last["devices"]) == nil || list(last["profiles"]) == nil && last["profiles"] == nil {
-		return nil, Public("Incomplete Incus ownership record")
-	}
-	config := cloneM(obj(last["config"]))
-	cpus, _ := intValue(jget(project, "resources", "cpus"))
-	config["limits.cpu"] = itoa(cpus)
-	config["limits.memory"] = jget(project, "resources", "memory")
-	return M{"project": project["incusProject"], "name": name, "type": current["type"], "config": config,
-		"devices": last["devices"], "profiles": last["profiles"]}, nil
-}
-
 func itoa(n int) string { return strconv.Itoa(n) }
-
-var nativeObservation = func(project M, guest string) (M, error) {
-	current, etag, err := readInstance(str(project["incusProject"]), guest)
-	if err != nil {
-		return nil, err
-	}
-	spec, err := nativeSpec(project, guest, current)
-	if err != nil {
-		return nil, err
-	}
-	updated, err := reconcilePlan(current, spec)
-	if err != nil {
-		return nil, err
-	}
-	shape := M{}
-	for _, k := range []string{"type", "config", "devices", "profiles"} {
-		shape[k] = current[k]
-	}
-	action, desired := "noop", any(shape)
-	if updated != nil {
-		action, desired = "update", updated
-	}
-	cpus, _ := intValue(jget(project, "resources", "cpus"))
-	return normalize(M{"project": project["incusProject"], "name": guest, "observedStatus": truncate(str(current["status"]), 32),
-		"etag": etag, "before": M{"cpus": jget(current, "config", "limits.cpu"), "memory": jget(current, "config", "limits.memory")},
-		"after": M{"cpus": itoa(cpus), "memory": jget(project, "resources", "memory")}, "fingerprint": digestJSON(shape),
-		"action": action, "desiredHash": digestJSON(desired)}).(M), nil
-}
-
-var hostClaims = func() (map[string]bool, error) {
-	fail := Public("Host-owned Incus inventory unavailable; refusing project adoption")
-	if isSymlink(hostDesired) {
-		resolved, _ := filepath.EvalSymlinks(hostDesired)
-		if !strings.HasPrefix(resolved, "/nix/store/") {
-			return nil, Public("Unexpected host Incus inventory symlink")
-		}
-	}
-	raw, err := os.ReadFile(hostDesired)
-	if err != nil {
-		return nil, fail
-	}
-	v, err := parseJSON(raw)
-	items, ok := v.([]any)
-	if err != nil || !ok {
-		return nil, Public("Invalid host-owned Incus inventory")
-	}
-	owners := map[string]bool{}
-	for _, item := range items {
-		m := obj(item)
-		if m == nil || !isStr(m["name"]) || !isStr(m["project"]) {
-			return nil, Public("Invalid host-owned instance declaration")
-		}
-		owners[str(m["project"])+"/"+str(m["name"])] = true
-	}
-	return owners, nil
-}
 
 var composeOwned = func(incusProject string) bool {
 	current := incusQueryObj(defaultIncus, "/1.0/projects/"+incusProject)
@@ -527,13 +439,12 @@ func planObserve(project, resource M) (M, error) {
 	if str(resource["kind"]) == "compose" {
 		return composeAdapterFactory().observe(str(resource["sourceProject"]), str(resource["project"]), str(resource["revision"]))
 	}
-	return nativeObservation(project, str(resource["name"]))
+	return nil, Public("Unsupported project resource kind")
 }
 
 func projectPlan(inventory M, sourceRefs M) (M, error) {
 	items := []any{}
 	retained := []any{}
-	var hostOwned map[string]bool
 	projects := obj(inventory["projects"])
 	for _, key := range keys(projects) {
 		project := obj(projects[key])
@@ -553,7 +464,7 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 				if err != nil {
 					return nil, err
 				}
-				// A change of the app's LAN setting recreates its containers.
+				// A change of the app's LAN setting reconciles its containers.
 				resource["lan"] = lanServices(project)
 				if str(resource["lan"]) != str(resource["lanCurrent"]) && str(resource["action"]) == "noop" {
 					resource["action"], resource["observedStatus"] = "compose-up", "Pending"
@@ -568,38 +479,6 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 		}
 		items = append(items, declaredItems...)
 		retained = append(retained, kept...)
-		claims, _ := anyStrings(project["claims"])
-		sort.Strings(claims)
-		for _, claim := range claims {
-			m := claimRe.FindStringSubmatch(claim)
-			kind, name := m[1], m[2]
-			if obj(project["instances"])[name] != nil {
-				continue
-			}
-			if str(project["backend"]) != "incus-native" || kind != "instance" {
-				return nil, Public("Unsupported Incus resource claim; #133 adapter required")
-			}
-			if str(project["incusProject"]) == "lab" {
-				return nil, Public("Legacy lab project is host-owned; explicit #133 migration required")
-			}
-			if hostOwned == nil {
-				var err error
-				if hostOwned, err = hostClaims(); err != nil {
-					return nil, err
-				}
-			}
-			if hostOwned[str(project["incusProject"])+"/"+name] {
-				return nil, Public("Instance is already host-flake owned; explicit #133 migration required")
-			}
-			if composeOwned(str(project["incusProject"])) {
-				return nil, Public("The native adapter never edits resources in a Compose-owned Incus project")
-			}
-			observation, err := nativeObservation(project, name)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, observation)
-		}
 	}
 	actions := []any{}
 	for _, raw := range items {
@@ -612,7 +491,7 @@ func projectPlan(inventory M, sourceRefs M) (M, error) {
 			"before": item["before"], "after": item["after"], "potentialDisruption": disruption})
 	}
 	return normalize(M{"format": 1, "inventoryHash": digestJSON(inventory), "resources": items, "actions": actions, "retained": retained,
-		"boundary": "Declared native projects, volumes and instances are created or reconciled; existing Nixus-owned instances and Compose projects are updated in place; nothing is stopped, resized or deleted because a declaration disappeared"}).(M), nil
+		"boundary": "Declared native projects, volumes and instances are created or reconciled; Compose projects are updated via incus-compose; nothing is stopped, resized or deleted because a declaration disappeared"}).(M), nil
 }
 
 func recheckAndApply(project, approved M, verifyOnly bool) (M, error) {
@@ -622,52 +501,7 @@ func recheckAndApply(project, approved M, verifyOnly bool) (M, error) {
 	if str(approved["kind"]) == "compose" {
 		return composeAdapterFactory().recheckAndApply(approved, verifyOnly)
 	}
-	name := str(approved["name"])
-	actual, err := nativeObservation(project, name)
-	if err != nil {
-		return nil, err
-	}
-	if !equalJSON(actual, approved) {
-		if verifyOnly && str(actual["action"]) == "noop" && !(str(approved["observedStatus"]) == "Running" && str(actual["observedStatus"]) != "Running") {
-			return M{"status": "verified", "newEtag": actual["etag"], "health": actual["observedStatus"]}, nil
-		}
-		return nil, Public("Incus state changed since project review; re-review before deployment")
-	}
-	if str(approved["action"]) == "noop" {
-		return M{"status": "verified", "newEtag": approved["etag"], "health": approved["observedStatus"]}, nil
-	}
-	current, etag, err := readInstance(str(project["incusProject"]), name)
-	if err != nil {
-		return nil, err
-	}
-	if etag != str(approved["etag"]) {
-		return nil, Public("Incus ETag drift during apply")
-	}
-	spec, err := nativeSpec(project, name, current)
-	if err != nil {
-		return nil, err
-	}
-	update, err := reconcilePlan(current, spec)
-	if err != nil {
-		return nil, err
-	}
-	if update == nil || digestJSON(update) != str(approved["desiredHash"]) {
-		return nil, Public("Incus update differs from approved plan")
-	}
-	if err := writeInstance(str(project["incusProject"]), name, update, etag); err != nil {
-		return nil, err
-	}
-	verified, err := nativeObservation(project, name)
-	if err != nil {
-		return nil, err
-	}
-	if str(verified["action"]) != "noop" {
-		return nil, Public("Incus resource did not reach declared desired state")
-	}
-	if str(approved["observedStatus"]) == "Running" && str(verified["observedStatus"]) != "Running" {
-		return nil, Public("Incus guest stopped during configuration update; manual health review required")
-	}
-	return M{"status": "verified", "newEtag": verified["etag"], "health": verified["observedStatus"]}, nil
+	return nil, Public("Unsupported project resource kind")
 }
 
 // --- transactions ------------------------------------------------------------------
@@ -1462,7 +1296,7 @@ func (t *ProjectTransactions) deploy(identityArg, planHash any, resume bool) (M,
 		if pinErr == nil {
 			_, runErr = check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-deploy-" + identity,
 				"--property=RuntimeMaxSec=3600", "--setenv=NIXUS_STATE=" + t.state, "--setenv=NIXUS_PROJECTS=" + t.workspace,
-				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
+				"--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 				adminLauncher(), "admin", "project-deploy-job", identity}, nil, 20*time.Second)
 		}
 		if pinErr != nil || runErr != nil {

@@ -1,11 +1,13 @@
 package main
 
-// Runtime secret delivery. Each app's SOPS ciphertext is decrypted on the host
-// with the projects age identity and every value is written into the app's
-// instances as a file, the Docker/Compose secrets convention:
-// /run/secrets/<KEY>, root-owned, mode 0444. Plaintext only touches a
-// root-only tmpfs file for the duration of one push. A container's /run is
-// cleared on restart, so delivery also runs at boot and on a timer.
+// Runtime secret delivery via read-only Incus disk mounts backed by host tmpfs
+// (/run/nixus-secrets/<project>).
+//
+// The parent directory /run/nixus-secrets is 0700 root:root so unprivileged
+// host users cannot traverse it; each per-project bind-mount root is 0755 with
+// 0444 secret files, mounted read-only at /run/secrets inside containers.
+// Because the mount is a persistent Incus device, secrets survive container
+// stop/start/restart automatically with no polling timer or `incus file push`.
 
 import (
 	"fmt"
@@ -13,10 +15,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
-var secretDeliveryDir = "/run/nixus-secret-delivery"
+var secretMountRoot = "/run/nixus-secrets"
 
 type secretTarget struct{ Instance, Destination, Key string }
 
@@ -66,8 +67,8 @@ func secretTargets(project M, values M, instances []M) ([]secretTarget, error) {
 
 // envValuesFor returns the variables one instance may receive. Without
 // bindings every instance gets every key; with bindings an instance only gets
-// the keys bound to it (by instance or service name), the same rule file
-// delivery follows, so a database credential never reaches the web container (#105).
+// the keys bound to it (by instance or service name), so a database credential
+// never reaches the web container (#105).
 func envValuesFor(project M, values M, inst M) M {
 	bindings := obj(jget(project, "secrets", "bindings"))
 	if len(bindings) == 0 {
@@ -93,7 +94,7 @@ func appInstances(incus incusFunc, incusProject string) []M {
 	var result []M
 	for _, raw := range list(must(parseJSON([]byte(out)))) {
 		inst := obj(raw)
-		if isDNSSidecar(incusProject, str(inst["name"])) {
+		if isComposeSidecar(incusProject, str(inst["name"])) {
 			continue
 		}
 		result = append(result, M{"name": inst["name"], "service": obj(inst["config"])[composeServiceLabel], "status": inst["status"]})
@@ -101,32 +102,83 @@ func appInstances(incus incusFunc, incusProject string) []M {
 	return result
 }
 
-// pushSecret writes one value into an instance through a root-only tmpfs file.
-var pushSecret = func(incusProject, instance, destination string, value []byte) error {
-	if err := os.MkdirAll(secretDeliveryDir, 0o700); err != nil {
-		return err
+func projectSecretsDir(project string) string {
+	return filepath.Join(secretMountRoot, project)
+}
+
+// materializeProjectSecrets atomically syncs decrypted secret files into the
+// host tmpfs directory mounted read-only at /run/secrets inside the app's
+// containers. Returns the directory path.
+func materializeProjectSecrets(project string, values M) (string, error) {
+	if !fullmatch(projectName, project) {
+		return "", Public("Invalid project name for secrets")
 	}
-	os.Chmod(secretDeliveryDir, 0o700)
-	f, err := os.CreateTemp(secretDeliveryDir, "s-")
+	if err := os.MkdirAll(secretMountRoot, 0o700); err != nil {
+		return "", err
+	}
+	os.Chmod(secretMountRoot, 0o700)
+	dir := projectSecretsDir(project)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	os.Chmod(dir, 0o755)
+	want := map[string]bool{}
+	for _, key := range keys(values) {
+		if !fullmatch(secretKey, key) {
+			continue
+		}
+		want[key] = true
+		if err := atomic(filepath.Join(dir, key), []byte(str(values[key])), 0o444, ""); err != nil {
+			return "", err
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !want[e.Name()] {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	return dir, nil
+}
+
+func removeProjectSecretsDir(project string) {
+	if fullmatch(projectName, project) {
+		os.RemoveAll(projectSecretsDir(project))
+	}
+}
+
+// ensureSecretsDiskMount ensures an existing instance has the read-only
+// /run/secrets disk device attached (for native instances or apps created
+// before disk-mounted secrets).
+var ensureSecretsDiskMount = func(incusProject, instance, sourceDir string) error {
+	path := instancePath(incusProject, instance)
+	current, etag, err := envAPI("GET", path, nil, "")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	f.Chmod(0o600)
-	if _, err := f.Write(value); err != nil {
-		f.Close()
-		return err
+	devices := cloneM(obj(current["devices"]))
+	if devices == nil {
+		devices = M{}
 	}
-	f.Close()
-	if _, err := updateIncus(60*time.Second, "file", "push", f.Name(), instance+destination, "--project", incusProject,
-		"--uid", "0", "--gid", "0", "--mode", "0444", "--create-dirs"); err != nil {
-		return Public("Could not deliver a secret to " + instance)
+	want := M{"type": "disk", "source": sourceDir, "path": "/run/secrets", "readonly": "true"}
+	if equalJSON(devices["nixus-secrets"], want) {
+		return nil
 	}
-	return nil
+	devices["nixus-secrets"] = want
+	current["devices"] = devices
+	put := M{}
+	for _, k := range []string{"architecture", "config", "devices", "ephemeral", "profiles", "stateful", "description"} {
+		if v, ok := current[k]; ok {
+			put[k] = v
+		}
+	}
+	_, _, err = envAPI("PUT", path, put, etag)
+	return err
 }
 
-// deliverProjectSecrets delivers one app's secrets; apps without ciphertext
-// are skipped. Returns how many files were written.
+// deliverProjectSecrets materializes one app's secrets onto host tmpfs and
+// syncs environment variables to its instances; apps without ciphertext have
+// their tmpfs directory cleared. Returns how many secret files are present.
 func deliverProjectSecrets(name string, project M) (int, error) {
 	if !isTrue(project["enable"]) {
 		return 0, nil
@@ -134,63 +186,103 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	s := NewSecrets("", "", "")
 	dir := filepath.Join(s.projects, name)
 	ciphertext, err := s.cipher(dir)
-	if err != nil || ciphertext == nil {
-		return 0, err
-	}
-	values, err := s.decode(ciphertext, "")
 	if err != nil {
 		return 0, err
 	}
+	values := M{}
+	if ciphertext != nil {
+		values, err = s.decode(ciphertext, "")
+		if err != nil {
+			return 0, err
+		}
+	}
 	if len(values) == 0 {
+		if isDir(projectSecretsDir(name)) {
+			materializeProjectSecrets(name, M{})
+		}
 		return 0, nil
 	}
-	instances := appInstances(updateIncus, str(project["incusProject"]))
+	secretDir, err := materializeProjectSecrets(name, values)
+	if err != nil {
+		return 0, err
+	}
+	incusProject := str(project["incusProject"])
+	instances := appInstances(updateIncus, incusProject)
 	targets, err := secretTargets(project, values, instances)
 	if err != nil {
 		return 0, err
 	}
 	for _, inst := range instances {
-		if _, err := injectEnv(str(project["incusProject"]), str(inst["name"]), envValuesFor(project, values, inst)); err != nil {
+		instName := str(inst["name"])
+		if err := ensureSecretsDiskMount(incusProject, instName, secretDir); err != nil {
 			return 0, err
 		}
-	}
-	for _, t := range targets {
-		if err := pushSecret(str(project["incusProject"]), t.Instance, t.Destination, []byte(str(values[t.Key]))); err != nil {
+		if _, err := injectEnv(incusProject, instName, envValuesFor(project, values, inst)); err != nil {
 			return 0, err
 		}
 	}
 	if len(targets) > 0 {
 		audit("project-secrets-delivered", M{"project": name, "files": len(targets)})
 	}
-	return len(targets), nil
+	return len(values), nil
 }
 
-// deliverAllSecrets re-delivers every published app's secrets (boot/timer).
+// deliverAllSecrets materializes every published app's secrets onto host tmpfs
+// (invoked once at boot before incus-startup.service, and on demand).
 func deliverAllSecrets() (M, error) {
-	inventory, err := liveInventory()
-	if err != nil || inventory == nil {
+	s := NewSecrets("", "", "")
+	entries, err := os.ReadDir(s.projects)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return M{"projects": M{}}, nil
+		}
 		return M{"projects": M{}}, err
 	}
 	results := M{}
 	var failed []string
-	for _, name := range keys(obj(inventory["projects"])) {
-		n, err := deliverProjectSecrets(name, obj(obj(inventory["projects"])[name]))
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || !fullmatch(projectName, name) {
+			continue
+		}
+		ciphertext, err := s.cipher(filepath.Join(s.projects, name))
 		if err != nil {
 			failed = append(failed, name)
 			results[name] = M{"error": publicError(err)}
-			fmt.Fprintln(os.Stderr, "nixus: secret delivery failed for", name+":", err)
 			continue
 		}
-		results[name] = M{"files": n}
+		if ciphertext == nil {
+			// Ensure an empty mount directory exists so restored/autostarted
+			// containers with the read-only /run/secrets disk mount start cleanly.
+			if _, err := materializeProjectSecrets(name, M{}); err != nil {
+				failed = append(failed, name)
+				results[name] = M{"error": publicError(err)}
+			}
+			continue
+		}
+		values, err := s.decode(ciphertext, "")
+		if err != nil {
+			failed = append(failed, name)
+			results[name] = M{"error": publicError(err)}
+			fmt.Fprintln(os.Stderr, "nixus: secret materialization failed for", name+":", err)
+			continue
+		}
+		if _, err := materializeProjectSecrets(name, values); err != nil {
+			failed = append(failed, name)
+			results[name] = M{"error": publicError(err)}
+			fmt.Fprintln(os.Stderr, "nixus: secret materialization failed for", name+":", err)
+			continue
+		}
+		results[name] = M{"files": len(values)}
 	}
 	if len(failed) > 0 {
-		return M{"projects": results}, Public("Secret delivery failed for: " + strings.Join(failed, ", "))
+		return M{"projects": results}, Public("Secret materialization failed for: " + strings.Join(failed, ", "))
 	}
 	return M{"projects": results}, nil
 }
 
-// deliverPublishedSecrets delivers one app's secrets right after a change,
-// reporting rather than failing: the timer retries.
+// deliverPublishedSecrets updates one app's tmpfs secret files and live
+// container environment right after a change.
 func deliverPublishedSecrets(name string) M {
 	inventory, err := liveInventory()
 	project := obj(obj(inventory["projects"])[name])

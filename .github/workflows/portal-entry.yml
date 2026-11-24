@@ -42,7 +42,7 @@ jobs:
         run: |
           eval_json() { nix eval --json ".#nixosConfigurations.validation-setup.config.$1"; }
           test "$(eval_json nixus.settings.setup.enable)" = true
-          test "$(eval_json services.nginx.enable)" = true
-          eval_json services.nginx.virtualHosts.nixus-entry.listen | jq -e 'any(.[]; .port == 80 and (.ssl // false) == false)'
-          test "$(eval_json 'services.nginx.virtualHosts.nixus-entry.locations."/".return')" = '"308 https://$host:9440$request_uri"'
-          test "$(eval_json services.nginx.virtualHosts.nixus-entry.default)" = true
+          test "$(eval_json services.nginx.enable)" = false
+          test "$(eval_json systemd.services.nixus-ui.environment.NIXUS_REDIRECT_PORT)" = '"80"'
+          nix eval --raw '.#nixosConfigurations.validation-setup.config.environment.etc."nixus/management-exposure.json".text' \
+            | jq -e '.listeners | any(.[]; .service == "Portal redirect" and .port == 80 and .exposure == "trusted")'

@@ -32,7 +32,13 @@ func TestBackupStopsWhenAGuestCannotBeRestarted(t *testing.T) {
 			}
 			state[args[1]] = "Running"
 		case "export":
-			os.WriteFile(args[4], []byte("archive"), 0o600)
+			// export <name> --project <p> --instance-only <tempfile> --compression none
+			for i, a := range args {
+				if strings.HasSuffix(a, ".tar") && i > 0 {
+					os.WriteFile(a, []byte("archive"), 0o600)
+					break
+				}
+			}
 		case "query":
 			// /1.0/instances/<name>/state?project=...
 			for name, s := range state {
@@ -45,9 +51,9 @@ func TestBackupStopsWhenAGuestCannotBeRestarted(t *testing.T) {
 		return "", nil
 	}
 	group := func(name string) M {
-		return M{"guests": []any{M{"project": "p", "name": name, "status": "Running", "archive": name + ".tar.gz"}}, "volumes": []any{}}
+		return M{"guests": []any{M{"project": "p", "name": name, "status": "Running", "archive": name + ".tar"}}, "volumes": []any{}}
 	}
-	if _, err := backupGroups([]M{group("a1"), group("b1")}, destination, "gen"); err == nil {
+	if _, err := backupGroups([]M{group("a1"), group("b1")}, destination, "gen", nil); err == nil {
 		t.Fatal("a backup that left a guest stopped reported success")
 	}
 	for _, c := range calls {

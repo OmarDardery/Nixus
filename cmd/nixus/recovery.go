@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-var healthUnits = []string{"incus.service", "incus-preseed.service", "nixus-kvm-check.service", "nixus-instances.service",
-	"cockpit.socket", "cockpit.service", "nginx.service", "nixus-admin-backend.service", "nixus-ui.service",
+var healthUnits = []string{"incus.service", "incus-preseed.service", "nixus-kvm-check.service",
+	"cockpit.socket", "cockpit.service", "nixus-admin-backend.service", "nixus-ui.service",
 	"nixus-project-backup.timer", "nixus-storage.target", "nixus-rollback-guard.service", "smartd.service"}
 
 func effectiveSettingsFile() M {
@@ -318,8 +318,8 @@ func collectEvidence(report, ctx, settings M) error {
 			if err != nil || !isTrue(result["ok"]) {
 				return false, err
 			}
-			out, err := probeCommand("systemctl", "is-active", "incus.service", "nixus-instances.service", "nixus-management-health.service")
-			return err == nil && out == "active\nactive\nactive", err
+			out, err := probeCommand("systemctl", "is-active", "incus.service", "nixus-management-health.service")
+			return err == nil && out == "active\nactive", err
 		}},
 		{"kvm", func() (bool, error) {
 			f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)

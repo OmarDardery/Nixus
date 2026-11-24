@@ -1,7 +1,7 @@
 # Deployment inventory. Empty values deliberately prevent activation.
 # Fill from the physical host; documentation examples are not discovered facts.
 {
-  schemaVersion = 3;
+  schemaVersion = 4;
   ready = false;
   system = "x86_64-linux";
   hostName = "nixus";
@@ -31,15 +31,11 @@
     hostId = ""; # eight hexadecimal characters, required for ZFS
   };
   cockpit = { enable = false; port = 9090; };
-  # Additional instances: { name; project = "lab"; image = "images:<fingerprint>";
-  # type = "container"; profiles = [ "base" ]; config = {}; devices = {}; }
-  instances = [ ];
   mounts = [ ]; # existing UUID filesystems only, managed under /srv/nixus
   connectivity = {
     preservedIncusBridges = [ ]; # Native Incus bridges retained during adoption.
     bridges = [ ]; # { name = "br-lan"; interfaces = [ "enp2s0" ]; }
     vlans = [ ]; # { name = "vlan20"; interface = "enp2s0"; id = 20; }
-    guestInterfaces = [ "incusbr0" ]; # Host firewall integration, not guest network definitions.
     trustedLANAccess = false;
     privateAccess = [ ]; # { cidr = "192.168.1.2/32"; protocol = "udp"; ports = [ 53 ]; }
   };

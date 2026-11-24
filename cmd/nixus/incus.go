@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -27,22 +26,6 @@ const INITIALIZING = "user.nixus.initializing"
 const LAST_APPLIED = "user.nixus.last-applied"
 const incusSocket = "/var/lib/incus/unix.socket"
 const infrastructureState = "/var/lib/nixus/infrastructure.json"
-
-// incusCLI runs the incus client (used where the original used the CLI).
-func incusCLI(args ...string) (string, error) {
-	res, err := run(append([]string{"incus"}, args...), nil, 30*time.Minute, nil, "")
-	if err != nil {
-		return "", err
-	}
-	if res.Code != 0 {
-		msg := strings.TrimSpace(string(res.Stderr))
-		if msg == "" {
-			msg = fmt.Sprintf("Incus exited %d", res.Code)
-		}
-		return "", Hidden(msg)
-	}
-	return string(res.Stdout), nil
-}
 
 func incusHTTP(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: &http.Transport{
@@ -123,7 +106,8 @@ func writeInstance(project, name string, data M, etag string) error {
 	return waitOperation(payload)
 }
 
-// waitOperation blocks until an async Incus response's operation finishes.
+// waitOperation blocks until an async Incus response's operation finishes,
+// directly over the local unix socket without spawning the incus CLI.
 func waitOperation(payload M) error {
 	if str(payload["type"]) != "async" {
 		return nil
@@ -136,12 +120,15 @@ func waitOperation(payload M) error {
 	if op.RawQuery != "" {
 		wait += "?" + op.RawQuery
 	}
-	out, err := incusCLI("query", wait)
+	resp, _, status, err := incusAPI("GET", wait, nil, "", 30*time.Minute, 0)
 	if err != nil {
 		return err
 	}
-	result, _ := parseObject([]byte(out))
-	if v, _ := num(result["status_code"]); v != 200 {
+	if status >= 400 || str(resp["type"]) == "error" {
+		return Hidden("Incus configuration operation failed")
+	}
+	md := obj(resp["metadata"])
+	if v, _ := num(md["status_code"]); v != 200 {
 		return Hidden("Incus configuration operation failed")
 	}
 	return nil
@@ -310,146 +297,6 @@ func reconcilePlan(current, spec M) (M, error) {
 
 var incusIdent = re(`[a-zA-Z0-9][a-zA-Z0-9_.-]*`)
 
-func reconcileInstance(spec M) error {
-	if _, err := desiredState(spec); err != nil {
-		return err
-	}
-	config := obj(spec["config"])
-	if _, ok := config[INITIALIZING]; ok {
-		return Public("The Nixus initialization marker is reserved")
-	}
-	if v, ok := config[OWNER]; ok && str(v) != "true" {
-		return Public("The Nixus ownership marker cannot be removed by reconciliation")
-	}
-	for _, k := range []string{"name", "project"} {
-		if !fullmatch(incusIdent, str(spec[k])) {
-			return Public("Invalid " + k)
-		}
-	}
-	project, name := str(spec["project"]), str(spec["name"])
-	listing := func() ([]any, error) {
-		out, err := incusCLI("list", "--project", project, "--columns=ns", "--format=json")
-		if err != nil {
-			return nil, err
-		}
-		return list(must(parseJSON([]byte(out)))), nil
-	}
-	existing, err := listing()
-	if err != nil {
-		return err
-	}
-	var found M
-	for _, i := range existing {
-		if str(obj(i)["name"]) == name {
-			found = obj(i)
-		}
-	}
-	if found == nil && isTrue(spec["manageExistingOnly"]) {
-		fmt.Printf("absent %s/%s; no VM created\n", project, name)
-		return nil
-	}
-	if found == nil {
-		args := []string{"init", str(spec["image"]), name, "--project", project, "--config", OWNER + "=true", "--config", INITIALIZING + "=true"}
-		switch str(spec["type"]) {
-		case "virtual-machine":
-			args = append(args, "--vm")
-		case "container":
-		default:
-			return Public("Unknown instance type")
-		}
-		profiles, ok := anyStrings(spec["profiles"])
-		if !ok || spec["profiles"] == nil {
-			profiles = []string{"base"}
-		}
-		if len(profiles) == 0 {
-			root, nic := obj(jget(spec, "devices", "root")), obj(jget(spec, "devices", "eth0"))
-			if str(root["pool"]) == "" || str(nic["network"]) == "" {
-				return Public("A profile-free instance needs explicit root storage and eth0 network")
-			}
-			args = append(args, "--no-profiles", "--storage", str(root["pool"]), "--network", str(nic["network"]))
-		}
-		for _, p := range profiles {
-			args = append(args, "--profile", p)
-		}
-		if _, err := incusCLI(args...); err != nil {
-			return err
-		}
-	}
-	current, etag, err := readInstance(project, name)
-	if err != nil {
-		return err
-	}
-	if isTrue(spec["manageExistingOnly"]) && str(jget(current, "config", OWNER)) != "true" {
-		fmt.Printf("unowned %s/%s; left untouched\n", project, name)
-		return nil
-	}
-	update, err := reconcilePlan(current, spec)
-	if err != nil {
-		return err
-	}
-	if update != nil {
-		if err := writeInstance(project, name, update, etag); err != nil {
-			return err
-		}
-		fmt.Printf("updated %s/%s\n", project, name)
-	} else {
-		fmt.Printf("unchanged %s/%s\n", project, name)
-	}
-	state, err := listing()
-	if err != nil {
-		return err
-	}
-	status := ""
-	for _, i := range state {
-		if str(obj(i)["name"]) == name {
-			status = str(obj(i)["status"])
-		}
-	}
-	initializing := str(jget(current, "config", INITIALIZING)) == "true"
-	start := initializing
-	if v, ok := spec["start"]; ok {
-		start = isTrue(v)
-	}
-	if isTrue(spec["stop"]) && status == "Running" {
-		if _, err := incusCLI("stop", name, "--project", project, "--timeout", "120"); err != nil {
-			return err
-		}
-	} else if start && status == "Stopped" {
-		if _, err := incusCLI("start", name, "--project", project); err != nil {
-			return err
-		}
-	}
-	if initializing {
-		if _, err := incusCLI("config", "unset", name, INITIALIZING, "--project", project); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// reconcileMain is the nixus-instances service entry point.
-func reconcileMain(file string) error {
-	release, err := lockFile("/run/lock/nixus-incus.lock", true)
-	if err != nil {
-		return err
-	}
-	defer release()
-	raw, err := os.ReadFile(file)
-	if err != nil {
-		return err
-	}
-	specs, err := parseJSON(raw)
-	if err != nil {
-		return err
-	}
-	for _, s := range list(specs) {
-		if err := reconcileInstance(obj(s)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // --- source-owned infrastructure drift guard ------------------------------
 
 type infraObject struct {
@@ -469,7 +316,7 @@ func infraStable(value M) M {
 				}
 			}
 			out[k] = config
-		case "devices", "driver", "type", "description":
+		case "devices", "driver", "type", "description", "ingress", "egress":
 			out[k] = v
 		}
 	}
@@ -478,7 +325,7 @@ func infraStable(value M) M {
 
 func infraObjects(preseed M) []infraObject {
 	var out []infraObject
-	for _, pair := range [][2]string{{"storage_pools", "storage-pools"}, {"networks", "networks"}, {"projects", "projects"}, {"profiles", "profiles"}} {
+	for _, pair := range [][2]string{{"storage_pools", "storage-pools"}, {"network_acls", "network-acls"}, {"networks", "networks"}, {"projects", "projects"}, {"profiles", "profiles"}} {
 		for _, raw := range list(preseed[pair[0]]) {
 			item := obj(raw)
 			project := "default"
@@ -564,21 +411,17 @@ func infraConflicts(preseed, previous M, observed map[string]M) []string {
 }
 
 func infraQuery(p string, missingOK bool) (M, error) {
-	res, err := run([]string{"incus", "--force-local", "query", p}, nil, 30*time.Second, nil, "")
+	payload, _, status, err := incusAPI("GET", p, nil, "", 30*time.Second, 0)
 	if err != nil {
-		return nil, err
+		return nil, Hidden("Cannot inspect Incus infrastructure: " + err.Error())
 	}
-	if res.Code != 0 {
-		if missingOK && strings.Contains(strings.ToLower(string(res.Stderr)), "not found") {
-			return nil, nil
-		}
-		msg := strings.TrimSpace(string(res.Stderr))
-		if len(msg) > 2000 {
-			msg = msg[len(msg)-2000:]
-		}
-		return nil, Hidden("Cannot inspect Incus infrastructure: " + msg)
+	if status == 404 && missingOK {
+		return nil, nil
 	}
-	return parseObject(res.Stdout)
+	if status >= 400 || str(payload["type"]) == "error" {
+		return nil, Hidden(fmt.Sprintf("Cannot inspect Incus infrastructure: HTTP %d", status))
+	}
+	return obj(payload["metadata"]), nil
 }
 
 func infraCheck(preseed M) error {
@@ -899,5 +742,3 @@ func guestNetworkInventory() (M, error) {
 	result["bridgeTopologyAvailable"] = true
 	return result, nil
 }
-
-var _ = syscall.Getpid

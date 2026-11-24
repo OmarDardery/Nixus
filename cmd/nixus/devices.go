@@ -45,8 +45,9 @@ func hostDevices() M {
 		if m := readTrim(filepath.Join(dir, "manufacturer")); m != "" {
 			name = m + " " + name
 		}
-		usb = append(usb, M{"id": id, "product": name, "compose": "x-nixus: { usb: [\"" + id + "\"] }",
-			"nix": "usb.device = { vendorId = \"" + vendor + "\"; productId = \"" + product + "\"; };"})
+		usb = append(usb, M{"id": id, "product": name,
+			"compose": "x-incus-compose: { devices: { usb0: { type: usb, vendorid: \"" + vendor + "\", productid: \"" + product + "\", required: \"false\" } } }",
+			"nix":     "usb.device = { vendorId = \"" + vendor + "\"; productId = \"" + product + "\"; };"})
 	}
 	sort.Slice(usb, func(i, j int) bool { return str(obj(usb[i])["id"]) < str(obj(usb[j])["id"]) })
 	return M{"serial": serial, "usb": usb}

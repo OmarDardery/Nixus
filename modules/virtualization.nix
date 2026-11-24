@@ -6,7 +6,6 @@
   systemd.services.nixus-kvm-check = {
     description = "Require usable hardware virtualization before provisioning VMs";
     wantedBy = [ "multi-user.target" ];
-    before = [ "nixus-instances.service" ];
     serviceConfig.Type = "oneshot";
     script = ''
       test -c /dev/kvm

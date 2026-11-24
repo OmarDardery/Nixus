@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -75,5 +77,33 @@ func TestEnvDeliveryFollowsBindings(t *testing.T) {
 	}
 	if got := envValuesFor(project, values, web); len(got) != 2 {
 		t.Fatalf("web should now have both: %v", got)
+	}
+}
+
+func TestMaterializeProjectSecretsSyncsAndPrunes(t *testing.T) {
+	old := secretMountRoot
+	secretMountRoot = filepath.Join(t.TempDir(), "secrets")
+	defer func() { secretMountRoot = old }()
+
+	dir, err := materializeProjectSecrets("demo", M{"API_KEY": "secret-1", "DB_PASS": "secret-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "API_KEY")); err != nil || string(data) != "secret-1" {
+		t.Fatalf("API_KEY: %q %v", data, err)
+	}
+	// Updating secrets prunes removed keys cleanly.
+	if _, err := materializeProjectSecrets("demo", M{"API_KEY": "rotated"}); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "API_KEY")); err != nil || string(data) != "rotated" {
+		t.Fatalf("rotated API_KEY: %q %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "DB_PASS")); !os.IsNotExist(err) {
+		t.Fatalf("removed secret should be pruned: %v", err)
+	}
+	removeProjectSecretsDir("demo")
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("secret directory should be removed on app delete: %v", err)
 	}
 }

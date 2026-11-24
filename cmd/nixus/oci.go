@@ -1,7 +1,7 @@
 package main
 
-// OCI source planning, Compose secret classification and model validation,
-// and the pinned incus-compose parse of a reviewed source.
+// OCI source planning, Compose model validation, and the pinned incus-compose
+// parse of a reviewed source.
 
 import (
 	"encoding/json"
@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // --- source plan -----------------------------------------------------------
@@ -78,24 +76,12 @@ func sourcePlan(project, revision any, publisher *PublishedSources) (M, error) {
 	sort.Strings(compose)
 	sort.Strings(dockerfiles)
 	reasons := []string{}
-	var generated, image, selected, policy any
+	var generated, image, selected any
 	mode := "unsupported"
 	switch {
 	case len(compose) == 1:
 		mode, selected = "compose", compose[0]
 		reasons = append(reasons, "sandboxed-incus-compose-compatibility-check-required")
-		raw, err := os.ReadFile(filepath.Join(folder, "source", compose[0]))
-		classified, cerr := classifyComposeSecrets(raw, nil)
-		if err != nil || cerr != nil {
-			reasons = append(reasons, "compose-secret-preflight-failed")
-		} else {
-			policy = classified
-			b, _ := anyStrings(classified["blocking"])
-			reasons = append(reasons, b...)
-			if len(list(classified["fileRoutes"])) > 0 {
-				reasons = append(reasons, "compose-secret-binding-review-required")
-			}
-		}
 	case len(compose) > 1:
 		mode = "ambiguous-compose"
 		reasons = append(reasons, "multiple-compose-files-require-explicit-selection")
@@ -126,242 +112,21 @@ func sourcePlan(project, revision any, publisher *PublishedSources) (M, error) {
 	}
 	return M{"format": 1, "project": p, "revision": attestation["revision"], "fileCount": attestation["fileCount"],
 		"bytes": attestation["bytes"], "sourceFiles": entriesAny(files), "mode": mode, "entrypoint": selected,
-		"generatedCompose": generated, "proposedImage": image, "composeSecretPolicy": policy, "buildContextHash": rev,
+		"generatedCompose": generated, "proposedImage": image, "buildContextHash": rev,
 		"buildIdentity": sha256str(p + "\x00" + rev), "imageLock": lock, "canBuild": false, "canDeploy": false, "blocking": strings2any(reasons),
 		"note": "Source-only planning: no OCI image, Incus resources or volume created"}, nil
 }
 
-// --- Compose secret classification -----------------------------------------
-
-var composeSecretName = re(`[a-z][a-z0-9-]{0,62}`)
-var secretKey = re(`[A-Za-z_][A-Za-z0-9_]{0,127}`)
-var interpolation = regexp.MustCompile(`\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?:[:?+\-][^}]*)?\}|([A-Za-z_][A-Za-z0-9_]*))`)
-var credentialName = regexp.MustCompile(`(?i)(password|passwd|secret|token|api[_-]?key|private[_-]?key|access[_-]?key|credential)`)
-
-func checkRelativeSecret(v any) bool {
-	value, ok := v.(string)
-	if !ok || value == "" || len(value) > 255 || strings.ContainsAny(value, "\x00\\") || strings.HasPrefix(value, "/") {
-		return false
-	}
-	parts := strings.Split(strings.TrimPrefix(value, "./"), "/")
-	if len(parts) < 1 || len(parts) > 12 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" || p == "." || p == ".." || !fullmatch(re(`[A-Za-z0-9_.-]+`), p) {
-			return false
-		}
-	}
-	last := strings.ToLower(parts[len(parts)-1])
-	return last != ".env" && last != "secrets.enc.yaml"
-}
-
-func yamlToJSON(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := M{}
-		for k, val := range x {
-			out[k] = yamlToJSON(val)
-		}
-		return out
-	case map[any]any:
-		out := M{}
-		for k, val := range x {
-			out[fmt.Sprint(k)] = yamlToJSON(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, val := range x {
-			out[i] = yamlToJSON(val)
-		}
-		return out
-	case int:
-		return float64(x)
-	}
-	return v
-}
-
-func classifyComposeSecrets(contents []byte, bindings M) (M, error) {
-	if len(contents) > maxInspect {
-		return nil, Public("Invalid or oversized Compose source")
-	}
-	var raw any
-	if !utf8Valid(contents) || yaml.Unmarshal(contents, &raw) != nil {
-		return nil, Public("Compose secret preflight could not parse source")
-	}
-	document := obj(yamlToJSON(raw))
-	services := obj(document["services"])
-	if document == nil || len(services) == 0 {
-		return nil, Public("Compose source has no valid services")
-	}
-	if bindings == nil {
-		bindings = M{}
-	}
-	if len(bindings) > 128 {
-		return nil, Public("Invalid Compose secret bindings")
-	}
-	declared := map[string]M{}
-	for alias, b := range bindings {
-		binding := obj(b)
-		if !fullmatch(secretKey, alias) || binding == nil || !fullmatch(secretKey, str(binding["key"])) ||
-			!fullmatch(composeSecretName, str(binding["instance"])) || str(binding["backend"]) != "incus-file" {
-			return nil, Public("Invalid Compose secret delivery binding")
-		}
-		declared[alias] = binding
-	}
-	reasons := map[string]bool{}
-	topLevel := M{}
-	if v, ok := document["secrets"]; ok && v != nil {
-		if topLevel = obj(v); topLevel == nil {
-			return nil, Public("Compose top-level secrets must be a mapping")
-		}
-	}
-	sensitive := map[string]bool{}
-	for alias, b := range declared {
-		sensitive[alias], sensitive[str(b["key"])] = true, true
-	}
-	refName := func(m []string) string {
-		if m[1] != "" {
-			return m[1]
-		}
-		return m[2]
-	}
-	for _, m := range interpolation.FindAllStringSubmatch(string(contents), -1) {
-		if n := refName(m); sensitive[n] || credentialName.MatchString(n) {
-			reasons["secret-interpolation-may-persist-in-incus-config"] = true
-		}
-	}
-	consumed, usedPaths := map[string]bool{}, map[string]bool{}
-	routes := []any{}
-	for _, service := range keys(services) {
-		spec := obj(services[service])
-		if !fullmatch(composeSecretName, service) || spec == nil {
-			return nil, Public("Invalid Compose service identity")
-		}
-		if spec["env_file"] != nil {
-			reasons["compose-env-file-may-persist-in-incus-config"] = true
-		}
-		type kv struct {
-			key   string
-			value any
-		}
-		var entries []kv
-		switch env := spec["environment"].(type) {
-		case nil:
-		case M:
-			for k, v := range env {
-				entries = append(entries, kv{k, v})
-			}
-		case []any:
-			for _, item := range env {
-				s, ok := item.(string)
-				if !ok {
-					return nil, Public("Compose environment list has an invalid entry")
-				}
-				k, v, has := strings.Cut(s, "=")
-				if has {
-					entries = append(entries, kv{k, v})
-				} else {
-					entries = append(entries, kv{k, nil})
-				}
-			}
-		default:
-			return nil, Public("Invalid Compose environment")
-		}
-		for _, e := range entries {
-			if credentialName.MatchString(e.key) || sensitive[e.key] {
-				reasons["compose-secret-environment-may-persist-in-incus-config"] = true
-			}
-			if s, ok := e.value.(string); ok {
-				for _, m := range interpolation.FindAllStringSubmatch(s, -1) {
-					if sensitive[refName(m)] {
-						reasons["secret-interpolation-may-persist-in-incus-config"] = true
-					}
-				}
-			}
-		}
-		grants := spec["secrets"]
-		if grants == nil {
-			grants = []any{}
-		}
-		grantList, ok := grants.([]any)
-		if !ok {
-			return nil, Public("Compose service secrets must be a list")
-		}
-		for _, grant := range grantList {
-			var alias string
-			gm := obj(grant)
-			if s, ok := grant.(string); ok {
-				alias = s
-			} else if gm != nil && isStr(gm["source"]) {
-				alias = str(gm["source"])
-			} else {
-				return nil, Public("Invalid Compose service secret grant")
-			}
-			if b, ok := declared[alias]; !ok || str(b["instance"]) != service {
-				reasons["compose-secret-grant-not-bound-to-service"] = true
-				continue
-			}
-			consumed[alias] = true
-			definition := obj(topLevel[alias])
-			if definition == nil || len(definition) != 1 || definition["file"] == nil {
-				reasons["compose-secret-not-relative-file"] = true
-				continue
-			}
-			if !checkRelativeSecret(definition["file"]) {
-				reasons["compose-secret-file-path-unsafe"] = true
-				continue
-			}
-			clean := strings.TrimPrefix(str(definition["file"]), "./")
-			target, hasTarget := gm["target"]
-			if usedPaths[clean] || (gm != nil && hasTarget && (!isStr(target) || !strings.HasPrefix(str(target), "/"))) {
-				reasons["compose-secret-file-target-ambiguous"] = true
-				continue
-			}
-			usedPaths[clean] = true
-			routes = append(routes, M{"service": service, "alias": alias, "relativeFile": clean})
-			reasons["incus-compose-secret-persists-in-guest-rootfs-unqualified"] = true
-		}
-	}
-	if len(declared) > 0 && len(declared) != len(consumed) {
-		reasons["declared-secret-not-consumed-by-compose"] = true
-	}
-	for k := range topLevel {
-		if !consumed[k] {
-			reasons["compose-secrets-without-approved-file-consumer"] = true
-		}
-	}
-	if len(topLevel) > 0 && len(routes) == 0 {
-		reasons["compose-secrets-without-approved-file-consumer"] = true
-	}
-	if len(routes) > 0 && (len(declared) == 0 || len(routes) != len(consumed)) {
-		reasons["compose-file-secret-mapping-incomplete"] = true
-	}
-	sort.Slice(routes, func(i, j int) bool {
-		a, b := obj(routes[i]), obj(routes[j])
-		if str(a["service"]) != str(b["service"]) {
-			return str(a["service"]) < str(b["service"])
-		}
-		return str(a["alias"]) < str(b["alias"])
-	})
-	qualification := "no-secret-delivery-claimed"
-	if len(reasons) > 0 {
-		qualification = "blocked"
-	}
-	return M{"format": 1, "qualification": qualification, "blocking": strings2any(sortedKeys(reasons)), "fileRoutes": routes,
-		"note": "Static review only; no plaintext, guest mutation or Incus runtime qualification"}, nil
-}
-
 // --- Compose model validation ----------------------------------------------
 
+var secretKey = re(`[A-Za-z_][A-Za-z0-9_]{0,127}`)
 var composeServiceName = re(`[a-z][a-z0-9_-]{0,62}`)
 var composeSource = re(`[A-Za-z0-9][A-Za-z0-9_.-]*`)
 var sensitiveEnv = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|TOKEN|SECRET|PRIVATE|AUTH|KEY|CREDENTIAL)`)
 var bannedService = map[string]bool{"privileged": true, "cap_add": true, "device_cgroup_rules": true,
 	"security_opt": true, "userns_mode": true, "pid": true, "ipc": true, "uts": true, "cgroup": true, "cgroup_parent": true,
 	"cgroupns_mode": true, "network_mode": true, "volumes_from": true, "extends": true, "develop": true, "secrets": true,
-	"configs": true, "env_file": true, "x-incus": true, "x-incus-compose": true}
+	"configs": true, "env_file": true, "x-incus": true}
 var bannedTop = map[string]bool{"secrets": true, "configs": true, "include": true, "x-incus": true, "x-incus-compose": true}
 
 func safeRelative(v any, allowDot bool) (string, error) {
@@ -486,13 +251,16 @@ func composeEnvironments(v any) error {
 var serialSource = re(`/dev/(serial/by-(id|path)/[A-Za-z0-9._:+-]{1,200}|tty(ACM|USB)[0-9]{1,3})`)
 var deviceTarget = re(`/dev/[A-Za-z0-9._-]{1,64}`)
 var usbID = re(`([0-9a-f]{4}):([0-9a-f]{4})`)
+var safeDeviceName = re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`)
 
-// composeDevices translates the supported device subset into Incus devices:
-// serial ports (Compose devices:) become hotpluggable unix-char devices and
-// x-nixus.usb vendor:product IDs become usb devices. Anything else is refused.
-func composeDevices(v any, ext any) (M, error) {
+// composeDevices validates the supported device subset:
+//   - standard Compose serial devices (/dev/serial/by-id/..., /dev/ttyACM*, /dev/ttyUSB*)
+//     translated into hotpluggable Incus unix-char devices
+//   - native x-incus-compose.devices entries restricted to type: usb (vendorid/productid)
+//     and type: unix-char (safe serial paths).
+func composeDevices(v any, incusExt any) (M, error) {
 	out := M{}
-	refuse := Public("Only serial devices (/dev/serial/by-id/..., /dev/ttyACM*, /dev/ttyUSB*) and x-nixus.usb IDs can be passed through")
+	refuse := Public("Only serial devices (/dev/serial/by-id/..., /dev/ttyACM*, /dev/ttyUSB*) and usb/serial entries in x-incus-compose.devices can be passed through")
 	items, ok := v.([]any)
 	if v != nil && !ok {
 		return nil, refuse
@@ -535,18 +303,58 @@ func composeDevices(v any, ext any) (M, error) {
 		out[fmt.Sprintf("nixus-serial%d", i)] = M{"type": "unix-char", "source": source, "path": target,
 			"required": "false", "mode": "0666"}
 	}
-	if ext != nil {
-		x := obj(ext)
-		usb, ok := x["usb"].([]any)
-		if x == nil || len(x) != 1 || !ok || len(usb) > 8 {
-			return nil, Public("x-nixus supports only usb: [\"vendor:product\"]")
+	if incusExt != nil {
+		x := obj(incusExt)
+		if x == nil || len(x) != 1 || x["devices"] == nil {
+			return nil, Public("x-incus-compose supports only validated usb and serial devices")
 		}
-		for i, raw := range usb {
-			m := usbID.FindStringSubmatch(str(raw))
-			if m == nil || m[0] != str(raw) {
-				return nil, Public("USB IDs look like 1d50:614e")
+		devs := obj(x["devices"])
+		if devs == nil || len(devs) > 8 {
+			return nil, refuse
+		}
+		for name, raw := range devs {
+			if !fullmatch(safeDeviceName, name) {
+				return nil, refuse
 			}
-			out[fmt.Sprintf("nixus-usb%d", i)] = M{"type": "usb", "vendorid": m[1], "productid": m[2], "required": "false"}
+			d := obj(raw)
+			if d == nil {
+				return nil, refuse
+			}
+			switch str(d["type"]) {
+			case "usb":
+				for k := range d {
+					if k != "type" && k != "vendorid" && k != "productid" && k != "required" {
+						return nil, refuse
+					}
+				}
+				if !fullmatch(hex4, str(d["vendorid"])) || !fullmatch(hex4, str(d["productid"])) {
+					return nil, Public("USB devices require 4-digit hex vendorid and productid")
+				}
+				if req := str(d["required"]); req != "" && req != "true" && req != "false" {
+					return nil, refuse
+				}
+			case "unix-char":
+				for k := range d {
+					if k != "type" && k != "source" && k != "path" && k != "required" && k != "mode" {
+						return nil, refuse
+					}
+				}
+				source, target := str(d["source"]), str(d["path"])
+				if target == "" {
+					target = source
+				}
+				if !fullmatch(serialSource, source) || (!fullmatch(deviceTarget, target) && !fullmatch(serialSource, target)) || strings.Contains(source+target, "..") {
+					return nil, refuse
+				}
+				if mode := str(d["mode"]); mode != "" && !fullmatch(re(`0?[0-7]{3}`), mode) {
+					return nil, refuse
+				}
+				if req := str(d["required"]); req != "" && req != "true" && req != "false" {
+					return nil, refuse
+				}
+			default:
+				return nil, refuse
+			}
 		}
 	}
 	return out, nil
@@ -596,12 +404,16 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 	if v := model["networks"]; v != nil {
 		networks, ok := v.(M)
 		if !ok {
-			return nil, Public("External or customized Compose networks require #133")
+			return nil, Public("Invalid Compose networks definition")
 		}
 		for name, props := range networks {
-			pm := obj(props)
-			if name != "default" || !(props == nil || len(pm) == 0 || (len(pm) == 1 && str(pm["name"]) == project+"_default")) {
-				return nil, Public("External or customized Compose networks require #133")
+			if !fullmatch(composeServiceName, name) {
+				return nil, Public("Invalid Compose network name")
+			}
+			for k := range obj(props) {
+				if strings.HasPrefix(k, "x-") {
+					return nil, Public("Custom Incus extensions are not allowed on Compose networks")
+				}
 			}
 		}
 	}
@@ -621,7 +433,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 			return nil, Public("Invalid Compose service")
 		}
 		for k := range data {
-			if bannedService[k] || (strings.HasPrefix(k, "x-") && k != "x-nixus") {
+			if bannedService[k] || (strings.HasPrefix(k, "x-") && k != "x-incus-compose") {
 				return nil, Public("Compose service requires forbidden host privileges or runtime secrets")
 			}
 		}
@@ -647,7 +459,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 		if err != nil {
 			return nil, err
 		}
-		devices, err := composeDevices(data["devices"], data["x-nixus"])
+		devices, err := composeDevices(data["devices"], data["x-incus-compose"])
 		if err != nil {
 			return nil, err
 		}

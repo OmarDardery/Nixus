@@ -42,8 +42,6 @@ func init() {
 		"notify":               notifyMain,
 		"nixus-backup":         backupMain,
 		"backup":               backupMain,
-		"nixus-reconcile":      reconcileCommand,
-		"reconcile":            reconcileCommand,
 		"release":              releaseCommand,
 		"nixus-release":        releaseCommand,
 		"preflight":            preflightCommand,
@@ -59,22 +57,12 @@ func main() {
 	run, ok := commands[name]
 	if !ok {
 		if len(args) == 0 || commands[args[0]] == nil {
-			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|homelab|console-status|notify|backup|reconcile|release} ...")
+			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|homelab|console-status|notify|backup|release} ...")
 			os.Exit(2)
 		}
 		run, args = commands[args[0]], args[1:]
 	}
 	os.Exit(run(args))
-}
-
-func reconcileCommand(args []string) int {
-	if len(args) != 1 {
-		return fail("usage: nixus-reconcile DESIRED.json")
-	}
-	if err := reconcileMain(args[0]); err != nil {
-		return fail(publicError(err))
-	}
-	return 0
 }
 
 func releaseCommand(args []string) int {

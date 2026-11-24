@@ -36,7 +36,7 @@ func runtimeInstances(incusProject string) []any {
 	out := []any{}
 	for _, raw := range incusQueryList(nativeIncus, "/1.0/instances?recursion=2&project="+url.QueryEscape(incusProject)) {
 		i := obj(raw)
-		if isDNSSidecar(incusProject, str(i["name"])) {
+		if isComposeSidecar(incusProject, str(i["name"])) {
 			continue
 		}
 		out = append(out, M{"name": i["name"], "type": i["type"], "status": truncate(str(i["status"]), 32),
@@ -147,7 +147,7 @@ func projectLog(incusProject, instance string) (M, error) {
 	if !known {
 		return nil, Public("Logs are available only for Incus projects declared in the reviewed workspace")
 	}
-	res, err := run([]string{"incus", "--force-local", "info", instance, "--project", incusProject, "--show-log"}, nil, 15*time.Second, nil, "")
+	res, err := run([]string{"incus", "--force-local", "console", instance, "--project", incusProject, "--show-log"}, nil, 15*time.Second, nil, "")
 	if err != nil || res.Code != 0 {
 		return nil, cmdFailed("The instance log is unavailable", res, err)
 	}
@@ -159,11 +159,49 @@ func projectLog(incusProject, instance string) (M, error) {
 	return M{"project": incusProject, "instance": instance, "log": text, "truncated": truncated}, nil
 }
 
-// lanAddress is the IPv4 address the router gave an app's LAN card (eth1).
+// lanAddress returns the IPv4 address assigned on an app's LAN interface
+// (attached via the external nixus-lan or host bridge network).
 func lanAddress(instance M) string {
-	for _, a := range list(jget(instance, "state", "network", "eth1", "addresses")) {
-		if am := obj(a); str(am["family"]) == "inet" && str(am["scope"]) == "global" {
-			return str(am["address"])
+	lanNet, _ := lanNetworkName()
+	devices := obj(instance["expanded_devices"])
+	if devices == nil {
+		devices = obj(instance["devices"])
+	}
+	iface := ""
+	for devName, raw := range devices {
+		d := obj(raw)
+		if str(d["type"]) != "nic" {
+			continue
+		}
+		netName := str(d["network"])
+		if (lanNet != "" && (netName == lanNet || str(d["parent"]) == lanNet)) || devName == "lan" || devName == "nixus_lan" {
+			iface = str(d["name"])
+			if iface == "" {
+				iface = devName
+			}
+			break
+		}
+	}
+	nets := obj(jget(instance, "state", "network"))
+	check := func(name string) string {
+		for _, a := range list(jget(nets, name, "addresses")) {
+			if am := obj(a); str(am["family"]) == "inet" && str(am["scope"]) == "global" {
+				return str(am["address"])
+			}
+		}
+		return ""
+	}
+	if iface != "" {
+		if ip := check(iface); ip != "" {
+			return ip
+		}
+	}
+	for _, name := range keys(nets) {
+		if name == "lo" || name == "eth0" {
+			continue
+		}
+		if ip := check(name); ip != "" {
+			return ip
 		}
 	}
 	return ""

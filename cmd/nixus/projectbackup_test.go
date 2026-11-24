@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,5 +119,44 @@ func TestForwardedQueryOnlyPassesReviewedParameters(t *testing.T) {
 	r, _ = http.NewRequest("GET", "/api/status?x=1", nil)
 	if forwardedQuery("/api/status", r) != "" {
 		t.Fatal("query forwarded for a view without parameters")
+	}
+}
+
+func TestBackupProjectEnableAndConsistency(t *testing.T) {
+	inventory := M{"projects": M{
+		"alpha": M{"incusProject": "alpha", "enable": true, "backup": M{"enable": true, "consistency": "quiesce"}},
+		"beta":  M{"incusProject": "beta", "enable": true, "backup": M{"enable": false, "consistency": "stop"}},
+		"gamma": M{"incusProject": "gamma", "enable": true, "backup": M{"enable": true, "consistency": "none"}},
+	}}
+	policy := backupPolicyFixture()
+	got := strings.Join(incusProjectsOf(policy, inventory), ",")
+	if got != "alpha,gamma" {
+		t.Fatalf("backup.enable=false project must be skipped: got %q", got)
+	}
+	cons := consistencyByProject(policy, inventory)
+	if cons["alpha"] != "quiesce" || cons["gamma"] != "none" || cons["beta"] != "" {
+		t.Fatalf("consistency map: %v", cons)
+	}
+	if cov := projectCoverage(obj(obj(inventory["projects"])["beta"]), true); str(cov["data"]) != "disabled-by-project" {
+		t.Fatalf("coverage for disabled project: %v", cov)
+	}
+}
+
+func TestPortalRedirectHandler(t *testing.T) {
+	h := redirectHandler(9440)
+	req := httptest.NewRequest("GET", "http://192.0.2.10/apps?x=1", nil)
+	req.RequestURI = "/apps?x=1"
+	req.Host = "192.0.2.10:80"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "https://192.0.2.10:9440/apps?x=1" {
+		t.Fatalf("redirect: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	bad := httptest.NewRequest("POST", "http://192.0.2.10/", nil)
+	bad.RequestURI = "/"
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bad)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST, got %d", rec.Code)
 	}
 }

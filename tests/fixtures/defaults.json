@@ -9,9 +9,6 @@
   },
   "connectivity": {
     "bridges": [],
-    "guestInterfaces": [
-      "incusbr0"
-    ],
     "preservedIncusBridges": [],
     "privateAccess": [],
     "trustedLANAccess": false,
@@ -25,7 +22,6 @@
     "gatewayCIDR": ""
   },
   "hostName": "nixus",
-  "instances": [],
   "maintenance": {
     "laptopMode": false,
     "optimiseStore": true,
@@ -60,7 +56,7 @@
     }
   },
   "ready": false,
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "secrets": {
     "ageKeyFile": "/var/lib/sops-nix/key.txt",
     "enable": false,

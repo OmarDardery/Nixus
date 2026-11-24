@@ -109,10 +109,9 @@ func impactBaseline(settings M) M {
 	}
 	system, _ := filepath.EvalSymlinks("/run/current-system")
 	effective := readObj("/etc/nixus/effective-settings.json")
-	instances, _ := readJSON("/etc/nixus/desired-instances.json", []any{})
 	return M{"settings": settings, "hostSystem": system, "hostSettingsDigest": digestJSON(effective),
 		"expectedIncus": isTrue(effective["ready"]), "disks": readObj("/etc/nixus/effective-disks.json"),
-		"instances": instances, "preseed": preseed}
+		"instances": []any{}, "preseed": preseed}
 }
 
 type impactReader struct{ deadline time.Time }
@@ -789,7 +788,7 @@ func makeImpactPlan(before, after, snapshot M, unitChanges []string, opaque, tra
 		}
 		incusMount := len(pools) > 0 || role == "guests" || role == "pool"
 		if incusMount {
-			affected["incus.service"], affected["incus-preseed.service"], affected["nixus-instances.service"] = true, true, true
+			affected["incus.service"], affected["incus-preseed.service"] = true, true
 		}
 		kind := "restart-required"
 		var resolution any

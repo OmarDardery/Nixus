@@ -214,7 +214,7 @@ func TestInstallerIntentAndGuestNetwork(t *testing.T) {
 }
 
 func TestNetworkRepairSelectsSavedBridge(t *testing.T) {
-	settings := M{"management": M{"interface": "eth0", "configure": false}, "guests": M{"bridge": "incusbr0"}, "connectivity": M{"guestInterfaces": []any{}}}
+	settings := M{"management": M{"interface": "eth0", "configure": false}, "guests": M{"bridge": "incusbr0"}, "connectivity": M{"preservedIncusBridges": []any{}}}
 	links := []any{M{"ifname": "eth0", "master": "br0"}, M{"ifname": "br0"}}
 	profiles := []M{
 		{"uuid": "11111111-1111-1111-1111-111111111111", "id": "lan", "type": "bridge", "interface": "br0", "controller": "", "auto": "no"},

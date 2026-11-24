@@ -26,7 +26,7 @@ in {
       description = "Refresh management TLS identity from the assigned address";
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ]; after = [ "network-online.target" ];
-      before = [ "incus.service" "cockpit.service" "nginx.service" "nixus-ui.service" ];
+      before = [ "incus.service" "cockpit.service" "nixus-ui.service" ];
       path = [ pkgs.iproute2 ];
       serviceConfig = {
         Type = "oneshot"; RemainAfterExit = true;
@@ -47,26 +47,8 @@ in {
     ];
     # During bootstrap retain the existing firewall implementation. The HTTPS process
     # also enforces source CIDRs; after conversion the host uses nftables.
-    # Where an app's "own IP on your router" network card attaches: the host's
-    # LAN interface, bridged when it is a Linux bridge, macvlan otherwise.
-    environment.etc."nixus/lan.json".text = let
-      parent = if site.ready then site.management.interface else install.interface;
-    in builtins.toJSON { inherit parent;
-      nictype = if lib.any (b: b.name == parent) site.connectivity.bridges then "bridged" else "macvlan"; };
     networking.firewall.interfaces."${if site.ready then site.management.interface else install.interface}".allowedTCPPorts =
       lib.mkIf (!config.nixus.managementPolicy.enforceFirewall) [ 80 site.setup.port ];
-    # Port 80 is an entry point only. Authenticate over the existing private
-    # HTTPS portal, never a plaintext HTTP login/session. Keep the Nixus host
-    # UI separate from guest applications which may also use port 80 on their IP.
-    services.nginx = {
-      enable = true;
-      virtualHosts.nixus-entry = {
-        serverName = "_";
-        default = true;
-        listen = [ { addr = "0.0.0.0"; port = 80; } ];
-        locations."/".return = "308 https://$host:${toString site.setup.port}$request_uri";
-      };
-    };
     systemd.services.nixus-admin-backend = {
       description = "Nixus typed configuration and transaction broker";
       wantedBy = [ "multi-user.target" ]; after = [ "local-fs.target" ];
@@ -85,7 +67,11 @@ in {
       wantedBy = [ "multi-user.target" ];
       after = [ "nixus-admin-backend.service" "nixus-management-identity.service" ];
       requires = [ "nixus-admin-backend.service" "nixus-management-identity.service" ];
-      environment = { NIXUS_ROOT = "/var/lib/nixus/config"; NIXUS_PORT = toString site.setup.port; };
+      environment = {
+        NIXUS_ROOT = "/var/lib/nixus/config";
+        NIXUS_PORT = toString site.setup.port;
+        NIXUS_REDIRECT_PORT = "80";
+      };
       serviceConfig = {
         ExecStart = "${tool}/bin/nixus-admin web";
         User = "nixus-ui"; Group = "nixus-ui";
@@ -97,7 +83,9 @@ in {
         NoNewPrivileges = true; PrivateTmp = true; ProtectHome = true;
         ProtectSystem = "strict"; ProtectKernelTunables = true; ProtectKernelModules = true;
         ProtectControlGroups = true; RestrictSUIDSGID = true;
-        CapabilityBoundingSet = ""; RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+        AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+        CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
       };
       restartIfChanged = false; stopIfChanged = false;
     };

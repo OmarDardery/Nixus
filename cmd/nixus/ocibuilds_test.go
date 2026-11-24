@@ -23,6 +23,18 @@ func TestComposeUpCommand(t *testing.T) {
 	if !slices.Contains(args, "--no-build") || slices.Contains(args, "--build") || slices.Contains(args, "--recreate") {
 		t.Fatalf("image-only first deploy: %v", args)
 	}
+	if slices.Contains(args, "--image-cache") || slices.Contains(args, "--no-dns") || slices.Contains(args, "--no-healthd") {
+		t.Fatalf("online deploy should use native incus-compose defaults: %v", args)
+	}
+	t.Setenv("NIXUS_COMPOSE_OFFLINE", "1")
+	offArgs, _, err := composeUpCommand("incus-compose", []string{"-p", "x"}, image, scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx := slices.Index(offArgs, "--image-cache"); idx < 0 || offArgs[idx+1] != "" || !slices.Contains(offArgs, "--no-dns") || !slices.Contains(offArgs, "--no-healthd") {
+		t.Fatalf("offline deploy flags: %v", offArgs)
+	}
+	t.Setenv("NIXUS_COMPOSE_OFFLINE", "")
 	built := M{"intentHash": "new", "services": []any{M{"service": "app", "built": true}}}
 	t.Setenv("NIXUS_OCI_BUILDAH_BIN", "/nix/store/x-buildah/bin/buildah")
 	args, env, err := composeUpCommand("incus-compose", nil, built, scratch)
@@ -72,6 +84,9 @@ func reviewFixture(t *testing.T, project string, files map[string]string) (M, er
 		t.Skip("incus-compose not available")
 	}
 	useState(t)
+	pubRoot := filepath.Join(t.TempDir(), "project-sources")
+	os.MkdirAll(pubRoot, 0o700)
+	t.Setenv("NIXUS_PROJECT_SOURCES", pubRoot)
 	t.Setenv("NIXUS_OCI_COMPOSE_BIN", bin)
 	t.Setenv("NIXUS_OCI_PATH", "/usr/bin:/bin")
 	var entries []any
@@ -141,28 +156,26 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 }
 
 // An app's variables are part of the Compose model, so each container is
-// created with them; "$" must reach the container literally.
-func TestServiceOverrideNamesContainersAfterServices(t *testing.T) {
+// created with them and records user.nixus.env-keys; "$" reaches the container literally.
+func TestAppComposeOverrideSetsEnvSecretsAndAutostart(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"web", "my_db"}, nil, nil, nil), &doc); err != nil {
-		t.Fatal(err)
-	}
-	if got := obj(obj(doc["services"])["web"]); str(got["container_name"]) != "web" || got["environment"] != nil {
-		t.Fatalf("%v", got)
-	}
-	if got := obj(obj(doc["services"])["my_db"]); str(got["container_name"]) != "my-db" {
-		t.Fatalf("Incus names have no underscore: %v", got)
-	}
-}
-
-func TestEnvOverrideGivesEveryServiceTheVariables(t *testing.T) {
-	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, nil), &doc); err != nil {
+	if err := json.Unmarshal(appComposeOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, "", "/run/nixus-secrets/demo"), &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"web", "tunnel"} {
-		if got := obj(obj(obj(doc["services"])[s])["environment"])["TUNNEL_TOKEN"]; got != "a$$b" {
+		svc := obj(obj(doc["services"])[s])
+		if svc["container_name"] != nil {
+			t.Fatalf("incus-compose should own container naming: %v", svc)
+		}
+		if got := obj(svc["environment"])["TUNNEL_TOKEN"]; got != "a$$b" {
 			t.Fatalf("%s: %v", s, got)
+		}
+		if str(jget(svc, "x-incus", envKeysConfig)) != "TUNNEL_TOKEN" || str(jget(svc, "x-incus", "boot.autostart")) != "true" {
+			t.Fatalf("x-incus metadata: %v", svc)
+		}
+		sec := obj(jget(svc, "x-incus-compose", "devices", "nixus-secrets"))
+		if str(sec["type"]) != "disk" || str(sec["source"]) != "/run/nixus-secrets/demo" || str(sec["path"]) != "/run/secrets" || str(sec["readonly"]) != "true" {
+			t.Fatalf("secrets mount: %v", sec)
 		}
 	}
 }
@@ -232,23 +245,25 @@ func TestStartDetailNamesVariablesAndLogTail(t *testing.T) {
 	}
 }
 
-// "Own IP on your router": only the chosen services get a LAN card.
-func TestServiceOverrideLANCard(t *testing.T) {
-	nic := M{"type": "nic", "nictype": "macvlan", "parent": "enp2s0", "name": "eth1"}
+// "Own IP on your router": only the chosen services attach to the external LAN network.
+func TestAppComposeOverrideLANNetwork(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(serviceOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, nic), &doc); err != nil {
+	if err := json.Unmarshal(appComposeOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, "nixus-lan", ""), &doc); err != nil {
 		t.Fatal(err)
 	}
-	dev := obj(obj(jget(obj(obj(doc["services"])["aiostreams"]), "x-incus-compose", "devices"))["lan"])
-	if str(dev["nictype"]) != "macvlan" || str(dev["parent"]) != "enp2s0" {
-		t.Fatalf("%v", doc)
+	if jget(obj(obj(doc["services"])["aiostreams"]), "networks", "nixus_lan") == nil {
+		t.Fatalf("aiostreams missing nixus_lan: %v", doc)
 	}
-	if jget(obj(obj(doc["services"])["cloudflared"]), "x-incus-compose") != nil {
+	if jget(obj(obj(doc["services"])["cloudflared"]), "networks") != nil {
 		t.Fatalf("cloudflared stays private: %v", doc)
+	}
+	lanDef := obj(jget(doc, "networks", "nixus_lan"))
+	if str(lanDef["name"]) != "nixus-lan" || !isTrue(lanDef["external"]) {
+		t.Fatalf("external LAN network definition: %v", lanDef)
 	}
 }
 
-func TestLANServicesAndNIC(t *testing.T) {
+func TestLANServicesAndNetworkName(t *testing.T) {
 	if got := lanServices(M{"network": M{"lan": M{"services": []any{"web", "db", "web"}}}}); got != "db,web" {
 		t.Fatalf("%q", got)
 	}
@@ -256,60 +271,40 @@ func TestLANServicesAndNIC(t *testing.T) {
 		t.Fatal("private by default")
 	}
 	dir := t.TempDir()
-	old := lanSettingsPath
-	defer func() { lanSettingsPath = old }()
-	lanSettingsPath = filepath.Join(dir, "lan.json")
-	if _, err := lanNIC(); err == nil {
+	old := effectiveSettingsPath
+	defer func() { effectiveSettingsPath = old }()
+	effectiveSettingsPath = filepath.Join(dir, "effective-settings.json")
+	if _, err := lanNetworkName(); err == nil {
 		t.Fatal("no LAN interface configured is an error")
 	}
-	os.WriteFile(lanSettingsPath, []byte(`{"parent":"br-lan","nictype":"bridged"}`), 0o644)
-	if nic, err := lanNIC(); err != nil || str(nic["parent"]) != "br-lan" || str(nic["nictype"]) != "bridged" {
-		t.Fatalf("%v %v", nic, err)
+	os.WriteFile(effectiveSettingsPath, []byte(`{"management":{"interface":"eth0"},"connectivity":{"bridges":[]},"radios":{"wifi":{"enable":false,"interface":""}}}`), 0o644)
+	if netName, err := lanNetworkName(); err != nil || netName != "nixus-lan" {
+		t.Fatalf("wired Ethernet uses preseeded nixus-lan: %q %v", netName, err)
+	}
+	os.WriteFile(effectiveSettingsPath, []byte(`{"management":{"interface":"br-lan"},"connectivity":{"bridges":[{"name":"br-lan","interfaces":["eth0"]}]},"radios":{"wifi":{"enable":false,"interface":""}}}`), 0o644)
+	if netName, err := lanNetworkName(); err != nil || netName != "br-lan" {
+		t.Fatalf("host bridge is referenced directly: %q %v", netName, err)
+	}
+	os.WriteFile(effectiveSettingsPath, []byte(`{"management":{"interface":"wlan0"},"connectivity":{"bridges":[]},"radios":{"wifi":{"enable":true,"interface":"wlan0"}}}`), 0o644)
+	if _, err := lanNetworkName(); err == nil {
+		t.Fatal("Wi-Fi should be rejected for LAN IP")
 	}
 }
 
-// Every container is created with its app network's gateway as DNS server.
-func TestAppGatewayAndOverride(t *testing.T) {
-	nets := `[{"name":"incusbr0","config":{"ipv4.address":"10.0.100.1/24"}},{"name":"` + appNetworkName("aio") + `","config":{"ipv4.address":"10.120.7.1/24"}}]`
-	incus := func(_ time.Duration, args ...string) (string, error) { return nets, nil }
-	if gw, err := appGateway(incus, "aio"); err != nil || gw != "10.120.7.1" {
-		t.Fatalf("an existing app keeps its network: %q %v", gw, err)
-	}
-	gw, err := appGateway(incus, "web")
-	if err != nil || !strings.HasPrefix(gw, "10.120.") || gw == "10.120.7.1" {
-		t.Fatalf("a new app gets a free /24: %q %v", gw, err)
-	}
-	if again, _ := appGateway(incus, "web"); again != gw {
-		t.Fatal("the choice is stable")
-	}
-	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
-	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "oci.dns.nameservers")) != "10.120.9.1" ||
-		str(jget(doc, "networks", "default", "x-incus", "ipv4.address")) != "10.120.9.1/24" ||
-		!strings.HasPrefix(str(jget(doc, "networks", "default", "name")), "nxa-") || len(appNetworkName("a-very-long-app-name-here")) != 12 {
-		t.Fatalf("%v", doc)
-	}
-}
-
-func TestSettledWaitsForStableRunning(t *testing.T) {
-	old := settleSleep
-	defer func() { settleSleep = old }()
-	settleSleep = func(time.Duration) {}
-	seq := []string{"compose-up", "noop", "noop", "noop"}
+func TestWaitRunningStopsImmediatelyWhenReady(t *testing.T) {
+	old := waitSleep
+	defer func() { waitSleep = old }()
+	waitSleep = func(time.Duration) {}
+	seq := []string{"compose-up", "noop"}
 	n := 0
-	r, _ := settled(func() (M, error) { s := seq[min(n, len(seq)-1)]; n++; return M{"action": s}, nil },
+	r, _ := waitRunning(func() (M, error) { s := seq[min(n, len(seq)-1)]; n++; return M{"action": s}, nil },
 		func(r M) bool { return r["action"] == "noop" })
-	if r["action"] != "noop" || n != 4 {
+	if r["action"] != "noop" || n != 2 {
 		t.Fatalf("%v after %d", r, n)
 	}
 	n = 0
-	r, _ = settled(func() (M, error) { n++; return M{"action": "compose-up"}, nil }, func(r M) bool { return r["action"] == "noop" })
-	if r["action"] == "noop" || n != 30 {
+	r, _ = waitRunning(func() (M, error) { n++; return M{"action": "compose-up"}, nil }, func(r M) bool { return r["action"] == "noop" })
+	if r["action"] == "noop" || n != 6 {
 		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
-	}
-	var doc M
-	json.Unmarshal(appOverride(serviceOverride([]string{"web"}, nil, nil, nil), "10.120.9.1", appNetworkName("web")), &doc)
-	if str(jget(obj(obj(doc["services"])["web"]), "x-incus", "boot.autorestart")) != "true" {
-		t.Fatalf("%v", doc)
 	}
 }

@@ -595,7 +595,6 @@ func adoptionSettings(settings, data M) error {
 	guests["bridge"] = available("nixusbr")
 	storage["pool"] = available("nixus-guests")
 	storage["source"] = "/var/lib/incus/storage-pools/" + str(storage["pool"])
-	connectivity["guestInterfaces"] = []any{guests["bridge"]}
 	preserved := []any{}
 	for _, n := range list(data["networks"]) {
 		nm := obj(n)
@@ -2039,7 +2038,7 @@ func selectManagement(settings M, links []any, connections []M, requested string
 	if name == str(jget(settings, "guests", "bridge")) {
 		return "", nil, Public("A guest network cannot become the management connection")
 	}
-	for _, g := range list(jget(settings, "connectivity", "guestInterfaces")) {
+	for _, g := range list(jget(settings, "connectivity", "preservedIncusBridges")) {
 		if str(g) == name {
 			return "", nil, Public("A guest network cannot become the management connection")
 		}
@@ -2463,8 +2462,8 @@ func (r *NetworkRepair) validateLive() error {
 }
 
 func (r *NetworkRepair) nativeIdentity() error {
-	names := []string{"incus.service", "incus-startup.service", "incus-preseed.service", "nixus-instances.service",
-		"nixus-admin-backend.service", "nixus-ui.service", "nginx.service", "cockpit.service"}
+	names := []string{"incus.service", "incus-startup.service", "incus-preseed.service",
+		"nixus-admin-backend.service", "nixus-ui.service", "cockpit.service"}
 	res, _ := run(append([]string{"systemctl", "show", "--property=Id,ActiveState"}, names...), nil, 30*time.Second, nil, "")
 	observed := string(res.Stdout)
 	if !strings.Contains(observed, "Id=incus.service\n") && !strings.HasSuffix(observed, "Id=incus.service") {

@@ -226,7 +226,7 @@ func startAppDeploy(actor string, body M) (M, error) {
 		return nil, err
 	}
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-app-deploy-" + project,
-		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=7200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"),
 		"--setenv=NIXUS_OCI_VM_TEST=" + os.Getenv("NIXUS_OCI_VM_TEST"),
 		adminLauncher(), "admin", "apps", "deploy", project}, nil, 20*time.Second); err != nil {
 		job["status"], job["error"] = "failed", "Could not start the deployment worker"
@@ -440,7 +440,7 @@ func saveBackupPolicy(actor string, text any) (M, error) {
 // startProjectBackup runs the published backup policy now in a worker unit.
 func startProjectBackup(actor string) (M, error) {
 	if _, err := check([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-backup-now",
-		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=NIXUS_COMPOSE_DNS_IMAGE=" + os.Getenv("NIXUS_COMPOSE_DNS_IMAGE"),
+		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"),
 		adminLauncher(), "admin", "project-backup", "run"}, nil, 20*time.Second); err != nil {
 		return nil, Public("A backup is already running")
 	}
@@ -448,7 +448,8 @@ func startProjectBackup(actor string) (M, error) {
 	return M{"started": true}, nil
 }
 
-// appPower starts, stops or restarts every instance of an app.
+// appPower starts, stops or restarts an app. Compose apps delegate directly
+// to incus-compose; native Incus apps manage their instances directly.
 func appPower(actor string, body M) (M, error) {
 	project, action := str(body["project"]), str(body["action"])
 	if !fullmatch(projectName, project) || (action != "start" && action != "stop" && action != "restart") {
@@ -460,6 +461,15 @@ func appPower(actor string, body M) (M, error) {
 		return nil, Public("Unknown app")
 	}
 	incusProject := str(p["incusProject"])
+	if str(p["backend"]) == composeBackend {
+		if handled, err := composeProjectCommand(project, action); handled {
+			if err != nil {
+				return nil, err
+			}
+			audit("app-power", M{"principal": actor, "project": project, "action": action})
+			return M{"done": true}, nil
+		}
+	}
 	instances := appInstances(updateIncus, incusProject)
 	if len(instances) == 0 {
 		return nil, Public("The app has no instances")
@@ -486,9 +496,6 @@ func appPower(actor string, body M) (M, error) {
 		} else if err != nil {
 			return nil, Public("Could not " + action + " " + str(inst["name"]))
 		}
-	}
-	if action != "stop" {
-		deliverPublishedSecrets(project) // /run/secrets is cleared on restart
 	}
 	audit("app-power", M{"principal": actor, "project": project, "action": action})
 	return M{"done": true}, nil

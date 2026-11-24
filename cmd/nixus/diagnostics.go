@@ -274,7 +274,7 @@ func doctor(settings M) M {
 	}
 	report["clock"] = clockStatus(0)
 	services := []any{}
-	for _, unit := range []string{"incus", "incus-preseed", "nixus-instances", "nixus-management-identity",
+	for _, unit := range []string{"incus", "incus-preseed", "nixus-management-identity",
 		"nixus-admin-backend", "nixus-ui", "nixus-rollback-guard.service", "cockpit.socket", "cockpit.service"} {
 		data := systemctlShow(unit, "Id,LoadState,ActiveState,SubState,Result,ExecMainStatus")
 		if data["LoadState"] == "loaded" {

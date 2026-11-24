@@ -16,13 +16,9 @@ changing them. Planned changes are not claims that a feature already exists.
 | Independent backup and restore evidence | `cmd/nixus/backup.go`, `cmd/nixus/operations.go`, `cmd/nixus/recovery.go` | the Go unit tests, the Go unit tests |
 | Dependencies and qualification | `flake.lock` pins Nix inputs; `cmd/nixus/tools.go` validates release evidence | the Go unit tests, `.github/workflows/release.yml` |
 
-### Frozen compatibility surface (CR-01)
+### Public compatibility surface
 
-`tests/fixtures/architecture-contract.json` is the **versioned public-surface
-inventory**, with assertions in the Go unit tests. It
-characterizes existing interfaces; it is not a specification that unsafe defaults
-or implementation details must be retained. Running the source-only tests does
-not replace the evaluated NixOS/Incus and rollback integration tests.
+The table below characterizes public interfaces and ownership boundaries; it is not a specification that unsafe defaults or legacy implementation details must be retained. Running source-only tests does not replace the evaluated NixOS/Incus and rollback integration tests.
 
 | Boundary | Canonical source / data owner | Public/stable surface | Failure or migration gate |
 |---|---|---|---|

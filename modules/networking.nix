@@ -3,7 +3,6 @@ let
   m = site.management;
   trusted = lib.concatStringsSep ", " m.trustedCIDRs;
   iface = builtins.toJSON m.interface;
-  guestIfaces = lib.concatMapStringsSep ", " builtins.toJSON site.connectivity.guestInterfaces;
   isBridge = lib.any (b: b.name == m.interface) site.connectivity.bridges;
   vlan = lib.findFirst (v: v.name == m.interface) null site.connectivity.vlans;
   nmWired = installedNetworking.networkManager && m.interface != site.radios.wifi.interface;
@@ -11,54 +10,31 @@ let
 in {
   imports = [ ./management.nix ];
   nixus.managementPolicy.enforceFirewall = true;
+  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;
+  # Keep unrelated nftables tables intact so Incus owns guest NAT, DHCP/DNS
+  # input, forwarding, and network ACLs in table inet incus.
   networking.nftables = { enable = true; flushRuleset = false; };
   networking.firewall = {
     enable = true;
-    filterForward = true;
+    filterForward = false;
     allowedTCPPorts = lib.mkForce [ ];
     allowedUDPPorts = lib.mkForce [ ];
     # NixOS adds lo through this option. Dropping it also blocks connections
     # to the host's own LAN address, including every management health probe.
     trustedInterfaces = lib.mkForce [ "lo" ];
     allowPing = false;
-    # Interface trust is deliberately not granted to the guest bridge.
+    # Host input stays closed by default; management ports are scoped to
+    # management.interface + trustedCIDRs in modules/management.nix.
+    # Allow DHCP/DNS input on non-management interfaces so Incus's own
+    # table inet incus has sole authority over bridge dnsmasq access
+    # (incusbr0, incus-compose bridges, and custom Compose networks).
     extraInputRules = ''
       iifname ${iface} ip saddr { ${trusted} } icmp type echo-request accept
-      iifname { ${guestIfaces} } udp dport { 53, 67 } accept
-      iifname { ${guestIfaces} } tcp dport 53 accept
-      # App networks (nxa-*): DHCP and DNS from their own Incus dnsmasq.
-      iifname "nxa-*" udp dport { 53, 67 } accept
-      iifname "nxa-*" tcp dport 53 accept
-      ${lib.concatMapStringsSep "\n" (bridge: ''
-        iifname ${builtins.toJSON bridge} udp dport { 53, 67 } accept
-        iifname ${builtins.toJSON bridge} tcp dport 53 accept
-      '') site.connectivity.preservedIncusBridges}
-    '';
-    extraForwardRules = lib.concatMapStringsSep "\n" (bridge: ''
-      iifname ${builtins.toJSON bridge} accept
-      oifname ${builtins.toJSON bridge} accept
-    '') site.connectivity.preservedIncusBridges + ''
-      iifname ${builtins.toJSON site.guests.bridge} ip saddr != ${site.guests.cidr} drop
-      iifname { ${guestIfaces} } oifname { ${guestIfaces} } accept
-      ${lib.concatMapStringsSep "\n" (rule: ''
-        iifname { ${guestIfaces} } ip daddr ${rule.cidr} ${rule.protocol} dport { ${lib.concatMapStringsSep ", " toString rule.ports} } accept
-      '') site.connectivity.privateAccess}
-      iifname { ${guestIfaces} } ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
-      iifname { ${guestIfaces} } oifname ${iface} meta nfproto ipv4 accept
-      # App networks reach the internet, not each other or the LAN.
-      iifname "nxa-*" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
-      iifname "nxa-*" oifname ${iface} meta nfproto ipv4 accept
-    '' + lib.optionalString site.connectivity.trustedLANAccess ''
-      # Incus owns guest forwarding/ACLs; this is the outer host trust boundary.
-      iifname ${iface} ip saddr { ${trusted} } oifname { ${guestIfaces} } accept
+      iifname != ${iface} udp dport { 53, 67 } accept
+      iifname != ${iface} tcp dport 53 accept
     '';
   };
-  networking.nat = {
-    enable = true;
-    externalInterface = m.interface;
-    internalInterfaces = [ site.guests.bridge ];
-    internalIPs = [ site.guests.cidr ];
-  };
+  networking.dhcpcd.denyInterfaces = [ "veth*" "ic-*" "incus*" ];
   # Opt-in change: never enslave or rename an existing management NIC on rebuild.
   networking.useDHCP = lib.mkIf (m.configure && !useNM) (lib.mkForce false);
   networking.interfaces = lib.mkIf (m.configure && !useNM) {

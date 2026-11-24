@@ -160,7 +160,7 @@ func workerBuild(directory string) error {
 		return err
 	}
 	log.Close()
-	resources := "disks = c.nixus.storage.disks; preseed = c.virtualisation.incus.preseed; instances = c.nixus.incus.desiredInstances;"
+	resources := "disks = c.nixus.storage.disks; preseed = c.virtualisation.incus.preseed; instances = [];"
 	if role == "bootstrap" {
 		resources = "disks = {}; preseed = {}; instances = [];"
 	}
@@ -625,7 +625,7 @@ func workerApply(directory string) error {
 			return err
 		}
 		if role == "hypervisor" {
-			if _, err := hostCommand([]string{"systemctl", "is-active", "incus.service", "nixus-instances.service"}, log, 30*time.Second, true); err != nil {
+			if _, err := hostCommand([]string{"systemctl", "is-active", "incus.service"}, log, 30*time.Second, true); err != nil {
 				return err
 			}
 			if isTrue(jget(effective, "cockpit", "enable")) {

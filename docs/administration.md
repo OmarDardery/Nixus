@@ -190,38 +190,10 @@ expiry and revoke smoke results before claiming that client combination qualifie
 
 
 Use Incus for containers, VMs, image templates, limits, devices, volumes, networks and snapshots.
-For a UI-created guest, runtime state belongs to Incus until deliberately adopted. Adoption
-requires reviewing its full configuration and explicitly setting `user.nixus.managed=true`;
-the reconciler refuses a name collision without that marker. A marker is authorization, not
-an ownership proof against someone who already has root access.
-
-Create a container from an image by adding a `site.instances` declaration with `name`, `project`,
-`image`, `type`, `profiles`, `config`, `devices`. Use a full immutable image fingerprint for
-repeatable initial root filesystems. Floating `images:debian/13`-style aliases track a moving image.
-Images are templates; they do not restore current guest data. `base` provides resource limits,
-root disk/NIC and daily snapshots with seven-day expiry. Guest-specific device definitions
-must contain complete replacement devices, not partial profile patches.
-
-Example shape (replace fingerprint and reserved IP before enabling):
-
-```nix
-instances = [ {
-  name = "utility"; project = "lab"; type = "container";
-  image = "images:FULL-IMAGE-FINGERPRINT";
-  profiles = [ "base" ];
-  config = { "limits.cpu" = "2"; "limits.memory" = "1GiB"; };
-  devices.eth0 = {
-    type = "nic"; name = "eth0"; network = "incusbr0";
-    "ipv4.address" = "CHOSEN-GUEST-IP";
-  };
-} ];
-```
-
-Unprivileged Linux containers are the default. NixOS system containers additionally need the
-supported NixOS image and `security.nesting=true`; do not substitute a privileged container.
-Full VMs need a bootable VM image and KVM. Resizing disks upward and changing limits is supported;
-shrinking disks requires a separate migration/recovery procedure. Deleting a declaration never
-means deleting data. Explicit deletion uses authenticated `incus delete` after a reviewed backup.
+Declarative native Incus containers and VMs live in `/srv/nixus/projects/<app>/default.nix` with
+`nixus.project.backend = "incus-native"`, managed from the **Apps** page or `nixus-admin projects`.
+Deleting a declaration never means deleting data. Explicit deletion uses authenticated `incus delete`
+(or app deletion in the console) after a reviewed backup.
 
 ## Compose applications
 
@@ -245,11 +217,11 @@ security updates regularly.
 ## Logs and monitoring
 
 ```console
-journalctl -u incus -u incus-preseed -u nixus-instances --since today
+journalctl -u incus -u incus-preseed --since today
 journalctl -u nixus-incus-audit --since today
 journalctl -t nixus
 systemctl --failed
-sudo incus info NAME --project PROJECT --show-log
+sudo incus console NAME --project PROJECT --show-log
 sudo homelab logs demo
 sudo nft list ruleset
 sudo incus network show incusbr0

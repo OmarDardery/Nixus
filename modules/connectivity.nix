@@ -42,8 +42,8 @@ in {
       message = "An Ethernet/VLAN interface may belong to only one host bridge."; }
     { assertion = !(builtins.elem site.management.interface ports);
       message = "Move management addressing onto the bridge before enslaving its port."; }
-    { assertion = lib.all (name: !(builtins.elem name c.guestInterfaces)) (bridgeNames ++ ports ++ [ site.management.interface ]);
-      message = "Private guest firewall interfaces must be separate from host/LAN interfaces."; }
+    { assertion = !(builtins.elem site.guests.bridge (bridgeNames ++ ports ++ [ site.management.interface ]));
+      message = "Incus guest bridge must be separate from host/LAN interfaces."; }
   ];
   networking.bridges = lib.mkIf (!nm) (builtins.listToAttrs (map (b: {
     name = b.name; value.interfaces = b.interfaces;
@@ -57,7 +57,8 @@ in {
   }) ports));
   networking.networkmanager.ensureProfiles.profiles = lib.mkIf nm (vlanProfiles // ethernetProfiles // bridgeProfiles);
   networking.networkmanager.unmanaged = map (name: "interface-name:${name}")
-    (c.guestInterfaces ++ lib.optionals (!nm) (bridgeNames ++ map (v: v.name) c.vlans ++ ports));
+    (lib.unique ([ site.guests.bridge "incus-*" "ic-*" ] ++ c.preservedIncusBridges
+      ++ lib.optionals (!nm) (bridgeNames ++ map (v: v.name) c.vlans ++ ports)));
   systemd.services.nixus-connectivity = lib.mkIf (nm && activate != [ ]) {
     description = "Activate reviewed Ethernet/VLAN profiles";
     wantedBy = [ "multi-user.target" ];

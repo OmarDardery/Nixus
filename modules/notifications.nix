@@ -22,7 +22,6 @@ in {
         NoNewPrivileges = true; PrivateTmp = true; ProtectSystem = "strict"; ProtectHome = true;
       };
     };
-    systemd.services.nixus-instances.onFailure = [ "nixus-notify@%n.service" ];
     systemd.services.nixus-kvm-check.onFailure = [ "nixus-notify@%n.service" ];
     systemd.services.nixus-image-updates.onFailure = [ "nixus-notify@%n.service" ];
     systemd.services.nixus-project-backup.onFailure = [ "nixus-notify@%n.service" ];

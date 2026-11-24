@@ -8,16 +8,14 @@ import (
 
 func TestComposeDevicesSerialAndUSB(t *testing.T) {
 	d, err := composeDevices([]any{"/dev/serial/by-id/usb-Klipper_rp2040-if00:/dev/ttyACM0",
-		M{"source": "/dev/ttyUSB0", "target": "/dev/ttyUSB0", "permissions": "rwm"}}, M{"usb": []any{"1d50:614e"}})
+		M{"source": "/dev/ttyUSB0", "target": "/dev/ttyUSB0", "permissions": "rwm"}},
+		M{"devices": M{"usb0": M{"type": "usb", "vendorid": "1d50", "productid": "614e", "required": "false"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	s0 := obj(d["nixus-serial0"])
 	if s0["type"] != "unix-char" || s0["source"] != "/dev/serial/by-id/usb-Klipper_rp2040-if00" || s0["path"] != "/dev/ttyACM0" || s0["required"] != "false" {
 		t.Fatalf("serial %v", s0)
-	}
-	if u := obj(d["nixus-usb0"]); u["vendorid"] != "1d50" || u["productid"] != "614e" || u["type"] != "usb" {
-		t.Fatalf("usb %v", u)
 	}
 }
 
@@ -28,23 +26,35 @@ func TestComposeDevicesRefusesOtherDevices(t *testing.T) {
 			t.Fatalf("accepted %v", bad)
 		}
 	}
-	for _, bad := range []any{M{"usb": []any{"1d50"}}, M{"usb": []any{"1d50:614e"}, "disk": "x"}, "x"} {
+	for _, bad := range []any{
+		M{"devices": M{"usb0": M{"type": "usb", "vendorid": "1d50"}}},
+		M{"devices": M{"root": M{"type": "disk", "source": "/", "path": "/host"}}},
+		M{"devices": M{"s0": M{"type": "unix-char", "source": "/dev/sda", "path": "/dev/sda"}}},
+		M{"other": true},
+		"x",
+	} {
 		if _, err := composeDevices(nil, bad); err == nil {
 			t.Fatalf("accepted %v", bad)
 		}
 	}
 }
 
-func TestComposeModelEmitsDeviceOverride(t *testing.T) {
+func TestComposeModelEmitsDeviceOverrideAndAllowsCustomNetworks(t *testing.T) {
 	rev := strings.Repeat("a", 64)
-	model := M{"services": M{"klipper": M{"image": "ghcr.io/x/klipper@sha256:" + rev,
-		"devices": []any{M{"source": "/dev/ttyACM0", "target": "/dev/ttyACM0", "permissions": "rwm"}}, "x-nixus": M{"usb": []any{"0bda:2838"}}}}}
+	model := M{
+		"networks": M{"backend": M{"internal": true}},
+		"services": M{"klipper": M{
+			"image":           "ghcr.io/x/klipper@sha256:" + rev,
+			"devices":         []any{M{"source": "/dev/ttyACM0", "target": "/dev/ttyACM0", "permissions": "rwm"}},
+			"x-incus-compose": M{"devices": M{"usb0": M{"type": "usb", "vendorid": "0bda", "productid": "2838", "required": "false"}}},
+		}},
+	}
 	checked, err := validateComposeModel(model, "printer", rev, "compose.yaml", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := str(checked["separateOverride"])
-	for _, want := range []string{"  klipper:", "    x-incus-compose:", "        nixus-serial0:", `          type: "unix-char"`, `          vendorid: "0bda"`} {
+	for _, want := range []string{"  klipper:", "    x-incus-compose:", "        nixus-serial0:", `          type: "unix-char"`} {
 		if !strings.Contains(o, want) {
 			t.Fatalf("override missing %q:\n%s", want, o)
 		}
@@ -52,9 +62,9 @@ func TestComposeModelEmitsDeviceOverride(t *testing.T) {
 	if strings.Contains(o, "build:") {
 		t.Fatal("image service got a build reset")
 	}
-	model["services"].(M)["klipper"].(M)["x-incus-compose"] = M{}
+	model["services"].(M)["klipper"].(M)["x-incus-compose"] = M{"devices": M{"bad": M{"type": "disk", "source": "/etc"}}}
 	if _, err := validateComposeModel(model, "printer", rev, "compose.yaml", nil); err == nil {
-		t.Fatal("accepted raw x-incus-compose")
+		t.Fatal("accepted unvalidated disk device in x-incus-compose")
 	}
 }
 
@@ -69,7 +79,7 @@ func TestHostDevicesListsUSBWithoutRootHubs(t *testing.T) {
 		os.WriteFile(dir+"/idProduct", []byte(ids[1]+"\n"), 0o644)
 	}
 	usb := list(hostDevices()["usb"])
-	if len(usb) != 1 || obj(usb[0])["id"] != "1d50:614e" || !strings.Contains(str(obj(usb[0])["compose"]), "1d50:614e") {
+	if len(usb) != 1 || obj(usb[0])["id"] != "1d50:614e" || !strings.Contains(str(obj(usb[0])["compose"]), `vendorid: "1d50"`) {
 		t.Fatalf("%v", usb)
 	}
 }

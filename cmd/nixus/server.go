@@ -1086,6 +1086,37 @@ func (l *limitListener) Accept() (net.Conn, error) {
 	}
 }
 
+// redirectHandler redirects plain HTTP entry requests on port 80 to the HTTPS
+// portal with 308 Permanent Redirect, replacing nginx.
+func redirectHandler(httpsPort int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !strings.HasPrefix(r.RequestURI, "/") || strings.HasPrefix(r.RequestURI, "//") || len(r.RequestURI) > 4096 {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.Trim(host, "[]")
+		if host == "" || strings.ContainsAny(host, "/\\ \t\r\n@") {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		target := fmt.Sprintf("https://%s:%d%s", host, httpsPort, r.RequestURI)
+		w.Header().Set("Location", target)
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusPermanentRedirect)
+	})
+}
+
 func webMain() int {
 	port := 9440
 	if v, err := strconv.Atoi(os.Getenv("NIXUS_PORT")); err == nil {
@@ -1099,6 +1130,18 @@ func webMain() int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "TLS credentials unavailable")
 		return 1
+	}
+	if redirectPort, err := strconv.Atoi(os.Getenv("NIXUS_REDIRECT_PORT")); err == nil && redirectPort > 0 && redirectPort < 65536 {
+		if redirLn, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", redirectPort)); err != nil {
+			fmt.Fprintln(os.Stderr, "Portal redirect port unavailable:", err)
+		} else {
+			redirSrv := &http.Server{
+				Handler:           redirectHandler(port),
+				ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 10 * time.Second,
+				MaxHeaderBytes: 8192, ErrorLog: nilLogger(),
+			}
+			go redirSrv.Serve(&limitListener{redirLn, make(chan struct{}, 32)})
+		}
 	}
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {

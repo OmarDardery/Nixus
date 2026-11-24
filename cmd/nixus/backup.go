@@ -28,7 +28,7 @@ var backupRoot = envPath("NIXUS_EXPORT_DIRECTORY", "/var/lib/nixus/exports")
 var backupPending = "/var/lib/nixus/restart-pending.json"
 
 var generationRe = re(`[0-9]+-[0-9a-f]{32}`)
-var archiveRe = re(`(instance|volume)-[0-9a-f]{64}\.tar\.gz`)
+var archiveRe = re(`(instance|volume)-[0-9a-f]{64}\.tar(?:\.gz)?`)
 
 var backupIncus = func(timeout time.Duration, args ...string) (string, error) {
 	if timeout == 0 {
@@ -127,11 +127,11 @@ func backupRecover() error {
 
 func backupArtifact(kind string, identity ...string) string {
 	raw, _ := json.Marshal(identity)
-	return kind + "-" + sha256hex([]byte(canonicalSpacedRaw(raw))) + ".tar.gz"
+	return kind + "-" + sha256hex([]byte(canonicalSpacedRaw(raw))) + ".tar"
 }
 
 func backupExport(args []string, filename, destination string) error {
-	f, err := os.CreateTemp(destination, ".export-*.tar.gz")
+	f, err := os.CreateTemp(destination, ".export-*.tar")
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,9 @@ func backupExport(args []string, filename, destination string) error {
 	f.Close()
 	os.Remove(temporary)
 	defer os.Remove(temporary)
-	if _, err := backupIncus(0, append(args, temporary, "--compression", "gzip")...); err != nil {
+	// Export uncompressed tar so restic can deduplicate and compress (zstd)
+	// across daily snapshots without gzip breaking chunk boundaries.
+	if _, err := backupIncus(0, append(args, temporary, "--compression", "none")...); err != nil {
 		return err
 	}
 	info, err := os.Stat(temporary)
@@ -547,8 +549,9 @@ func scopeGroups(groups []M, only map[string]bool, namespaces map[string]string)
 }
 
 // runBackup stages exports of every guest and volume, or only those of the
-// given Incus projects when only is not nil.
-func runBackup(only []string) error {
+// given Incus projects when only is not nil. consistency optionally maps
+// Incus project name -> "stop" | "quiesce" | "none" (default "stop").
+func runBackup(only []string, consistency map[string]string) error {
 	if err := os.MkdirAll(backupRoot, 0o700); err != nil {
 		return err
 	}
@@ -605,7 +608,7 @@ func runBackup(only []string) error {
 		}
 		for _, raw := range instances {
 			g := obj(raw)
-			if isDNSSidecar(project, str(g["name"])) {
+			if isComposeSidecar(project, str(g["name"])) {
 				continue // recreated by the next deployment
 			}
 			g["project"] = project
@@ -707,7 +710,7 @@ func runBackup(only []string) error {
 		backupRecover()
 		os.RemoveAll(destination)
 	}()
-	windows, err := backupGroups(selected, destination, generation)
+	windows, err := backupGroups(selected, destination, generation, consistency)
 	if err != nil {
 		return err
 	}
@@ -719,7 +722,9 @@ func runBackup(only []string) error {
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
 		"guests": redactGuests(selectedGuests), "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
 		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
-	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
+	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar"))
+	gzArchives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
+	archives = append(archives, gzArchives...)
 	sort.Strings(archives)
 	checksums, sizes := M{}, M{}
 	for _, p := range archives {
@@ -785,7 +790,7 @@ func backupMain(args []string) int {
 		if recoverOnly {
 			done <- backupRecover()
 		} else {
-			done <- runBackup(nil)
+			done <- runBackup(nil, nil)
 		}
 	}()
 	select {
@@ -802,20 +807,41 @@ func backupMain(args []string) int {
 	return 0
 }
 
-// backupGroups stops, exports and restarts one consistency group at a time. A
-// group whose guests cannot all be restarted stops the backup right there, with
-// their identities still recorded in the pending file, so no later group
-// overwrites it and the backup cannot report success while a guest is offline
-// (#107).
-func backupGroups(selected []M, destination, generation string) ([]any, error) {
+// groupConsistency picks the strictest consistency policy across all guests in
+// a group ("stop" > "quiesce" > "none"), defaulting to "stop".
+func groupConsistency(group M, consistency map[string]string) string {
+	if len(consistency) == 0 {
+		return "stop"
+	}
+	rank := map[string]int{"none": 1, "quiesce": 2, "stop": 3}
+	mode, best := "stop", 0
+	for _, raw := range list(group["guests"]) {
+		m := consistency[str(obj(raw)["project"])]
+		if m == "" {
+			m = "stop"
+		}
+		if r := rank[m]; r > best {
+			best, mode = r, m
+		}
+	}
+	return mode
+}
+
+// backupGroups exports one consistency group at a time according to each
+// project's declared backup.consistency ("stop", "quiesce", or "none").
+// In "stop" mode, guests stop before export and restart immediately after;
+// a group whose guests cannot all be restarted stops the backup with their
+// identities still in restart-pending.json (#107).
+func backupGroups(selected []M, destination, generation string, consistency map[string]string) ([]any, error) {
 	windows := []any{}
 	for index, group := range selected {
+		mode := groupConsistency(group, consistency)
 		var members []any
 		pending := []any{}
 		for _, raw := range list(group["guests"]) {
 			g := obj(raw)
 			members = append(members, str(g["project"])+"/"+str(g["name"]))
-			if str(g["status"]) == "Running" {
+			if mode == "stop" && str(g["status"]) == "Running" {
 				pending = append(pending, instanceIdentity(g))
 			}
 		}
@@ -825,12 +851,14 @@ func backupGroups(selected []M, destination, generation string) ([]any, error) {
 		started := now()
 		err := func() (err error) {
 			defer func() {
-				backupProgress("recovering", M{"generation": generation, "members": members})
-				if recoverErr := backupRecover(); recoverErr != nil && err == nil {
-					err = recoverErr
+				if len(pending) > 0 {
+					backupProgress("recovering", M{"generation": generation, "members": members})
+					if recoverErr := backupRecover(); recoverErr != nil && err == nil {
+						err = recoverErr
+					}
 				}
 			}()
-			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members})
+			backupProgress("exporting", M{"generation": generation, "group": index + 1, "groups": len(selected), "members": members, "consistency": mode})
 			for _, raw := range pending {
 				g := obj(raw)
 				if err := verifyIdentity(g); err != nil {
@@ -840,18 +868,35 @@ func backupGroups(selected []M, destination, generation string) ([]any, error) {
 					return err
 				}
 			}
+			var tempSnaps [][3]string
+			defer func() {
+				for _, snap := range tempSnaps {
+					backupIncus(60*time.Second, "snapshot", "delete", snap[1], snap[2], "--project", snap[0])
+				}
+			}()
+			if mode == "quiesce" {
+				snapName := "nixus-backup-quiesce"
+				for _, raw := range list(group["guests"]) {
+					g := obj(raw)
+					proj, name := str(g["project"]), str(g["name"])
+					if _, err := backupIncus(120*time.Second, "snapshot", "create", name, snapName, "--project", proj); err != nil {
+						return err
+					}
+					tempSnaps = append(tempSnaps, [3]string{proj, name, snapName})
+				}
+			}
 			for _, raw := range list(group["guests"]) {
 				g := obj(raw)
 				if err := verifyIdentity(instanceIdentity(g)); err != nil {
 					return err
 				}
-				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"])}, str(g["archive"]), destination); err != nil {
+				if err := backupExport([]string{"export", str(g["name"]), "--project", str(g["project"]), "--instance-only"}, str(g["archive"]), destination); err != nil {
 					return err
 				}
 			}
 			for _, raw := range list(group["volumes"]) {
 				v := obj(raw)
-				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"])},
+				if err := backupExport([]string{"storage", "volume", "export", str(v["pool"]), str(v["name"]), "--project", str(v["project"]), "--volume-only"},
 					str(v["archive"]), destination); err != nil {
 					return err
 				}
@@ -861,7 +906,7 @@ func backupGroups(selected []M, destination, generation string) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		windows = append(windows, M{"members": members, "started": started, "finished": now()})
+		windows = append(windows, M{"members": members, "consistency": mode, "started": started, "finished": now()})
 	}
 	return windows, nil
 }
