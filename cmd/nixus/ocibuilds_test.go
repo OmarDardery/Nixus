@@ -308,3 +308,25 @@ func TestWaitRunningStopsImmediatelyWhenReady(t *testing.T) {
 		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
 	}
 }
+
+func TestLegacyNamingMigrationKeepsExplicitNamesAndNativeReplicas(t *testing.T) {
+	instances := []M{{"name": "web", "service": "web"}, {"name": "db-1", "service": "db"}, {"name": "explicit", "service": "explicit"}, {"name": "old-api", "service": "old_api"}}
+	legacy := legacyComposeServices(instances, M{"explicit": M{"container_name": "explicit"}})
+	if len(legacy) != 2 || legacy["web"] == nil || legacy["old_api"] == nil {
+		t.Fatalf("wrong legacy retirement: %v", legacy)
+	}
+	if legacy["db"] != nil || legacy["explicit"] != nil {
+		t.Fatal("native names treated as legacy")
+	}
+}
+
+func TestGlobalComposeControllersAreInfrastructure(t *testing.T) {
+	for _, name := range []string{"ic-dns", "ic-healthd"} {
+		if !isComposeSidecar("incus-compose", name) {
+			t.Fatal("global controller exported as a guest")
+		}
+		if isComposeSidecar("my-app", name) {
+			t.Fatal("app instance mistaken for global infrastructure")
+		}
+	}
+}

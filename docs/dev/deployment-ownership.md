@@ -69,3 +69,10 @@ remote in `/etc/incus/config.yml` (including its protocol and credentials as
 required). The containers registry file configures Buildah/Skopeo; it does not
 register a remote with incus-compose. Production TLS policy stays native to
 those tools; the VM fixture explicitly uses HTTP only for its loopback mirror.
+
+During a reviewed upgrade, instances with the old Nixus-forced service names
+are retired through `incus-compose down` while preserving volumes, networks
+and controllers. Explicit source `container_name` values are retained. New
+instances use upstream naming. Shared `ic-dns`/`ic-healthd` instances are host
+infrastructure and excluded from guest exports; their credentials are issued
+by upstream on deployment to the replacement host.

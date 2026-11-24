@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -109,6 +110,8 @@ func TestMaterializeProjectSecretsSyncsAndPrunes(t *testing.T) {
 }
 
 func TestMountedSecretsRespectBindingsAndDestinationNames(t *testing.T) {
+	oldMask := syscall.Umask(0o077)
+	defer syscall.Umask(oldMask)
 	old := secretMountRoot
 	secretMountRoot = filepath.Join(t.TempDir(), "secrets")
 	defer func() { secretMountRoot = old }()
@@ -126,6 +129,12 @@ func TestMountedSecretsRespectBindingsAndDestinationNames(t *testing.T) {
 		got, err := os.ReadFile(file)
 		if err != nil || string(got) != want {
 			t.Fatalf("wrong scoped file: %s %v", file, err)
+		}
+	}
+	for dir, want := range map[string]os.FileMode{web: 0o755, filepath.Join(web, "nested"): 0o755, secretMountRoot: 0o700, projectSecretsDir("demo"): 0o700} {
+		info, err := os.Stat(dir)
+		if err != nil || info.Mode().Perm() != want {
+			t.Fatalf("wrong secret directory permissions under worker umask: %s %v", dir, err)
 		}
 	}
 	for _, file := range []string{filepath.Join(web, "password"), filepath.Join(web, "DB_PASSWORD"), filepath.Join(db, "SESSION"), filepath.Join(db, "UNBOUND")} {

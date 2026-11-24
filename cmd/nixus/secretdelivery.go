@@ -164,6 +164,11 @@ func materializeInstanceSecrets(project string, declaration M, values M, inst M)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	// Workers use UMask=0077. The bind-mounted subtree must nevertheless be
+	// traversable by the container's mapped UID; host ancestors remain 0700.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		return "", err
+	}
 	want := map[string]bool{}
 	for name, value := range files {
 		clean := filepath.Clean(name)
@@ -174,6 +179,11 @@ func materializeInstanceSecrets(project string, declaration M, values M, inst M)
 		want[file] = true
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			return "", err
+		}
+		for parent := filepath.Dir(file); parent != dir; parent = filepath.Dir(parent) {
+			if err := os.Chmod(parent, 0o755); err != nil {
+				return "", err
+			}
 		}
 		if err := atomic(file, []byte(str(value)), 0o444, ""); err != nil {
 			return "", err

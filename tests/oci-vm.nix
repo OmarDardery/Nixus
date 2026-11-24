@@ -222,6 +222,23 @@ in pkgs.testers.runNixOSTest {
         assert served == "guarded-oci-build\n", served
         machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/sh -c 'test -s /etc/base-marker'")
 
+    with subtest("a reviewed redeploy migrates legacy forced names through native Compose"):
+        name = running[0]["name"]
+        machine.succeed("incus stop " + name + " --project testapp && incus rename " + name + " app --project testapp && incus start app --project testapp")
+        machine.succeed("incus project unset testapp user.nixus.compose-runtime")
+        decl += "# reviewed native naming migration\n"
+        migrated = broker("/project/review", {"changes": {"testapp/default.nix": decl}, "sourceRevisions": {"testapp": revision}})
+        broker("/project/publish", {"id": migrated["id"], "planHash": migrated["planHash"]})
+        broker("/project/deploy", {"id": migrated["id"], "planHash": migrated["planHash"]})
+        deadline = time.time() + 180
+        while broker("/project/status")["deployment"] not in ("verified", "partial", "interrupted"):
+            assert time.time() < deadline
+            time.sleep(3)
+        assert broker("/project/status")["deployment"] == "verified", broker("/project/status")
+        running = json.loads(machine.succeed("incus list --project testapp --format=json"))
+        assert len(running) == 1 and running[0]["name"] == "app-1", running
+        assert machine.succeed("incus exec app-1 --project testapp -- cat /payload.txt") == "guarded-oci-build\n"
+
     with subtest("secrets: an app secret is encrypted, published and delivered to /run/secrets"):
         broker("/project-secrets/enroll", {"mode": "generate", "acknowledge": True})
         sreview = broker("/project-secrets/review", {"project": "testapp", "key": "API_TOKEN", "action": "set",
@@ -232,7 +249,7 @@ in pkgs.testers.runNixOSTest {
         delivered = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN")
         assert delivered == "s3cret-value", delivered
         machine.fail("grep -r s3cret-value /srv/nixus /var/lib/nixus-admin /run/nixus-secret-delivery")
-        # A container restart clears /run; the delivery command restores it.
+        # A native readonly mount keeps secrets available through restart.
         machine.succeed("incus restart " + app + " --project testapp")
         assert machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
 

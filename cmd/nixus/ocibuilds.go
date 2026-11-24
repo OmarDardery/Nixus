@@ -179,7 +179,8 @@ const composeServiceLabel = "user.label.incus-compose.service"
 // isComposeSidecar reports whether an instance is an incus-compose managed
 // infrastructure sidecar (DNS or health daemon), not one of the app's services.
 func isComposeSidecar(incusProject, name string) bool {
-	return name == incusProject+"-ic-dns" || name == incusProject+"-ic-healthd"
+	return name == incusProject+"-ic-dns" || name == incusProject+"-ic-healthd" ||
+		incusProject == "incus-compose" && (name == "ic-dns" || name == "ic-healthd")
 }
 
 // Upstream prefetches all three tools even with --no-dns. Pin them together;
@@ -547,6 +548,26 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		return err
 	}
 	args = append(args, "--healthd-incus", controllerURL)
+	if str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion {
+		model, err := composeJSON(plan, source, scratch, "")
+		if err != nil {
+			return err
+		}
+		legacy := legacyComposeServices(appInstances(a.incus, incusProject), obj(model["services"]))
+		if len(legacy) > 0 {
+			file := filepath.Join(scratch, "legacy-compose.json")
+			if err := atomic(file, jsonFile(M{"services": legacy}), 0o600, ""); err != nil {
+				return err
+			}
+			// Native down preserves data volumes, networks and shared controllers.
+			// It also records stop intent before retiring the old forced names.
+			retire := []string{binary, "--ansi", "never", "-p", sourceProject, "-P", scratch, "-f", file, "--image-cache", "", "down", "--no-networks", "--no-dns", "--external-healthd", "--timeout", "30s"}
+			result, err := run(retire, nil, 5*time.Minute, env, scratch)
+			if err != nil || result.Code != 0 {
+				return cmdFailed("Could not migrate legacy Compose names", result, err)
+			}
+		}
+	}
 	if len(appInstances(a.incus, incusProject)) > 0 && (str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion || str(projectConfig[composeIntentKey]) != str(build["intentHash"]) || storedLAN != wantLAN) {
 		args = append(args, "--recreate")
 		args = append(args, names...)
@@ -573,6 +594,21 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	os.RemoveAll(filepath.Join(secretMountRoot, sourceProject)) // obsolete project-wide mount after reviewed migration
 	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN, composeRuntimeKey+"="+composeRuntimeVersion)
 	return err
+}
+
+// Older Nixus versions forced container_name to the service name. Retire
+// only that known legacy shape when the reviewed source no longer asks for it;
+// upstream naming/scaling owns all replacement instances.
+func legacyComposeServices(instances []M, services M) M {
+	out := M{}
+	for _, instance := range instances {
+		name, service := str(instance["name"]), str(instance["service"])
+		if service == "" || name != strings.ReplaceAll(service, "_", "-") || str(jget(services, service, "container_name")) == name {
+			continue
+		}
+		out[service] = M{"image": "scratch", "container_name": name, "restart": "unless-stopped"}
+	}
+	return out
 }
 
 func composeDNSUp(binary, endpoint, scratch string, env []string) error {
