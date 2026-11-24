@@ -499,14 +499,21 @@ in pkgs.testers.runNixOSTest {
             return ""
         machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].state.network.eth0.addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
         machine.wait_until_succeeds("incus list client-1 --project dnsapp --format=json | jq -e '.[0].state.network.eth0.addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
-        # Custom Compose network created by incus-compose natively with service DNS entries.
-        net_dns = machine.succeed("incus network get dnsapp-appnet raw.dnsmasq")
-        assert "web" in net_dns, net_dns
+        # Read native names from the NICs; Compose owns allocation and naming.
+        attached = {}
+        for inst in instances:
+            attached[inst["name"]] = {device["network"] for device in inst["expanded_devices"].values()
+                                      if device.get("type") == "nic" and device.get("network")}
+        assert attached["web-1"] == attached["client-1"] and len(attached["web-1"]) == 2, attached
+        for network in attached["web-1"]:
+            config = json.loads(machine.succeed("incus query /1.0/networks/" + network))["config"]
+            assert config.get("security.acls"), config
+            assert config["security.acls.default.egress.action"] == "reject", config
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
 
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://web:8080/ | grep reached-by-name", timeout=120)
+        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://web:8080/ | grep reached-by-name", timeout=120)
 
     with subtest("upstream health checks, restart policy and intentional Stop remain enabled offline"):
         machine.wait_until_succeeds("incus config get web-1 user.healthcheck.status --project dnsapp | grep -qx healthy", timeout=120)
@@ -537,7 +544,7 @@ in pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].state.network[\"" + lan_nic + "\"].addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4 after LAN attach"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
         lan = [i for i in broker("/project-overview")["projects"] if i["name"] == "dnsapp"][0]
         assert lan["lan"] == ["web"], lan
         assert any(i.get("lanAddress") for i in lan["instances"] if i["name"] == "web-1"), lan["instances"]
