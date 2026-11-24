@@ -638,6 +638,10 @@ func composeEnv(scratch, storage string) []string {
 	env := []string{
 		"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"),
 		"HOME=" + scratch,
+		// The upstream client skips global remotes when scratch HOME has no
+		// user config. Read the native system config directly so registry
+		// mirrors/credentials survive isolated build homes.
+		"INCUS_CONF=/etc/incus",
 		"TMPDIR=" + scratch,
 	}
 	if storage != "" {
