@@ -88,7 +88,8 @@ let
           }; } ];
         };
       };
-      networking.nftables.enable = true;
+      networking.nftables = { enable = true; flushRuleset = false; };
+      networking.firewall.filterForward = false;
       networking.firewall.extraInputRules = ''
         iifname != "eth0" udp dport { 53, 67 } accept
         iifname != "eth0" tcp dport 53 accept
@@ -511,7 +512,22 @@ in pkgs.testers.runNixOSTest {
             assert config["security.acls.default.egress.action"] == "reject", config
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        for name in ["web-1", "client-1"]:
+            print("native guest interfaces/routes/listeners", name,
+                  machine.execute("incus exec " + name + " --project dnsapp -- /bin/sh -c 'ip -4 address; ip -4 route; netstat -ltn; cat /etc/resolv.conf'"))
+        print("origin loopback", machine.execute("incus exec web-1 --project dnsapp -- wget -T 5 -qO- http://127.0.0.1:8080/"))
+        print("origin from host", machine.execute("curl --max-time 5 -fsS http://" + web_ip + ":8080/"))
+        try:
+            machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=30)
+        except Exception:
+            print(machine.succeed("nft list ruleset"))
+            for network in attached["web-1"]:
+                print(machine.succeed("incus network show " + network))
+                config = json.loads(machine.succeed("incus query /1.0/networks/" + network))["config"]
+                for acl in config.get("security.acls", "").split(","):
+                    if acl:
+                        print(machine.succeed("incus network acl show " + acl))
+            raise
 
         machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://web:8080/ | grep reached-by-name", timeout=120)
 
