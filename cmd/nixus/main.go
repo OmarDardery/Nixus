@@ -42,8 +42,6 @@ func init() {
 		"notify":               notifyMain,
 		"nixus-backup":         backupMain,
 		"backup":               backupMain,
-		"nixus-reconcile":      reconcileCommand,
-		"reconcile":            reconcileCommand,
 		"release":              releaseCommand,
 		"nixus-release":        releaseCommand,
 		"preflight":            preflightCommand,
@@ -59,22 +57,12 @@ func main() {
 	run, ok := commands[name]
 	if !ok {
 		if len(args) == 0 || commands[args[0]] == nil {
-			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|homelab|console-status|notify|backup|reconcile|release} ...")
+			fmt.Fprintln(os.Stderr, "usage: nixus-go {admin|install|update|homelab|console-status|notify|backup|release} ...")
 			os.Exit(2)
 		}
 		run, args = commands[args[0]], args[1:]
 	}
 	os.Exit(run(args))
-}
-
-func reconcileCommand(args []string) int {
-	if len(args) != 1 {
-		return fail("usage: nixus-reconcile DESIRED.json")
-	}
-	if err := reconcileMain(args[0]); err != nil {
-		return fail(publicError(err))
-	}
-	return 0
 }
 
 func releaseCommand(args []string) int {
@@ -638,13 +626,15 @@ func preflightCommand(args []string) int {
 
 func infrastructureCommand(args []string) int {
 	syscall.Umask(0o077)
-	if len(args) != 2 || (args[0] != "check" && args[0] != "record") {
-		return fail("usage: infrastructure {check|record} PRESEED.json")
+	if len(args) != 2 || (args[0] != "check" && args[0] != "record" && args[0] != "apply-acls") {
+		return fail("usage: infrastructure {check|record|apply-acls} PRESEED.json")
 	}
 	preseed, err := readObjectFile(args[1])
 	if err == nil {
 		if args[0] == "check" {
 			err = infraCheck(preseed)
+		} else if args[0] == "apply-acls" {
+			err = infraApplyACLs(preseed)
 		} else {
 			err = infraRecord(preseed)
 		}

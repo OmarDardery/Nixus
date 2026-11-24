@@ -1,4 +1,4 @@
-# Exercise the production forwarding policy, rather than the bootstrap firewall.
+# Exercise the production host input policy and native Incus ACLs, rather than the bootstrap firewall.
 # An isolated namespace stands in for the Internet; no Cloudflare token or
 # external connectivity is needed to test DNS, NAT and TCP/UDP port 7844.
 { pkgs }:
@@ -17,6 +17,14 @@ let
       privateAccess = [ { cidr = "10.20.0.1/32"; protocol = "tcp"; ports = [ 8443 ]; } ];
     };
   };
+  lib = pkgs.lib;
+  primaryACL = import ../lib/network-policy.nix { inherit lib site; };
+  isolatedACL = import ../lib/network-policy.nix {
+    inherit lib; name = "isolated-egress";
+    site = site // { guests = site.guests // { cidr = "10.78.0.0/24"; }; };
+  };
+  nixus = import ../pkgs/nixus.nix { inherit pkgs; };
+  aclSpec = pkgs.writeText "native-acls.json" (builtins.toJSON { network_acls = [ primaryACL isolatedACL ]; });
   lease = pkgs.writeShellScript "test-dhcp-lease" ''
     case "$1" in
       bound|renew)
@@ -64,10 +72,22 @@ in pkgs.testers.runNixOSTest {
       enable = true;
       preseed = {
         config."core.https_address" = "0.0.0.0:8443";
+        networks = [
+          { name = "incusbr0"; type = "bridge"; config = {
+            "ipv4.address" = site.guests.gatewayCIDR; "ipv4.nat" = "true"; "ipv4.firewall" = "true";
+            "ipv6.address" = "none"; "dns.domain" = "guests.internal";
+            "security.acls" = primaryACL.name; "security.acls.default.ingress.action" = "reject"; "security.acls.default.egress.action" = "reject";
+          }; }
+          { name = "ic-isolated"; type = "bridge"; config = {
+            "ipv4.address" = "10.78.0.1/24"; "ipv4.nat" = "true"; "ipv4.firewall" = "true"; "ipv6.address" = "none";
+            "security.acls" = isolatedACL.name; "security.acls.default.ingress.action" = "reject"; "security.acls.default.egress.action" = "reject";
+          }; }
+        ];
         storage_pools = [ { name = "default"; driver = "dir"; } ];
         profiles = [ { name = "default"; } ];
       };
     };
+    systemd.services.incus-preseed.preStart = "${nixus}/bin/nixus-go infrastructure apply-acls ${aclSpec}";
     networking.useDHCP = false;
     networking.nameservers = [ "203.0.113.1" ];
     environment.systemPackages = [ pkgs.iproute2 pkgs.busybox pkgs.dnsutils pkgs.dnsmasq pkgs.python3 pkgs.nftables ];
@@ -94,12 +114,11 @@ in pkgs.testers.runNixOSTest {
     machine.succeed("python3 ${probe} tcp 10.20.0.1 7844")
 
     gateways = {}
-    for bridge in ["nxa-testa", "nxa-testb"]:
-        machine.succeed(f"incus network create {bridge} --type=bridge ipv4.address=auto ipv4.nat=true ipv6.address=none")
+    for bridge in ["incusbr0", "ic-isolated"]:
         network = json.loads(machine.succeed(f"incus query /1.0/networks/{bridge}"))
         gateways[bridge] = network["config"]["ipv4.address"].split("/")[0]
 
-    for name, bridge in [("client", "nxa-testa"), ("peer", "nxa-testa"), ("isolated", "nxa-testb"), ("controller", "icompose0")]:
+    for name, bridge in [("client", "incusbr0"), ("peer", "incusbr0"), ("isolated", "ic-isolated"), ("controller", "icompose0")]:
         machine.succeed(f"ip netns add {name}; ip link add v-{name} type veth peer name eth0 netns {name}")
         machine.succeed(f"ip link set v-{name} master {bridge}; ip link set v-{name} up")
         machine.succeed(f"ip netns exec {name} ip link set lo up; ip netns exec {name} ip link set eth0 up")
@@ -115,11 +134,11 @@ in pkgs.testers.runNixOSTest {
         machine.succeed(f"ip netns exec peer python3 ${probe} tcp {client_ip} 7844")
         for proto in ["tcp", "udp"]:
             machine.succeed(f"ip netns exec client python3 ${probe} {proto} 203.0.113.1 7844")
-        gateway = gateways["nxa-testa"]
+        gateway = gateways["incusbr0"]
         for transport in ["", "+tcp"]:
             answer = machine.succeed(f"ip netns exec client dig +short +time=2 +tries=1 {transport} @{gateway} edge.example")
             assert "203.0.113.1" in answer, answer
-        machine.wait_until_succeeds(f"ip netns exec client dig +short +time=2 +tries=1 @{gateway} peer.incus | grep -E '^[0-9]+\\.'")
+        machine.wait_until_succeeds(f"ip netns exec client dig +short +time=2 +tries=1 @{gateway} peer.guests.internal | grep -E '^[0-9]+\\.'")
 
     with subtest("app DHCP, DNS and NAT permit outbound Tunnel transports"):
         check_egress()

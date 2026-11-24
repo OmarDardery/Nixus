@@ -8,7 +8,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"net"
 	"net/netip"
 	"os"
@@ -177,6 +176,12 @@ func (b *OCIBuilds) review(project, revision any, principal string) (M, error) {
 
 const composeServiceLabel = "user.label.incus-compose.service"
 
+// isComposeSidecar reports whether an instance is an incus-compose managed
+// infrastructure sidecar (DNS or health daemon), not one of the app's services.
+func isComposeSidecar(incusProject, name string) bool {
+	return name == incusProject+"-ic-dns" || name == incusProject+"-ic-healthd"
+}
+
 // Upstream prefetches all three tools even with --no-dns. Pin them together;
 // official INCUS_COMPOSE_*_IMAGE variables support mirrors/offline registries.
 const defaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:1.4.1@sha256:abb8261776b7a5eb966ca8db698e53dd7bf825ba1a630e2e6ebdbf1088f3d84b"
@@ -189,10 +194,6 @@ func composeToolImage(name, fallback string) string {
 	}
 	return fallback
 }
-
-// isDNSSidecar reports whether an instance is incus-compose's DNS sidecar for
-// the project; it belongs to the project, not to any of the app's services.
-func isDNSSidecar(incusProject, name string) bool { return name == incusProject+"-ic-dns" }
 
 // A local Unix-socket client cannot use upstream's remote-URL fallback when
 // Incus listens on a wildcard. Supply the actual controller bridge endpoint.
@@ -242,7 +243,7 @@ func restoreComposeStopped(incus incusFunc, guest M) error {
 }
 
 const composeRuntimeKey = "user.nixus.compose-runtime"
-const composeRuntimeVersion = "2"
+const composeRuntimeVersion = "3"
 
 const composeIntentKey = "user.nixus.compose-intent"
 
@@ -258,7 +259,7 @@ type composeAdapter struct {
 }
 
 // composeLANKey records on the Incus project which services have a LAN
-// card, so a change of the setting alone recreates the containers.
+// network attachment, so a change of the setting triggers compose reconciliation.
 const composeLANKey = "user.nixus.lan"
 
 // lanServices is the app's "own IP on your router" setting, sorted and
@@ -268,16 +269,25 @@ func lanServices(project M) string {
 	return strings.Join(uniqueSorted(names), ",")
 }
 
-var lanSettingsPath = "/etc/nixus/lan.json"
+var effectiveSettingsPath = "/etc/nixus/effective-settings.json"
 
-// lanNIC is the Incus network card that puts a container on the LAN.
-func lanNIC() (M, error) {
-	cfg := readObj(lanSettingsPath)
-	parent, nictype := str(cfg["parent"]), str(cfg["nictype"])
-	if !fullmatch(re(`[A-Za-z0-9][A-Za-z0-9_.-]{0,14}`), parent) || (nictype != "macvlan" && nictype != "bridged") {
-		return nil, Public("This server has no LAN interface for apps; set Settings → Network first")
+// lanNetworkName returns the Incus network name used to attach a Compose
+// service directly to the LAN: the host bridge when management runs on a
+// bridge, or the preseeded nixus-lan macvlan network on wired Ethernet.
+func lanNetworkName() (string, error) {
+	cfg := readObj(effectiveSettingsPath)
+	iface := str(jget(cfg, "management", "interface"))
+	wifiEnabled := isTrue(jget(cfg, "radios", "wifi", "enable"))
+	wifiIface := str(jget(cfg, "radios", "wifi", "interface"))
+	if iface == "" || (wifiEnabled && iface == wifiIface) {
+		return "", Public("This server has no wired LAN interface for apps; configure wired Ethernet or a host bridge first")
 	}
-	return M{"type": "nic", "nictype": nictype, "parent": parent, "name": "eth1"}, nil
+	for _, raw := range list(jget(cfg, "connectivity", "bridges")) {
+		if str(obj(raw)["name"]) == iface {
+			return iface, nil
+		}
+	}
+	return "nixus-lan", nil
 }
 
 func newComposeAdapter() *composeAdapter {
@@ -313,7 +323,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 	observed := M{}
 	for _, raw := range instances {
 		instance := obj(raw)
-		if isDNSSidecar(incusProject, str(instance["name"])) {
+		if isComposeSidecar(incusProject, str(instance["name"])) {
 			continue
 		}
 		settings := obj(instance["config"])
@@ -324,9 +334,12 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 		if service == "" {
 			return nil, Public("An instance not managed by incus-compose is inside the Compose project")
 		}
+		health := str(settings["user.healthcheck.status"])
+		if health == "" {
+			health = str(settings["user.incus-compose.health"])
+		}
 		observed[str(instance["name"])] = M{"service": service, "status": truncate(str(instance["status"]), 32),
-			"image": str(settings["volatile.base_image"]), "health": str(settings["user.healthcheck.status"]),
-			"healthCheck": str(settings["user.healthcheck.enabled"]) == "true" && str(settings["user.healthcheck.test"]) != ""}
+			"image": str(settings["volatile.base_image"]), "health": health, "healthCheck": str(settings["user.healthcheck.enabled"]) == "true" && str(settings["user.healthcheck.test"]) != ""}
 	}
 	current := str(config[composeIntentKey]) == str(build["intentHash"]) && str(config[composeRuntimeKey]) == composeRuntimeVersion
 	var recreates []string
@@ -338,7 +351,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 				continue
 			}
 			count++
-			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || str(om["health"]) == "starting" || (isTrue(om["healthCheck"]) && str(om["health"]) != "healthy") {
+			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || isTrue(om["healthCheck"]) && str(om["health"]) != "healthy" {
 				current = false
 			}
 		}
@@ -436,19 +449,10 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	// environment entry, so incus-compose creates each container with them
 	// set, the way docker compose does with a stack's variables.
 	projectConfig := obj(incusQueryObj(a.incus, "/1.0/projects/"+incusProject)["config"])
-	previous := str(projectConfig[composeIntentKey])
 	storedLAN := str(projectConfig[composeLANKey])
 	wantLAN := storedLAN
 	if a.lan != nil {
 		wantLAN = *a.lan
-	}
-	inventory, err := liveInventory()
-	if err != nil {
-		return Public("Could not verify the app environment scope")
-	}
-	declared := obj(obj(inventory["projects"])[sourceProject])
-	if declared == nil {
-		return Public("Publish the app declaration before deploying its environment")
 	}
 	values, err := appStartEnv(sourceProject)
 	if err != nil {
@@ -459,7 +463,7 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		names = append(names, str(obj(s)["service"]))
 	}
 	var lanFor map[string]bool
-	var nic M
+	var lanNet string
 	if wantLAN != "" {
 		lanFor = map[string]bool{}
 		for _, s := range strings.Split(wantLAN, ",") {
@@ -468,65 +472,100 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			}
 			lanFor[s] = true
 		}
-		if nic, err = lanNIC(); err != nil {
+		if lanNet, err = lanNetworkName(); err != nil {
 			return err
 		}
 	}
-	gateway, err := appGateway(a.incus, incusProject)
+	inventory, err := liveInventory()
 	if err != nil {
+		return Public("Could not verify the app secret bindings")
+	}
+	declaration := obj(obj(inventory["projects"])[sourceProject])
+	if declaration == nil {
+		return Public("The app declaration is unavailable")
+	}
+	if err := validateComposeSecretBindings(declaration, names); err != nil {
 		return err
 	}
+	secretDirs := M{}
+	for _, name := range names {
+		dir, err := materializeInstanceSecrets(sourceProject, declaration, values, M{"name": name, "service": name})
+		if err != nil {
+			return Failed("Could not prepare scoped app secrets", err)
+		}
+		secretDirs[name] = dir
+	}
 	override := filepath.Join(scratch, "nixus-services.yaml")
-	if err := atomic(override, appOverride(serviceOverride(names, values, lanFor, nic, declared), gateway, appNetworkName(incusProject)), 0o600, ""); err != nil {
+	var overrideDoc M
+	if err := json.Unmarshal(appComposeOverride(names, values, lanFor, lanNet, secretDirs, declaration), &overrideDoc); err != nil {
+		return err
+	}
+	controlNetwork := incusQueryObj(a.incus, "/1.0/networks/icompose0?project=default")
+	networks := obj(obj(build["intent"])["networks"])
+	if networks == nil {
+		model, err := composeJSON(plan, source, scratch, "")
+		if err != nil {
+			return err
+		}
+		networks = obj(model["networks"])
+	}
+	policy := composeNetworkPolicy(networks, readObj(effectiveSettingsPath), str(jget(controlNetwork, "config", "ipv4.address")))
+	mergedNetworks := obj(overrideDoc["networks"])
+	if mergedNetworks == nil {
+		mergedNetworks = M{}
+	}
+	for name, raw := range policy {
+		entry := cloneM(obj(mergedNetworks[name]))
+		if entry == nil {
+			entry = M{}
+		}
+		for k, v := range obj(raw) {
+			entry[k] = v
+		}
+		mergedNetworks[name] = entry
+	}
+	overrideDoc["networks"] = mergedNetworks
+	if err := atomic(override, jsonFile(overrideDoc), 0o600, ""); err != nil {
 		return err
 	}
 	flags = append(flags, "-f", override)
 	if len(values) > 0 {
 		fmt.Fprintf(os.Stderr, "nixus: deploying %s with variables %v\n", sourceProject, keys(values))
 	}
-	binary := os.Getenv("NIXUS_OCI_COMPOSE_BIN")
-	if binary == "" {
-		binary = "incus-compose"
+	binary := composeBinary()
+	args, env, err := composeUpCommand(binary, flags, build, scratch)
+	if err != nil {
+		return err
 	}
 	controllerURL, err := composeControllerURL(a.incus)
 	if err != nil {
 		return err
 	}
-	args, env, err := composeUpCommand(binary, flags, build, scratch)
-	if err != nil {
-		return err
-	}
-	args = append(args, "--healthd-incus", controllerURL)
-	if previous != "" && (previous != str(build["intentHash"]) || storedLAN != wantLAN || str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion) {
-		// Name the services so upstream recreates instances while retaining
-		// external networking and the shared controller. Volumes stay intact.
+	args = append(args, "--healthd-incus", controllerURL, "--dns-incus", controllerURL)
+	if len(appInstances(a.incus, incusProject)) > 0 && (str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion || str(projectConfig[composeIntentKey]) != str(build["intentHash"]) || storedLAN != wantLAN) {
 		args = append(args, "--recreate")
 		args = append(args, names...)
 	}
+
 	if msg := portConflicts(a.incus, incusProject, composeHostPorts(list(build["services"]))); msg != "" {
 		return Public(msg)
 	}
-	runUp := func(args []string) error {
-		res, err := run(args, nil, 1800*time.Second, env, source)
-		if err != nil || res.Code != 0 {
-			tail := string(res.Stderr)
-			if len(tail) > 3000 {
-				tail = tail[len(tail)-3000:]
-			}
-			fmt.Fprintln(os.Stderr, "nixus: incus-compose up failed:", tail)
-			if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
-				os.Stdout.WriteString("COMPOSE-VM-STDERR: " + tail + "\n")
-			}
-			if msg := explainBindError(a.incus, incusProject, tail); msg != "" {
-				return Public(msg)
-			}
-			return Public("incus-compose could not bring the project up: " + lastLine(tail))
+	res, err := run(args, nil, 1800*time.Second, env, source)
+	if err != nil || res.Code != 0 {
+		tail := string(res.Stderr)
+		if len(tail) > 3000 {
+			tail = tail[len(tail)-3000:]
 		}
-		return nil
+		fmt.Fprintln(os.Stderr, "nixus: incus-compose up failed:", tail)
+		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
+			os.Stdout.WriteString("COMPOSE-VM-STDERR: " + tail + "\n")
+		}
+		if msg := explainBindError(a.incus, incusProject, tail); msg != "" {
+			return Public(msg)
+		}
+		return Public("incus-compose could not bring the project up: " + lastLine(tail))
 	}
-	if err := runUp(args); err != nil {
-		return err
-	}
+	os.RemoveAll(filepath.Join(secretMountRoot, sourceProject)) // obsolete project-wide mount after reviewed migration
 	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN, composeRuntimeKey+"="+composeRuntimeVersion)
 	return err
 }
@@ -556,7 +595,7 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	ok := func(r M) bool {
 		return str(r["action"]) == "noop" && (approved["lan"] == nil || str(approved["lan"]) == str(r["lanCurrent"]))
 	}
-	verified, err := settled(func() (M, error) {
+	verified, err := waitRunning(func() (M, error) {
 		return a.observe(str(approved["sourceProject"]), str(approved["project"]), str(approved["revision"]))
 	}, ok)
 	if err != nil {
@@ -567,6 +606,82 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 			startDetail(a.incus, str(approved["sourceProject"]), str(approved["project"]), verified))
 	}
 	return M{"status": "verified", "newEtag": verified["etag"], "health": "Running"}, nil
+}
+
+func composeBinary() string {
+	if b := os.Getenv("NIXUS_OCI_COMPOSE_BIN"); b != "" {
+		return b
+	}
+	return "incus-compose"
+}
+
+// composeEnv builds the minimal environment for incus-compose commands.
+func composeEnv(scratch, storage string) []string {
+	env := []string{
+		"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"),
+		"HOME=" + scratch,
+		"TMPDIR=" + scratch,
+	}
+	if storage != "" {
+		env = append(env, "BUILDAH_ISOLATION=chroot", "CONTAINERS_STORAGE_CONF="+storage)
+	}
+	for k, fallback := range map[string]string{"INCUS_COMPOSE_DNS_IMAGE": defaultDNSImage, "INCUS_COMPOSE_HEALTHD_IMAGE": defaultHealthdImage, "INCUS_COMPOSE_SLEEP_IMAGE": defaultSleepImage} {
+		env = append(env, k+"="+composeToolImage(k, fallback))
+	}
+	return env
+}
+
+// composeProjectCommand runs an incus-compose lifecycle verb (start, stop,
+// restart, down) against a published Compose project. Returns (false, nil) if
+// the project has no published Compose source.
+func composeProjectCommand(sourceProject string, subcmd ...string) (bool, error) {
+	pub := NewPublishedSources("")
+	current, err := pub.current(sourceProject)
+	if err != nil || current == nil {
+		return false, nil
+	}
+	rev := str(current["revision"])
+	plan, err := sourcePlan(sourceProject, rev, pub)
+	if err != nil {
+		return false, nil
+	}
+	mode := str(plan["mode"])
+	if mode != "compose" && mode != "dockerfile" {
+		return false, nil
+	}
+	srcDir := filepath.Join(pub.root, sourceProject, "revisions", rev, "source")
+	if !isDir(srcDir) {
+		return false, nil
+	}
+	scratch, err := os.MkdirTemp(STATE, "compose-ctl-")
+	if err != nil {
+		return true, err
+	}
+	defer os.RemoveAll(scratch)
+	os.Chmod(scratch, 0o700)
+	var compose string
+	if g := str(plan["generatedCompose"]); g != "" {
+		compose = filepath.Join(scratch, "generated-compose.yaml")
+		if err := atomicString(compose, g, 0o600); err != nil {
+			return true, err
+		}
+	} else if e := str(plan["entrypoint"]); e != "" {
+		compose = filepath.Join(srcDir, e)
+	} else {
+		return false, nil
+	}
+	args := []string{composeBinary(), "--ansi", "never", "-p", sourceProject, "-P", srcDir, "-f", compose}
+	offline := os.Getenv("NIXUS_OCI_VM_TEST") == "1" || os.Getenv("NIXUS_COMPOSE_OFFLINE") == "1"
+	if offline {
+		args = append(args, "--image-cache", "")
+	}
+	args = append(args, subcmd...)
+
+	res, err := run(args, nil, 5*time.Minute, composeEnv(scratch, ""), srcDir)
+	if err != nil || res.Code != 0 {
+		return true, cmdFailed("incus-compose "+strings.Join(subcmd, " ")+" failed", res, err)
+	}
+	return true, nil
 }
 
 // appStartEnv returns the variables an app needs before its containers start:
@@ -596,59 +711,87 @@ func appStartEnv(project string) (M, error) {
 	return values, nil
 }
 
-// serviceOverride is the Compose override Nixus adds to every app:
-//   - container_name is the service name, so each container is registered
-//     under it in the DNS of the app's own Incus network and services reach
-//     each other by name (http://aiostreams:3000), as with docker compose.
-//   - environment carries the app's variables; "$" is doubled so Compose does
-//     not interpolate them.
-//   - services set to "own IP on your router" get a second network card on the
-//     LAN.
+// appComposeOverride produces the minimal Compose override Nixus layers onto a
+// Compose app:
+//   - environment carries the app's variables ("$" doubled so Compose does not
+//     interpolate them)
+//   - x-incus-compose.devices.nixus-secrets mounts the host tmpfs secret
+//     directory read-only at /run/secrets so secrets persist across restarts
+//   - services set to "own IP on your router" join the external Incus LAN
+//     network via standard Compose networks:
+//   - upstream restart policies own autostart and recovery behavior.
 //
-// JSON is valid YAML.
-func serviceOverride(services []string, values M, lanFor map[string]bool, nic M, project M) []byte {
+// Networking, DNS (ic-dns), and health/restart supervision (ic-healthd) are
+// left to incus-compose natively. JSON is valid YAML.
+func appComposeOverride(services []string, values M, lanFor map[string]bool, lanNet string, secretDirs M, declaration M) []byte {
 	out := M{}
+	useLAN := false
 	for _, name := range services {
-		scoped := envValuesFor(project, values, M{"service": name, "name": instanceNameFor(name)})
+		scoped := envValuesFor(declaration, values, M{"name": name, "service": name})
 		env := map[string]string{}
 		for k, v := range scoped {
 			env[k] = strings.ReplaceAll(str(v), "$", "$$")
 		}
-		svc := M{"container_name": instanceNameFor(name), "x-incus": M{envKeysConfig: strings.Join(keys(scoped), ",")}}
+		xIncus := M{envKeysConfig: strings.Join(keys(scoped), ",")}
+		svc := M{"x-incus": xIncus}
 		if len(env) > 0 {
 			svc["environment"] = env
 		}
-		if lanFor[name] && nic != nil {
-			// incus-compose adds raw Incus devices from x-incus-compose.devices:
-			// a second card on the LAN, so the router gives it its own address.
-			svc["x-incus-compose"] = M{"devices": M{"lan": nic}}
+		if secretDir := str(secretDirs[name]); secretDir != "" {
+			svc["x-incus-compose"] = M{
+				"devices": M{
+					"nixus-secrets": M{
+						"type":     "disk",
+						"source":   secretDir,
+						"path":     "/run/secrets",
+						"readonly": "true",
+					},
+				},
+			}
+		}
+		if lanFor[name] && lanNet != "" {
+			useLAN = true
+			svc["networks"] = M{"default": M{}, "nixus_lan": M{}}
 		}
 		out[name] = svc
 	}
-	b, _ := json.Marshal(M{"services": out})
+	doc := M{"services": out}
+	if useLAN {
+		doc["networks"] = M{
+			"default":   M{},
+			"nixus_lan": M{"name": lanNet, "external": true},
+		}
+	}
+	b, _ := json.Marshal(doc)
 	return b
 }
 
-// instanceNameFor turns a Compose service name into a valid Incus instance
-// and DNS name ("_" is not allowed in either).
-func instanceNameFor(service string) string { return strings.ReplaceAll(service, "_", "-") }
-
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
-// pulled; services with a Dockerfile are built with buildah.
+// pulled; services with a Dockerfile are built with buildah using persistent
+// overlay storage. Native ic-dns and ic-healthd are enabled by default and
+// disabled only in air-gapped/offline VM test mode.
 func composeUpCommand(binary string, flags []string, build M, scratch string) ([]string, []string, error) {
 	needsBuild := false
 	for _, raw := range list(build["services"]) {
 		needsBuild = needsBuild || isTrue(obj(raw)["built"])
 	}
 	buildFlags := []string{"--no-build"}
-	storage := filepath.Join(scratch, "storage.conf")
+	storage := ""
 	if needsBuild {
 		buildah := os.Getenv("NIXUS_OCI_BUILDAH_BIN")
 		if buildah == "" {
 			buildah = "buildah"
 		}
 		buildFlags = []string{"--build", "--builder", buildah}
-		conf := "[storage]\ndriver = \"vfs\"\nrunroot = \"" + scratch + "/runroot\"\ngraphroot = \"" + scratch + "/graphroot\"\n"
+		storage = filepath.Join(scratch, "storage.conf")
+		driver, graphroot := "overlay", filepath.Join(STATE, "buildah")
+		if os.Getenv("NIXUS_OCI_VM_TEST") == "1" {
+			// VM test state lives on tmpfs; keep per-build vfs isolated.
+			driver, graphroot = "vfs", filepath.Join(scratch, "graphroot")
+		} else {
+			os.MkdirAll(graphroot, 0o700)
+		}
+		conf := fmt.Sprintf("[storage]\ndriver = %q\nrunroot = %q\ngraphroot = %q\n", driver, filepath.Join(scratch, "runroot"), graphroot)
 		if err := os.WriteFile(storage, []byte(conf), 0o600); err != nil {
 			return nil, nil, err
 		}
@@ -663,15 +806,17 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 			return nil, nil, err
 		}
 	}
-	args := append(append([]string{binary, "--ansi", "never"}, flags...), "--image-cache", "", "up", "--detach")
-	args = append(append(args, buildFlags...), "--pull", "missing", "--healthd-scope", "global", "--no-dns")
-	env := []string{"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"), "HOME=" + scratch, "BUILDAH_ISOLATION=chroot",
-		"CONTAINERS_STORAGE_CONF=" + storage, "TMPDIR=" + scratch, "INCUS_COMPOSE_HEALTHD_IMAGE=" + composeToolImage("INCUS_COMPOSE_HEALTHD_IMAGE", defaultHealthdImage), "INCUS_COMPOSE_DNS_IMAGE=" + composeToolImage("INCUS_COMPOSE_DNS_IMAGE", defaultDNSImage), "INCUS_COMPOSE_SLEEP_IMAGE=" + composeToolImage("INCUS_COMPOSE_SLEEP_IMAGE", defaultSleepImage)}
-	return args, env, nil
+	offline := os.Getenv("NIXUS_OCI_VM_TEST") == "1" || os.Getenv("NIXUS_COMPOSE_OFFLINE") == "1"
+	args := append([]string{binary, "--ansi", "never"}, flags...)
+	if offline {
+		args = append(args, "--image-cache", "")
+	}
+	args = append(args, "up", "--detach")
+	args = append(append(args, buildFlags...), "--pull", "missing")
+
+	return args, composeEnv(scratch, storage), nil
 }
 
-// notRunning names the services that are not running after a deployment, with
-// their state, so a failure says which container to look at.
 // startDetail says which variables the containers were created with (names
 // only) and what each stopped container printed last, so a failed deployment
 // explains itself without a shell.
@@ -708,11 +853,7 @@ func notRunning(resource M) string {
 	byService := map[string]string{}
 	for _, raw := range obj(resource["instances"]) {
 		inst := obj(raw)
-		state := str(inst["status"])
-		if state == "Running" && (str(inst["health"]) == "unhealthy" || str(inst["health"]) == "starting" || isTrue(inst["healthCheck"]) && str(inst["health"]) != "healthy") {
-			state = "waiting for a healthy Incus health check"
-		}
-		byService[str(inst["service"])] = state
+		byService[str(inst["service"])] = str(inst["status"])
 	}
 	var problems []string
 	for _, raw := range list(resource["services"]) {
@@ -730,85 +871,15 @@ func notRunning(resource M) string {
 	return ": " + strings.Join(problems, ", ") + ". A container that stops right after starting usually needs a variable or a setting; check its logs"
 }
 
-// appGateway asks Incus to allocate the bridge subnet, then reads its actual
-// gateway before OCI containers start. Existing networks keep their addresses.
-func appGateway(incus incusFunc, incusProject string) (string, error) {
-	name := appNetworkName(incusProject)
-	out, err := incus(0, "query", "/1.0/networks?recursion=1&project=default")
-	if err != nil {
-		return "", Public("Could not verify Incus networks; no app network was created")
-	}
-	payload, err := parseJSON([]byte(out))
-	networks, ok := payload.([]any)
-	if err != nil || !ok {
-		return "", Public("Invalid Incus network inventory; no app network was created")
-	}
-	var network M
-	for _, raw := range networks {
-		n := obj(raw)
-		if str(n["name"]) == "" {
-			return "", Public("Invalid Incus network inventory; no app network was created")
-		}
-		if str(n["name"]) == name {
-			network = n
-		}
-	}
-	if network == nil {
-		// Incus knows the host's routes and allocated networks. Keep one IPAM
-		// authority instead of probing a second, fixed private address pool.
-		if _, err := incus(0, "network", "create", name, "--project", "default", "--type=bridge",
-			"ipv4.address=auto", "ipv4.nat=true", "ipv6.address=none", projectNameKey+"="+incusProject); err != nil {
-			return "", Public("Incus could not allocate the app network; inspect Incus networking and retry")
-		}
-		out, err = incus(0, "query", "/1.0/networks/"+name+"?project=default")
-		if err != nil {
-			return "", Public("Could not read the allocated app network; retry deployment")
-		}
-		network, err = parseObject([]byte(out))
-		if err != nil {
-			return "", Public("Invalid allocated app network; retry deployment")
-		}
-	}
-	cfg := obj(network["config"])
-	gateway, err := netip.ParsePrefix(str(cfg["ipv4.address"]))
-	if err != nil || !gateway.Addr().Is4() || gateway.Addr().IsUnspecified() ||
-		str(network["type"]) != "bridge" || !isTrue(network["managed"]) ||
-		str(cfg["ipv4.nat"]) != "true" || str(cfg["ipv4.dhcp"]) == "false" ||
-		(str(cfg[projectNameKey]) != "" && str(cfg[projectNameKey]) != incusProject) {
-		return "", Public("The app network must be an owned managed IPv4 bridge with DHCP and NAT; inspect it in Incus")
-	}
-	return gateway.Addr().String(), nil
-}
+var waitSleep = time.Sleep
 
-// appOverride attaches the Incus-owned bridge and uses its gateway DNS.
-// Compose must not create, reconfigure or delete that shared runtime object.
-func appOverride(services []byte, gateway, network string) []byte {
-	var doc M
-	json.Unmarshal(services, &doc)
-	for _, raw := range obj(doc["services"]) {
-		cfg := obj(obj(raw)["x-incus"])
-		if cfg == nil {
-			cfg = M{}
-		}
-		cfg["oci.dns.nameservers"], cfg["oci.dns.search"] = gateway, "incus"
-		obj(raw)["x-incus"] = cfg
-	}
-	doc["networks"] = M{"default": M{"name": network, "external": true}}
-	b, _ := json.Marshal(doc)
-	return b
-}
-
-var settleSleep = time.Sleep
-
-// settled observes until the app has been running for three checks in a row
-// (services may restart while their network comes up), or 90 seconds pass,
-// and returns the last observation.
-func settled(observe func() (M, error), ok func(M) bool) (M, error) {
+// waitRunning confirms containers report Running after incus-compose up,
+// retrying briefly if Incus is still finishing startup transitions.
+func waitRunning(observe func() (M, error), ok func(M) bool) (M, error) {
 	var last M
-	streak := 0
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 6; i++ {
 		if i > 0 {
-			settleSleep(3 * time.Second)
+			waitSleep(2 * time.Second)
 		}
 		r, err := observe()
 		if err != nil {
@@ -816,21 +887,8 @@ func settled(observe func() (M, error), ok func(M) bool) (M, error) {
 		}
 		last = r
 		if ok(r) {
-			if streak++; streak == 3 {
-				return r, nil
-			}
-		} else {
-			streak = 0
+			return r, nil
 		}
 	}
 	return last, nil
-}
-
-// appNetworkName is the Incus network (and bridge interface) of an app. The
-// fixed "nxa-" prefix lets the host firewall give every app network DHCP, DNS
-// and internet access the way it does the guest bridge.
-func appNetworkName(incusProject string) string {
-	h := fnv.New32a()
-	h.Write([]byte(incusProject))
-	return fmt.Sprintf("nxa-%08x", h.Sum32())
 }

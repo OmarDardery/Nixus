@@ -9,42 +9,76 @@ import (
 )
 
 // Published ports bind the server's own address, as with docker compose, so
-// two apps cannot publish the same one. portConflicts names who already holds
-// a port this app wants, before incus-compose fails with a bare bind error.
+// two apps cannot publish the same host port/protocol. portConflicts checks
+// structured port entries normalized by `incus-compose config --format json`.
 
-// composeHostPorts returns the host TCP ports the reviewed services publish.
-func composeHostPorts(services []any) []int {
-	seen := map[int]bool{}
-	var out []int
-	add := func(n int) {
-		if n > 0 && n < 65536 && !seen[n] {
-			seen[n] = true
-			out = append(out, n)
+type hostPort struct {
+	HostIP   string
+	Port     int
+	Protocol string
+}
+
+// composeHostPorts returns the host ports normalized by incus-compose config.
+func composeHostPorts(services []any) []hostPort {
+	seen := map[hostPort]bool{}
+	var out []hostPort
+	add := func(ip string, port int, proto string) {
+		if proto == "" {
+			proto = "tcp"
+		}
+		proto = strings.ToLower(proto)
+		if proto != "tcp" && proto != "udp" {
+			return
+		}
+		if port <= 0 || port >= 65536 {
+			return
+		}
+		hp := hostPort{HostIP: ip, Port: port, Protocol: proto}
+		if !seen[hp] {
+			seen[hp] = true
+			out = append(out, hp)
+		}
+	}
+	addRange := func(ip, raw, proto string) {
+		if loS, hiS, ok := strings.Cut(raw, "-"); ok {
+			lo, err1 := strconv.Atoi(loS)
+			hi, err2 := strconv.Atoi(hiS)
+			if err1 == nil && err2 == nil && lo > 0 && hi >= lo && hi-lo < 256 {
+				for p := lo; p <= hi; p++ {
+					add(ip, p, proto)
+				}
+			}
+			return
+		}
+		if n, err := strconv.Atoi(raw); err == nil {
+			add(ip, n, proto)
 		}
 	}
 	for _, raw := range services {
 		for _, p := range list(obj(raw)["ports"]) {
 			switch v := p.(type) {
 			case M:
-				if str(v["protocol"]) == "udp" {
-					continue
-				}
-				if n, err := strconv.Atoi(str(v["published"])); err == nil {
-					add(n)
-				} else if f, ok := v["published"].(float64); ok {
-					add(int(f))
+				proto := str(v["protocol"])
+				ip := str(v["host_ip"])
+				if f, ok := v["published"].(float64); ok {
+					add(ip, int(f), proto)
+				} else if s := str(v["published"]); s != "" {
+					addRange(ip, s, proto)
 				}
 			case string:
-				// "[ip:]host:container[/proto]"
+				// Fallback for string specs in unit tests: "[ip:]host:container[/proto]"
 				spec := strings.SplitN(v, "/", 2)
-				if len(spec) == 2 && spec[1] == "udp" {
-					continue
+				proto := "tcp"
+				if len(spec) == 2 && spec[1] != "" {
+					proto = spec[1]
 				}
 				parts := strings.Split(spec[0], ":")
 				if len(parts) >= 2 {
-					if n, err := strconv.Atoi(parts[len(parts)-2]); err == nil {
-						add(n)
+					ip := ""
+					if len(parts) >= 3 {
+						ip = strings.Join(parts[:len(parts)-2], ":")
 					}
+					addRange(ip, parts[len(parts)-2], proto)
 				}
 			}
 		}
@@ -52,21 +86,47 @@ func composeHostPorts(services []any) []int {
 	return out
 }
 
-var hostListening = func() map[int]bool {
-	out := map[int]bool{}
-	res, err := run([]string{"ss", "-ltnH"}, nil, 10*time.Second, nil, "")
+type hostSocket struct {
+	Protocol string
+	Port     int
+}
+
+var hostListening = func() map[hostSocket]bool {
+	out := map[hostSocket]bool{}
+	res, err := run([]string{"ss", "-ltnuH"}, nil, 10*time.Second, nil, "")
 	if err != nil || res.Code != 0 {
 		return out
 	}
 	for _, line := range strings.Split(string(res.Stdout), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 4 {
+		if len(fields) < 5 {
 			continue
 		}
-		local := fields[3]
+		proto := strings.ToLower(fields[0])
+		if proto != "tcp" && proto != "udp" {
+			continue
+		}
+		local := fields[4]
 		if i := strings.LastIndex(local, ":"); i >= 0 {
 			if n, err := strconv.Atoi(local[i+1:]); err == nil {
-				out[n] = true
+				out[hostSocket{Protocol: proto, Port: n}] = true
+			}
+		}
+	}
+	return out
+}
+
+func publishedSockets(devices M) []hostSocket {
+	var out []hostSocket
+	for _, name := range keys(devices) {
+		d := obj(devices[name])
+		if str(d["type"]) != "proxy" {
+			continue
+		}
+		parts := strings.Split(str(d["listen"]), ":")
+		if len(parts) >= 3 && (parts[0] == "tcp" || parts[0] == "udp") {
+			if n, err := strconv.Atoi(parts[len(parts)-1]); err == nil && n > 0 && n < 65536 {
+				out = append(out, hostSocket{Protocol: parts[0], Port: n})
 			}
 		}
 	}
@@ -75,11 +135,11 @@ var hostListening = func() map[int]bool {
 
 // portConflicts returns a message for the first wanted port that another app
 // or a program on the server already holds, or "".
-func portConflicts(incus incusFunc, incusProject string, wanted []int) string {
+func portConflicts(incus incusFunc, incusProject string, wanted []hostPort) string {
 	if len(wanted) == 0 {
 		return ""
 	}
-	owners := map[int]string{}
+	owners := map[hostSocket]string{}
 	out, err := incus(0, "query", "/1.0/instances?recursion=1&all-projects=true")
 	var instances any
 	if err == nil {
@@ -89,28 +149,28 @@ func portConflicts(incus incusFunc, incusProject string, wanted []int) string {
 		for _, raw := range list(instances) {
 			inst := obj(raw)
 			project := str(inst["project"])
-			for _, p := range publishedPorts(obj(inst["expanded_devices"])) {
-				n := int(p.(int))
-				if _, taken := owners[n]; !taken || project == incusProject {
-					owners[n] = project
+			for _, s := range publishedSockets(obj(inst["expanded_devices"])) {
+				if _, taken := owners[s]; !taken || project == incusProject {
+					owners[s] = project
 				}
 			}
 		}
 	}
 	listening := hostListening()
-	for _, n := range wanted {
-		owner, held := owners[n]
+	for _, hp := range wanted {
+		sock := hostSocket{Protocol: hp.Protocol, Port: hp.Port}
+		owner, held := owners[sock]
 		switch {
 		case held && owner != incusProject:
-			return fmt.Sprintf("Port %d is already published by app %s. Delete that app, or publish a different one here (for example \"%d:%d\" in compose.yaml). Services in one app reach each other by name, so publish a port only for access from outside the server.", n, owner, n+1, n)
-		case !held && listening[n]:
-			return fmt.Sprintf("Port %d is already used by a program on this server. Publish a different port in compose.yaml.", n)
+			return fmt.Sprintf("Port %d/%s is already published by app %s. Delete that app, or publish a different one here (for example \"%d:%d\" in compose.yaml). Services in one app reach each other by name, so publish a port only for access from outside the server.", hp.Port, hp.Protocol, owner, hp.Port+1, hp.Port)
+		case !held && listening[sock]:
+			return fmt.Sprintf("Port %d/%s is already used by a program on this server. Publish a different port in compose.yaml.", hp.Port, hp.Protocol)
 		}
 	}
 	return ""
 }
 
-var bindInUse = regexp.MustCompile(`listen tcp [^ ]*:([0-9]+): bind: address already in use`)
+var bindInUse = regexp.MustCompile(`listen (tcp|udp) [^ ]*:([0-9]+): bind: address already in use`)
 
 // explainBindError turns incus-compose's bind failure into the same message.
 func explainBindError(incus incusFunc, incusProject, stderr string) string {
@@ -118,9 +178,9 @@ func explainBindError(incus incusFunc, incusProject, stderr string) string {
 	if m == nil {
 		return ""
 	}
-	n, _ := strconv.Atoi(m[1])
-	if msg := portConflicts(incus, "", []int{n}); msg != "" {
+	n, _ := strconv.Atoi(m[2])
+	if msg := portConflicts(incus, "", []hostPort{{Port: n, Protocol: m[1]}}); msg != "" {
 		return msg
 	}
-	return fmt.Sprintf("Port %d is already in use on this server. Publish a different port in compose.yaml.", n)
+	return fmt.Sprintf("Port %d/%s is already in use on this server. Publish a different port in compose.yaml.", n, m[1])
 }

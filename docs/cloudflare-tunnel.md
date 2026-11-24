@@ -24,7 +24,7 @@ command. Enter it before the first deploy. Keep it out of Compose source,
 Dockerfile layers, command arguments, Git and troubleshooting transcripts.
 Nixus injects saved variables at instance creation and on later updates. Without
 secret bindings, every service receives every app variable. With bindings, only
-the bound service/instance receives each key, including at initial startup. Bind
+the bound service receives each key, including at initial startup. Bind
 `TUNNEL_TOKEN` to `cloudflared` to keep it out of sibling containers.
 
 Set the tunnel's application route in the Cloudflare dashboard to, for example,
@@ -44,12 +44,12 @@ probe rather than a shell-based Compose healthcheck.
 ## Diagnose a disconnected tunnel
 
 Start with **Apps → app → Logs**, selecting cloudflared. On the host, if the
-service/instance is named `cloudflared` and the Incus project is `aiostreams`:
+generated instance is named `cloudflared-1` and the Incus project is `aiostreams`:
 
 ```sh
 sudo incus list --project aiostreams
-sudo incus console cloudflared --project aiostreams --show-log
-sudo incus exec cloudflared --project aiostreams -- cloudflared tunnel diag
+sudo incus console cloudflared-1 --project aiostreams --show-log
+sudo incus exec cloudflared-1 --project aiostreams -- cloudflared tunnel diag
 ```
 
 Adapt names from `incus list`. The diagnostic command requires a running
@@ -86,10 +86,10 @@ curl or a shell. This does not prove the routed origin application is healthy.
 - Cloudflare dashboard/API: tunnel configuration and public hostname routes.
 - Official cloudflared: authentication, edge discovery, QUIC/HTTP2 fallback,
   connection retry and readiness evidence.
-- Incus: private bridge address allocation, DHCP, dnsmasq and app NAT.
-- incus-compose: Compose interpretation, image builds, recreation, health checks
+- Incus: private bridge address allocation, DHCP and app NAT.
+- incus-compose: Compose interpretation, image builds, recreation, service DNS via `ic-dns`, health checks
   and restart scheduling through its shared controller.
-- NixOS: physical NICs/VLANs and the host's input/forwarding boundary.
+- NixOS: physical NICs/VLANs and the host's management input boundary.
 
 A single host-level `services.cloudflared` service is an alternative when one
 connector must reach many origins. Use the maintained NixOS module rather than

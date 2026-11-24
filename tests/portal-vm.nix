@@ -22,7 +22,7 @@ in pkgs.testers.runNixOSTest {
     virtualisation.memorySize = 2048;
     # Disposable fixture: let the untrusted node reach HTTPS so the test checks
     # the application's source-network denial rather than a packet drop.
-    networking.firewall.allowedTCPPorts = [ 9440 ];
+    networking.firewall.allowedTCPPorts = [ 80 9440 ];
     boot.kernelModules = lib.mkForce [ ];
     environment.systemPackages = [ pkgs.curl pkgs.jq ];
     users.users.outsider = { isNormalUser = true; initialPassword = "vm-nonadmin-password"; };
@@ -58,6 +58,11 @@ in pkgs.testers.runNixOSTest {
     machine.wait_for_unit("nixus-admin-backend.service")
     machine.wait_for_unit("nixus-ui.service")
     machine.wait_for_open_port(9440)
+
+    with subtest("built-in port 80 redirect without nginx"):
+        machine.wait_for_open_port(80)
+        redir = machine.succeed("curl -sI http://127.0.0.1/apps")
+        assert "308 Permanent Redirect" in redir and "Location: https://127.0.0.1:9440/apps" in redir, redir
 
     with subtest("privilege boundaries"):
         assert machine.succeed("systemctl show nixus-ui -p User --value").strip() == "nixus-ui"

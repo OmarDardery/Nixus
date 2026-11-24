@@ -32,7 +32,13 @@ func TestBackupStopsWhenAGuestCannotBeRestarted(t *testing.T) {
 			}
 			state[args[1]] = "Running"
 		case "export":
-			os.WriteFile(args[4], []byte("archive"), 0o600)
+			// export <name> --project <p> --instance-only <tempfile> --compression none
+			for i, a := range args {
+				if strings.HasSuffix(a, ".tar") && i > 0 {
+					os.WriteFile(a, []byte("archive"), 0o600)
+					break
+				}
+			}
 		case "query":
 			// /1.0/instances/<name>/state?project=...
 			for name, s := range state {
@@ -45,9 +51,9 @@ func TestBackupStopsWhenAGuestCannotBeRestarted(t *testing.T) {
 		return "", nil
 	}
 	group := func(name string) M {
-		return M{"guests": []any{M{"project": "p", "name": name, "status": "Running", "archive": name + ".tar.gz"}}, "volumes": []any{}}
+		return M{"guests": []any{M{"project": "p", "name": name, "status": "Running", "archive": name + ".tar"}}, "volumes": []any{}}
 	}
-	if _, err := backupGroups([]M{group("a1"), group("b1")}, destination, "gen"); err == nil {
+	if _, err := backupGroups([]M{group("a1"), group("b1")}, destination, "gen", nil); err == nil {
 		t.Fatal("a backup that left a guest stopped reported success")
 	}
 	for _, c := range calls {
@@ -119,7 +125,9 @@ func TestBackupPausesComposeRestartPolicy(t *testing.T) {
 			if marker != "true" || state != "Stopped" {
 				t.Fatal("export raced the restart controller")
 			}
-			os.WriteFile(args[4], []byte("archive"), 0o600)
+			if err := os.WriteFile(args[len(args)-3], []byte("archive"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 		case "start":
 			state = "Running"
 		case "query":
@@ -128,7 +136,7 @@ func TestBackupPausesComposeRestartPolicy(t *testing.T) {
 		return "", nil
 	}
 	guest := M{"project": "p", "name": "web", "status": "Running", "archive": "web.tar.gz", "config": M{composeServiceLabel: "web", composeStoppedKey: "false"}}
-	if _, err := backupGroups([]M{{"guests": []any{guest}}}, destination, "gen"); err == nil {
+	if _, err := backupGroups([]M{{"guests": []any{guest}}}, destination, "gen", nil); err == nil {
 		t.Fatal("marker restoration failure must fail backup")
 	}
 	raw, _ := os.ReadFile(backupPending)

@@ -1,5 +1,10 @@
 # Networking and Cloudflare Tunnel audit
 
+> Reconciliation update: current main delegates forwarding, NAT, addresses, app
+> networks, DNS and lifecycle to Incus/incus-compose. Earlier host-forward/FIB
+> and external app-bridge recommendations below are historical and superseded
+> by the native ownership described in `deployment-ownership.md`.
+
 Base: `89747c685c576d63e2004dbf8425f5132aabea91`.
 Date: 2026-11-23. This review did not access or modify the deployed Nixus host.
 

@@ -2,6 +2,7 @@
 #   0 -> 1: monitoring.collection defaults on for hosts that were already set up.
 #   1 -> 2: drop retired sections (legacy host backup, host tunnel, helpers, serial aliases).
 #   2 -> 3: drop cockpit.managePassword (Cockpit uses your Linux login).
+#   3 -> 4: drop retired host-flake instances and connectivity.guestInterfaces (Incus owns guest networking).
 stored:
 let
   version = stored.schemaVersion or 0;
@@ -16,8 +17,13 @@ let
     then v2 // { schemaVersion = 3; } // (if v2 ? cockpit && builtins.isAttrs v2.cockpit
       then { cockpit = builtins.removeAttrs v2.cockpit [ "managePassword" ]; } else { })
     else v2;
+  v4 = if v3.schemaVersion == 3
+    then builtins.removeAttrs v3 [ "instances" ] // { schemaVersion = 4; }
+      // (if v3 ? connectivity && builtins.isAttrs v3.connectivity
+        then { connectivity = builtins.removeAttrs v3.connectivity [ "guestInterfaces" ]; } else { })
+    else v3;
 in
 if !builtins.isAttrs stored then throw "Nixus settings must be an object"
-else if !builtins.isInt version || version < 0 || version > 3 then
+else if !builtins.isInt version || version < 0 || version > 4 then
   throw "Unsupported Nixus settings schema version"
-else v3
+else v4

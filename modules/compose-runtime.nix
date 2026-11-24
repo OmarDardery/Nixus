@@ -1,5 +1,5 @@
 # incus-compose's shared health/restart controller uses a dedicated control
-# bridge. Apps stay on nxa-* bridges and cannot reach the host Incus listener.
+# bridge. Apps stay on native Compose bridges and cannot reach the host Incus listener.
 { config, lib, ... }:
 {
   imports = [ ./management.nix ];

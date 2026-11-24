@@ -26,11 +26,10 @@ func (f *fakeIncus) run(_ time.Duration, args ...string) (string, error) {
 func nativeFixture(t *testing.T) (*fakeIncus, M) {
 	t.Helper()
 	fake := &fakeIncus{objects: map[string]string{}}
-	oldIncus, oldDefaults, oldClaims := nativeIncus, hostGuestDefaults, hostClaims
+	oldIncus, oldDefaults := nativeIncus, hostGuestDefaults
 	nativeIncus = fake.run
 	hostGuestDefaults = func() (string, string) { return "tank", "incusbr0" }
-	hostClaims = func() (map[string]bool, error) { return map[string]bool{"lab/legacy": true}, nil }
-	t.Cleanup(func() { nativeIncus, hostGuestDefaults, hostClaims = oldIncus, oldDefaults, oldClaims })
+	t.Cleanup(func() { nativeIncus, hostGuestDefaults = oldIncus, oldDefaults })
 	project := M{"name": "beta", "enable": true, "backend": "incus-native", "incusProject": "beta",
 		"resources": M{"cpus": float64(2), "memory": "2GiB"}, "secrets": M{"file": nil, "bindings": M{}},
 		"backup": M{"enable": true, "consistency": "stop"}, "claims": []any{"instance/printer"}, "source": "beta", "modules": []any{},

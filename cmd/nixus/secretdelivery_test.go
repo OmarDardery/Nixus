@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -75,5 +77,72 @@ func TestEnvDeliveryFollowsBindings(t *testing.T) {
 	}
 	if got := envValuesFor(project, values, web); len(got) != 2 {
 		t.Fatalf("web should now have both: %v", got)
+	}
+}
+
+func TestMaterializeProjectSecretsSyncsAndPrunes(t *testing.T) {
+	old := secretMountRoot
+	secretMountRoot = filepath.Join(t.TempDir(), "secrets")
+	defer func() { secretMountRoot = old }()
+
+	dir, err := materializeInstanceSecrets("demo", nil, M{"API_KEY": "secret-1", "DB_PASS": "secret-2"}, M{"name": "web", "service": "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "API_KEY")); err != nil || string(data) != "secret-1" {
+		t.Fatalf("API_KEY: %q %v", data, err)
+	}
+	// Updating secrets prunes removed keys cleanly.
+	if _, err := materializeInstanceSecrets("demo", nil, M{"API_KEY": "rotated"}, M{"name": "web", "service": "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "API_KEY")); err != nil || string(data) != "rotated" {
+		t.Fatalf("rotated API_KEY: %q %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "DB_PASS")); !os.IsNotExist(err) {
+		t.Fatalf("removed secret should be pruned: %v", err)
+	}
+	removeProjectSecretsDir("demo")
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("secret directory should be removed on app delete: %v", err)
+	}
+}
+
+func TestMountedSecretsRespectBindingsAndDestinationNames(t *testing.T) {
+	old := secretMountRoot
+	secretMountRoot = filepath.Join(t.TempDir(), "secrets")
+	defer func() { secretMountRoot = old }()
+	project := M{"secrets": M{"bindings": M{"db": M{"key": "DB_PASSWORD", "instance": "db", "destination": "/run/secrets/password"}, "web": M{"key": "SESSION", "instance": "web", "destination": "/run/secrets/nested/session"}}}}
+	values := M{"DB_PASSWORD": "database", "SESSION": "session", "UNBOUND": "private"}
+	db, err := materializeInstanceSecrets("demo", project, values, M{"name": "db-1", "service": "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, err := materializeInstanceSecrets("demo", project, values, M{"name": "web-1", "service": "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]string{filepath.Join(db, "password"): "database", filepath.Join(web, "nested/session"): "session"} {
+		got, err := os.ReadFile(file)
+		if err != nil || string(got) != want {
+			t.Fatalf("wrong scoped file: %s %v", file, err)
+		}
+	}
+	for _, file := range []string{filepath.Join(web, "password"), filepath.Join(web, "DB_PASSWORD"), filepath.Join(db, "SESSION"), filepath.Join(db, "UNBOUND")} {
+		if _, err := os.Stat(file); !os.IsNotExist(err) {
+			t.Fatalf("sibling/unbound secret exposed: %s", file)
+		}
+	}
+	if _, err := materializeInstanceSecrets("demo", nil, M{}, M{"name": "db-1", "service": "db"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(db, "password")); !os.IsNotExist(err) {
+		t.Fatal("removed secret remains mounted")
+	}
+	if err := validateComposeSecretBindings(project, []string{"db", "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateComposeSecretBindings(project, []string{"db-1", "web-1"}); err == nil {
+		t.Fatal("accepted generated-instance startup bindings")
 	}
 }

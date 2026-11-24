@@ -14,10 +14,6 @@ let
         else if builtins.match "[0-9]+(\\.[0-9]+){3}" bind != null then "ipv4"
         else "dual";
     };
-  nginx = name: service:
-    let vhost = config.services.nginx.virtualHosts.${name} or null;
-    in optionals (config.services.nginx.enable && vhost != null)
-      (map (socket: listener service "trusted" socket.addr socket.port) vhost.listen);
   ssh = config.services.openssh;
   sshBindings = if ssh.listenAddresses == [ ] then [{ addr = "*"; port = null; }]
     else ssh.listenAddresses;
@@ -25,7 +21,7 @@ let
       map (listener "SSH" "trusted" (if binding.addr == null then "*" else binding.addr))
         (if binding.port == null then ssh.ports else [ binding.port ])
     ) sshBindings)
-    ++ nginx "nixus-entry" "Portal redirect"
+    ++ optional site.setup.enable (listener "Portal redirect" "trusted" "0.0.0.0" 80)
     ++ optional site.setup.enable (listener "Portal HTTPS" "trusted" "0.0.0.0" site.setup.port)
     ++ optional config.services.cockpit.enable (listener "Cockpit" "trusted" "0.0.0.0" config.services.cockpit.port)
     ++ optional (config.virtualisation.incus.enable && incusBind != null)

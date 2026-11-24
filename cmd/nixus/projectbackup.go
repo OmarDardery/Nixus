@@ -147,13 +147,43 @@ func adoptWorkspaceChange(t *ProjectTransactions, id string) error {
 	return t.write(id, record)
 }
 
-// incusProjectsOf maps the selected source projects to their Incus projects.
-// It is never nil, so an empty selection backs up nothing.
+func projectBackupEnabled(project M) bool {
+	b := obj(project["backup"])
+	if b == nil || b["enable"] == nil {
+		return true
+	}
+	return isTrue(b["enable"])
+}
+
+// incusProjectsOf maps the selected source projects (with backup.enable != false)
+// to their Incus projects. It is never nil, so an empty selection backs up nothing.
 func incusProjectsOf(policy, inventory M) []string {
 	out := []string{}
 	for _, name := range includedProjects(policy, inventory) {
-		if p := str(obj(obj(inventory["projects"])[name])["incusProject"]); p != "" {
+		proj := obj(obj(inventory["projects"])[name])
+		if !projectBackupEnabled(proj) {
+			continue
+		}
+		if p := str(proj["incusProject"]); p != "" {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// consistencyByProject maps each selected Incus project to its declared
+// backup.consistency ("stop", "quiesce", or "none").
+func consistencyByProject(policy, inventory M) map[string]string {
+	out := map[string]string{}
+	for _, name := range includedProjects(policy, inventory) {
+		proj := obj(obj(inventory["projects"])[name])
+		if !projectBackupEnabled(proj) {
+			continue
+		}
+		if p := str(proj["incusProject"]); p != "" {
+			if c := str(jget(proj, "backup", "consistency")); c != "" {
+				out[p] = c
+			}
 		}
 	}
 	return out
@@ -234,6 +264,9 @@ func setPhase(status M, phase, state, detail string) {
 func projectCoverage(project M, data bool) M {
 	if !data {
 		return M{"config": true, "data": "not-selected", "unknowns": []any{"instance and volume data are excluded by policy"}}
+	}
+	if !projectBackupEnabled(project) {
+		return M{"config": true, "data": "disabled-by-project", "incusProject": project["incusProject"], "unknowns": []any{"project sets backup.enable = false"}}
 	}
 	unknowns := []any{}
 	if str(project["backend"]) == "incus-compose" {
@@ -506,7 +539,7 @@ func runProjectBackup(force bool) (M, error) {
 				return err
 			}
 			defer release()
-			return runBackup(incusProjectsOf(policy, inventory))
+			return runBackup(incusProjectsOf(policy, inventory), consistencyByProject(policy, inventory))
 		}()
 		if err != nil {
 			ok = false

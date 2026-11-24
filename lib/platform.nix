@@ -10,7 +10,6 @@
   hypervisor.imports = [
     ../modules/virtualization.nix
     ../modules/incus.nix
-    ../modules/instance-schema.nix
     ../modules/storage.nix
     ../modules/file-disks.nix
     ../modules/mount-schema.nix

@@ -306,15 +306,6 @@ func nativeDeclaredPlan(project M) ([]any, []any, error) {
 	if len(instances) == 0 && len(volumes) == 0 {
 		return nil, nil, nil
 	}
-	hostOwned, err := hostClaims()
-	if err != nil {
-		return nil, nil, err
-	}
-	for name := range instances {
-		if hostOwned[str(project["incusProject"])+"/"+name] {
-			return nil, nil, Public("Instance is already host-flake owned; explicit migration required")
-		}
-	}
 	projectItem, err := nativeProjectObservation(project)
 	if err != nil {
 		return nil, nil, err
@@ -402,7 +393,7 @@ func nativeApply(project, approved M, verifyOnly bool) (M, error) {
 		if digestJSON(spec) != str(approved["desiredHash"]) {
 			return nil, Public("Declared instance differs from the approved plan")
 		}
-		err = reconcileInstance(spec)
+		err = createNativeInstance(spec)
 	case "native-instance/update":
 		current, etag, rerr := readInstance(incusProject, str(approved["name"]))
 		if rerr != nil {
@@ -437,4 +428,58 @@ func nativeApply(project, approved M, verifyOnly bool) (M, error) {
 		return nil, Public("Declared instance did not start; inspect it in Incus")
 	}
 	return verified(after)
+}
+
+// createNativeInstance initializes a declared incus-native instance, applies
+// its config/devices via ETag-checked PUT, and starts it when requested.
+func createNativeInstance(spec M) error {
+	project, name := str(spec["project"]), str(spec["name"])
+	if !fullmatch(incusIdent, project) || !fullmatch(incusIdent, name) {
+		return Public("Invalid instance or project name")
+	}
+	args := []string{"init", str(spec["image"]), name, "--project", project, "--config", OWNER + "=true", "--config", INITIALIZING + "=true"}
+	switch str(spec["type"]) {
+	case "virtual-machine":
+		args = append(args, "--vm")
+	case "container":
+	default:
+		return Public("Unknown instance type")
+	}
+	profiles, ok := anyStrings(spec["profiles"])
+	if !ok || spec["profiles"] == nil {
+		profiles = []string{"base"}
+	}
+	if len(profiles) == 0 {
+		root, nic := obj(jget(spec, "devices", "root")), obj(jget(spec, "devices", "eth0"))
+		if str(root["pool"]) == "" || str(nic["network"]) == "" {
+			return Public("A profile-free instance needs explicit root storage and eth0 network")
+		}
+		args = append(args, "--no-profiles", "--storage", str(root["pool"]), "--network", str(nic["network"]))
+	}
+	for _, p := range profiles {
+		args = append(args, "--profile", p)
+	}
+	if _, err := nativeIncus(30*time.Minute, args...); err != nil {
+		return err
+	}
+	current, etag, err := readInstance(project, name)
+	if err != nil {
+		return err
+	}
+	update, err := reconcilePlan(current, spec)
+	if err != nil {
+		return err
+	}
+	if update != nil {
+		if err := writeInstance(project, name, update, etag); err != nil {
+			return err
+		}
+	}
+	if isTrue(spec["start"]) {
+		if _, err := nativeIncus(5*time.Minute, "start", name, "--project", project); err != nil {
+			return err
+		}
+	}
+	_, err = nativeIncus(0, "config", "unset", name, INITIALIZING, "--project", project)
+	return err
 }

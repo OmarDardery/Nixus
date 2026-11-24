@@ -31,7 +31,7 @@
         connectivity = testSite.connectivity // {
           bridges = [ { name = "br-lan"; interfaces = [ "eth0" ]; } { name = "br-apps"; interfaces = [ "vlan20" ]; } ];
           vlans = [ { name = "vlan20"; interface = "eth1"; id = 20; } ];
-          guestInterfaces = [ "incusbr0" "incus-private" ]; trustedLANAccess = true;
+          preservedIncusBridges = [ "incus-private" ]; trustedLANAccess = true;
           privateAccess = [ { cidr = "192.0.2.53/32"; protocol = "udp"; ports = [ 53 ]; } ];
         };
       };
@@ -219,7 +219,17 @@
         nativePortAddressRemoved = native.networking.interfaces.eth0.ipv4.addresses == [ ];
         vlanActivationName = nm.networking.networkmanager.ensureProfiles.profiles.nixus-vlan-vlan20.connection.id == "nixus-vlan-vlan20";
         vlanBridgeMembership = nm.networking.networkmanager.ensureProfiles.profiles.nixus-vlan-vlan20.connection.master == "br-apps";
-        guestNetworkOwnership = builtins.elem "interface-name:incus-private" nm.networking.networkmanager.unmanaged;
+        guestNetworkOwnership = builtins.elem "interface-name:incusbr0" nm.networking.networkmanager.unmanaged
+          && builtins.elem "interface-name:incus-*" nm.networking.networkmanager.unmanaged
+          && builtins.elem "interface-name:incus-private" nm.networking.networkmanager.unmanaged;
+        incusOwnsBridgeFirewall = !native.networking.firewall.filterForward
+          && !native.networking.nat.enable
+          && (builtins.head native.virtualisation.incus.preseed.networks).config."ipv4.firewall" == "true"
+          && (builtins.head native.virtualisation.incus.preseed.networks).config."ipv4.nat" == "true"
+          && (builtins.head native.virtualisation.incus.preseed.networks).config."security.acls" == "nixus-guest-egress"
+          && (builtins.head (builtins.fromJSON native.environment.etc."nixus/owned-infrastructure.json".text).network_acls).name == "nixus-guest-egress";
+        wiredHostPreseedsMacvlan = nixpkgs.lib.any (n: n.name == "nixus-lan" && n.type == "macvlan" && n.config.parent == "eth0")
+          self.nixosConfigurations.validation-host.config.virtualisation.incus.preseed.networks;
         wifiManagementActivation = nixpkgs.lib.hasInfix "connection up nixus-wifi" wifi.systemd.services.nixus-connectivity.script;
         noWiredManagementOnWifi = !(nixpkgs.lib.hasInfix "connection up nixus-management" wifi.systemd.services.nixus-connectivity.script);
       };

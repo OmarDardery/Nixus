@@ -13,22 +13,16 @@ let
       eth0 = { type = "nic"; name = "eth0"; network = site.guests.bridge; };
     };
   };
-  # Legacy UI inventory only; apps are deployed per project.
-  declared = site.instances;
-  instances = declared;
-  inventory = pkgs.writeText "inventory.json" (builtins.toJSON (site // { instances = declared; }));
-  desired = pkgs.writeText "instances.json" (builtins.toJSON instances);
+  mgmtIsBridge = lib.any (b: b.name == site.management.interface) site.connectivity.bridges;
+  mgmtIsWifi = site.radios.wifi.enable && site.management.interface == site.radios.wifi.interface;
+  inventory = pkgs.writeText "inventory.json" (builtins.toJSON site);
   nixus = import ../pkgs/nixus.nix { inherit pkgs; };
-  reconcile = pkgs.writeShellApplication {
-    name = "nixus-reconcile";
-    runtimeInputs = [ pkgs.incus-lts.client ];
-    text = ''exec ${nixus}/bin/nixus-go reconcile ${desired}'';
-  };
+  guestEgressACL = import ../lib/network-policy.nix { inherit lib site; };
+  ownedInfrastructure = config.virtualisation.incus.preseed // { network_acls = [ guestEgressACL ]; };
+
 in {
   imports = [ ./incus-apparmor.nix ./compose-runtime.nix ];
-  nixus.incus.desiredInstances = instances;
-  environment.etc."nixus/desired-instances.json".source = desired;
-  environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON config.virtualisation.incus.preseed;
+  environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON ownedInfrastructure;
   virtualisation.incus = {
     enable = true;
     ui.enable = true;
@@ -41,11 +35,18 @@ in {
         config = {
           "ipv4.address" = site.guests.gatewayCIDR;
           "ipv4.dhcp.ranges" = site.guests.dhcpRange;
-          "ipv4.nat" = "false"; "ipv4.firewall" = "false";
+          "ipv4.nat" = "true"; "ipv4.firewall" = "true";
           "ipv6.address" = "none"; "ipv6.firewall" = "false";
           "dns.domain" = "guests.internal";
+          "security.acls" = guestEgressACL.name;
+          "security.acls.default.ingress.action" = "reject";
+          "security.acls.default.egress.action" = "reject";
         };
-      } ];
+      } ] ++ lib.optional (site.management.interface != "" && !mgmtIsBridge && !mgmtIsWifi) {
+        name = "nixus-lan";
+        type = "macvlan";
+        config.parent = site.management.interface;
+      };
       projects = [ {
         name = "lab";
         config = { "features.images" = "false"; "features.profiles" = "true";
@@ -60,7 +61,6 @@ in {
     # First-run CLI configuration is not written atomically by Incus. Do not
     # race preseed's local infrastructure checks with client initialization.
     after = [ "incus.service" "incus-preseed.service" ]; requires = [ "incus.service" ];
-    before = [ "nixus-instances.service" ];
     serviceConfig = {
       ExecStart = "${pkgs.incus-lts.client}/bin/incus --force-local monitor --type=lifecycle --all-projects";
       Restart = "on-failure"; RestartSec = "5s";
@@ -68,21 +68,12 @@ in {
   };
   systemd.services.incus-preseed.preStart = lib.mkBefore ''
     ${nixus}/bin/nixus-go preflight ${inventory}
-    ${nixus}/bin/nixus-go infrastructure check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go infrastructure check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
+    ${nixus}/bin/nixus-go infrastructure apply-acls ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
   '';
   systemd.services.incus-preseed.postStart = ''
-    ${nixus}/bin/nixus-go infrastructure record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go infrastructure record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
   '';
   systemd.services.incus-preseed.path = [ pkgs.incus-lts.client ];
-  systemd.services.nixus-instances = {
-    description = "Reconcile owned Incus instances without deleting guest data";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "incus-preseed.service" "nixus-kvm-check.service" ];
-    requires = [ "incus-preseed.service" "nixus-kvm-check.service" ];
-    path = [ pkgs.incus-lts.client pkgs.findutils ];
-    restartTriggers = [ desired ];
-    serviceConfig = { Type = "oneshot"; RemainAfterExit = true; TimeoutStartSec = "30min"; };
-    script = "${reconcile}/bin/nixus-reconcile";
-  };
 }
 

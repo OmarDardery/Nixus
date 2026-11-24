@@ -328,7 +328,7 @@ func validateSettings(candidate, current, host M, requireDevices bool) (M, error
 	if err := checkShape(candidate, current, "settings"); err != nil {
 		return nil, err
 	}
-	for _, field := range []string{"instances", "secrets", "system", "schemaVersion"} {
+	for _, field := range []string{"secrets", "system", "schemaVersion"} {
 		if !equalJSON(candidate[field], current[field]) {
 			return nil, Public(field + " is managed in the source repository")
 		}
@@ -733,45 +733,16 @@ func validateFoundation(site, host M) (map[string]bool, error) {
 			}
 		}
 	}
-	guestsRaw, has := c["guestInterfaces"]
-	guests := []any{"incusbr0"}
-	if has {
-		guests = list(guestsRaw)
-	}
 	bridge := "incusbr0"
 	if b, ok := obj(site["guests"])["bridge"]; ok {
 		bridge = str(b)
 	}
-	seen, hasBridge := map[string]bool{}, false
-	if (has && guestsRaw != nil && list(guestsRaw) == nil) || len(guests) > 64 {
-		return nil, Public("Register distinct private guest bridges, including the Nixus bridge")
-	}
-	for _, g := range guests {
-		if !validInterface(g) || seen[str(g)] {
-			return nil, Public("Register distinct private guest bridges, including the Nixus bridge")
-		}
-		seen[str(g)] = true
-		if str(g) == bridge {
-			hasBridge = true
-		}
-	}
-	if !hasBridge {
-		return nil, Public("Register distinct private guest bridges, including the Nixus bridge")
-	}
-	for _, g := range guests {
-		n := str(g)
-		if n == mi || names[n] || ports[n] {
-			return nil, Public("Guest firewall interfaces must be separate from host Ethernet/LAN interfaces")
-		}
-		if host != nil {
-			if p, ok := physical[n]; ok && str(p["kind"]) != "bridge" && p["kind"] != nil {
-				return nil, Public("Guest firewall integration accepts bridges only")
-			}
-		}
+	if bridge == mi || names[bridge] || ports[bridge] {
+		return nil, Public("Incus guest bridge must be separate from host Ethernet/LAN interfaces")
 	}
 	for _, raw := range list(c["preservedIncusBridges"]) {
 		n := str(raw)
-		if !validInterface(raw) || n == mi || seen[n] || names[n] || ports[n] {
+		if !validInterface(raw) || n == mi || n == bridge || names[n] || ports[n] {
 			return nil, Public("Preserved Incus bridges must be separate private bridges")
 		}
 		if host != nil && str(physical[n]["kind"]) != "bridge" {
@@ -857,34 +828,6 @@ func validateNetwork(site M) error {
 	for _, a := range []netip.Addr{bridge.Addr(), subnet.Addr(), broadcast(subnet)} {
 		if inRange(a) {
 			return Public("DHCP range overlaps a reserved address")
-		}
-	}
-	reservations := map[netip.Addr]bool{bridge.Addr(): true}
-	identities := map[string]bool{}
-	bridgeName := "incusbr0"
-	if b, ok := g["bridge"]; ok {
-		bridgeName = str(b)
-	}
-	for _, raw := range list(site["instances"]) {
-		instance := obj(raw)
-		identity := str(instance["project"]) + "/" + str(instance["name"])
-		if identities[identity] {
-			return Public("Duplicate declared instance name/project")
-		}
-		identities[identity] = true
-		for _, d := range obj(instance["devices"]) {
-			device := obj(d)
-			if str(device["network"]) != bridgeName || str(device["ipv4.address"]) == "" {
-				continue
-			}
-			address, err := parseAddr(device["ipv4.address"])
-			if err != nil {
-				return err
-			}
-			if !subnet.Contains(address) || reservations[address] || address == subnet.Addr() || address == broadcast(subnet) || inRange(address) {
-				return Public("Guest reservation conflicts with another address or DHCP range")
-			}
-			reservations[address] = true
 		}
 	}
 	for _, c := range list(m["trustedCIDRs"]) {

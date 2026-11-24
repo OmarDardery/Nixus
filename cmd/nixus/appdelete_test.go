@@ -67,24 +67,16 @@ func TestAppIncusProjectsOnlyOwned(t *testing.T) {
 // The CLI's `project delete --force` prompts on stdin; the API does not.
 func TestDeleteIncusProjectUsesTheAPI(t *testing.T) {
 	var calls []string
-	fp := strings.Repeat("ab", 32)
 	old := updateIncus
 	defer func() { updateIncus = old }()
 	updateIncus = func(_ time.Duration, args ...string) (string, error) {
 		calls = append(calls, strings.Join(args, " "))
-		if strings.Join(args, " ") == "query /1.0/networks/"+appNetworkName("web") {
-			return `{"name":"x"}`, nil
-		}
-		if strings.Join(args, " ") == "query /1.0/certificates?recursion=1" {
-			return `[{"name":"ic-dns-web","fingerprint":"` + fp + `"},{"name":"admin","fingerprint":"` + strings.Repeat("cd", 32) + `"}]`, nil
-		}
 		return "", nil
 	}
 	if err := deleteIncusProject("web"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"query -X DELETE /1.0/projects/web?force=true", "query /1.0/networks/" + appNetworkName("web"),
-		"query -X DELETE /1.0/networks/" + appNetworkName("web"), "query /1.0/certificates?recursion=1", "query -X DELETE /1.0/certificates/" + fp}
+	want := []string{"query -X DELETE /1.0/projects/web?force=true"}
 	if strings.Join(calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("%v", calls)
 	}

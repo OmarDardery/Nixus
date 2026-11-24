@@ -1,13 +1,10 @@
 # Networking and IP management
 
-The physical management NIC stays intact. Compose apps run directly as Incus
-OCI containers, without a Docker daemon or an applications VM. Each app uses
-one private managed `nxa-*` bridge. Incus supplies its subnet, DHCP, DNS and
-NAT; NixOS permits DNS/DHCP input and enforces the outer forwarding boundary.
-The reserved `incusbr0` for native guests retains its separate host-owned NAT
-policy. NixOS does not flush Incus's nftables tables during firewall reload.
-
-For public app access, see [Cloudflare Tunnel](cloudflare-tunnel.md).
+The default keeps the physical management NIC intact. NixOS owns only the host's
+management input firewall (`table inet nixos-fw` with `filterForward = false` and
+`flushRuleset = false`). **Incus** owns the private guest bridge (`incusbr0`), its
+DHCP/DNS input rules, NAT, forwarding, and `network_acl` (`nixus-guest-egress`),
+while **`incus-compose`** manages per-app project networks and service discovery.
 
 ## Illustrative address plan — adapt every value
 
@@ -20,7 +17,7 @@ For public app access, see [Cloudflare Tunnel](cloudflare-tunnel.md).
 | Incus bridge | `10.77.0.1/24` | Host-side address for private guests/DNS/DHCP |
 | Incus DHCP | `10.77.0.100`–`10.77.0.199` | Dynamic guest reservations |
 | Example guest | `10.77.0.20` | Static DHCP reservation outside the range |
-| Compose project networks | Incus-allocated `nxa-*` bridges | Internal app services, not LAN addresses |
+| Compose project networks | Incus networks created by incus-compose | Internal app services, not LAN addresses |
 | Public hostname | `app.example.com` | Cloudflare endpoint routed to an application port |
 
 Guests use DHCP normally; Incus assigns the same reserved address
@@ -44,8 +41,7 @@ pool cannot promise enforced system-container disk quotas.
   a static route `10.77.0.0/24 via 192.168.50.10` on the real router/client, using adapted values.
   This route is an external network initialization step; the host does not change the router.
 
-If guests need a LAN DNS/NTP/server, add a narrowly scoped allow rule before the private-range
-drop. Do not broadly trust `incusbr0` as a connectivity workaround. Verify new rules with nft
+If guests need a LAN DNS/NTP/server, add a narrowly scoped `connectivity.privateAccess` allow rule. Do not broadly trust `incusbr0` as a connectivity workaround. Verify new rules with nft
 counters and connectivity tests, including after a firewall rebuild.
 
 A guest or host with multiple interfaces may require reviewing reverse-path filtering and
@@ -53,44 +49,25 @@ routes. This default is a simple single-uplink topology, not a multi-router poli
 
 ## Giving a guest a LAN address
 
-Default guest IPs are private routed/NAT addresses, not layer-2 LAN leases. To give one guest
-a true LAN IP, explicitly build a separate host bridge or VLAN-backed application bridge and
-attach its NIC to it. Do not enslave the active management NIC remotely: move the host address
-onto a bridge only in a console-backed network change plan. A second physical NIC is simpler.
+Default guest IPs are private routed/NAT addresses, not layer-2 LAN leases.
+On wired Ethernet hosts, Nixus preseeds an Incus `macvlan` network (`nixus-lan`)
+bound to the physical management interface (or uses the host bridge directly if
+management runs on a bridge). Compose apps can attach to it via the console's
+**Own IP on your router** toggle or standard `networks:` (`external: true`).
 
 Optional VLAN configuration uses native `networking.vlans`, `networking.bridges` (or equivalent
-systemd-networkd netdev/network units), with a switch trunk and router/firewall rules. Device
-NICs can use an existing bridge's `nictype = "bridged"` and `parent = "br-apps"`. Do not
+NetworkManager profiles), with a switch trunk and router/firewall rules. Device
+NICs can use an existing bridge's `nictype = "bridged"` and `parent = "br-apps"`, or
+reference the host bridge directly as an external network in `incus-compose`. Do not
 attach an Incus-managed `network` and an unmanaged `parent` in the same NIC definition.
 No interface, VLAN tag, router route or IPv6 prefix is guessed here.
 
-## Compose networking choices
+## Compose networking
 
-Services in the same app reach one another by their Incus container names
-(the Compose service name, with underscores changed to hyphens). Native Incus
-bridge DNS handles those names and forwards external queries through the host's
-DNS configuration. Nixus sets this resolver before the OCI process starts.
-There is no second DNS sidecar in the default single-network setup.
-
-| Method | Use it for |
-|---|---|
-| Same app, private bridge | Web service, database and cloudflared talking by name; no published database or tunnel port |
-| Publish an application port | Direct access on the host address; inspect the host input policy separately |
-| Cloudflare Tunnel in the same app | Public hostnames without inbound router ports or a LAN NIC on the connector |
-| Optional LAN NIC | A genuine router-managed address when needed; macvlan requires wired L2 support and cannot normally talk directly to its parent host |
-| Native Incus bridge/VLAN and ACLs | Explicit guest routing and isolation beyond the single app network |
-
-The host's forwarding policy does not automatically open a port published by
-an Incus proxy device: a non-NAT proxy listens on the host and takes the input
-path. A port binding, a firewall allowance and end-to-end reachability are
-separate facts. Keep host management ports private.
-
-New app bridges are created through Incus with automatic address allocation,
-then passed to Compose as external networks. Existing app bridge addresses are
-retained; redeploying does not renumber them. Incus remains the single address
-allocator and its network is removed by the app deletion path. Review VPN and
-router routes that are not present on the server; automatic allocation cannot
-know disconnected or externally configured networks.
+Services in a Compose project share an isolated Incus bridge network created by
+`incus-compose` and resolve one another by service name via `ic-dns` without
+exposing internal databases or caches to the LAN. Custom `networks:` in
+`compose.yaml` are supported natively; only `network_mode: host` is blocked.
 
 IPv4 is the supported default. Host IPv6 policy can follow the installer; the Incus bridge has
 `ipv6.address = "none"`. Enable guest IPv6 only with an allocated routed prefix, IPv6 firewall
@@ -112,7 +89,6 @@ nixus.settings.connectivity = {
     { name = "br-apps"; interfaces = [ "vlan20" ]; }
   ];
   vlans = [ { name = "vlan20"; interface = "enp3s0"; id = 20; } ];
-  guestInterfaces = [ "incusbr0" ];
   trustedLANAccess = false;
   privateAccess = [ { cidr = "192.168.50.53/32"; protocol = "udp"; ports = [ 53 ]; } ];
 };
@@ -128,26 +104,21 @@ owner is preserved; conventional hosts use native NixOS bridge/VLAN options.
 In Incus, attach guests to `br-lan` or `br-apps` as existing unmanaged bridges.
 Their addresses come from the LAN/VLAN router; Incus DHCP reservations do not
 configure an unmanaged bridge. These guests share that LAN's trust boundary.
-Do not assume the private-NAT firewall policy isolates a guest attached directly
+Do not assume the private-NAT ACL isolates a guest attached directly
 to the LAN. Configure guest/native Incus policy as appropriate.
 
-Create additional private managed networks in Incus. Register their bridge names
-under `guestInterfaces` for outer host firewall integration. Incus owns NAT on
-those additional networks; only the reserved `incusbr0` baseline uses host NAT.
-Use `privateAccess` for selected native-guest and Compose-app access to LAN DNS/NTP/application servers.
-It never grants host management input. Bridges in `preservedIncusBridges` are a compatibility
-exception: their forwarding is accepted in both directions before the private
-range drops. They retain their previous trust boundary and are not covered by
-the new-app isolation claim. Review this list after adoption. Guest Internet forwarding is IPv4-only;
-IPv6 needs a separate routed-prefix and firewall design.
+Additional private managed networks created in Incus work directly without
+host firewall registration: Incus owns their NAT, DHCP/DNS, forwarding, and ACLs.
+`privateAccess` and `trustedLANAccess` configure the reserved `nixus-guest-egress`
+Incus network ACL attached to `incusbr0` and are supplied to native Compose app
+network ACLs at reviewed deployment. They never grant host management input.
+External networks retain their native owner’s policy. ACLs use explicit allows
+and default rejection: a blanket deny rule would override permitted exceptions.
 
 No demo-specific port is opened automatically. Without a router route, use native
-network forwards on an Incus-owned network or a LAN bridge. Forwarded connections
-must also pass the host's trusted-LAN boundary; creating a forward does not grant
-access from untrusted sources. The reserved incusbr0 has host-owned NAT/firewall;
-use an additional Incus-owned network for native forwarding rules.
-Switch trunks/router changes are external actions. See
-[ownership](apps.md) before editing the reserved bootstrap network in Incus.
+Incus network forwards directly on `incusbr0` or another Incus-owned network, or attach
+a guest to a LAN bridge/`nixus-lan`. Switch trunks/router changes are external actions.
+See [ownership](apps.md) before editing the reserved bootstrap network in Incus.
 
 
 ## Guest addresses in the Nixus console
@@ -207,9 +178,3 @@ The JSON describes the Nixus policy. Check custom firewall rules and actual
 socket state with `sudo nft list ruleset` and `sudo ss -ltn`.
 
 Bootstrap retains the installed firewall and interface-scoped portal ports.
-
-When bridge netfilter is enabled, same-bridge IPv4 traffic also traverses the
-host forward chain. The app rule uses the kernel's FIB lookup to accept only
-destinations routed back through the incoming app bridge. A destination on
-another app bridge still reaches the private-range deny rule. This preserves
-Incus bridge-netfilter features without hard-coding allocated app subnets.

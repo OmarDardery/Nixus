@@ -217,7 +217,7 @@ func deployRevision(actor, project, revision string) (string, error) {
 }
 
 // healthy waits healthSeconds, then requires every service to run the
-// reviewed images (an exiting container shows as not Running).
+// reviewed images and not report unhealthy via ic-healthd.
 var healthy = func(project, incusProject, revision string, seconds int) error {
 	time.Sleep(time.Duration(seconds) * time.Second)
 	observed, err := composeAdapterFactory().observe(project, incusProject, revision)
@@ -226,6 +226,11 @@ var healthy = func(project, incusProject, revision string, seconds int) error {
 	}
 	if str(observed["action"]) != "noop" {
 		return Public("Services are not all running the updated images after the health period")
+	}
+	for _, raw := range obj(observed["instances"]) {
+		if health := strings.ToLower(str(obj(raw)["health"])); health == "unhealthy" {
+			return Public("One or more services reported unhealthy after the update")
+		}
 	}
 	return nil
 }
@@ -300,7 +305,8 @@ func restoreVolumes(incus incusFunc, project string, snaps []volumeSnapshot) err
 	}
 	for _, s := range snaps {
 		if _, err := incus(0, "storage", "volume", "snapshot", "restore", s.Pool, s.Volume, s.Name, "--project", project); err != nil {
-			return Public("Could not restore volume " + s.Volume + " from snapshot " + s.Name)
+			fmt.Fprintln(os.Stderr, "nixus: volume restore failed:", err)
+			return Failed("Could not restore volume "+s.Volume+" from snapshot "+s.Name, err)
 		}
 	}
 	return nil
@@ -381,7 +387,16 @@ func applyImageUpdate(actor, project string) (M, error) {
 			},
 			// Pause upstream restart intent before stopping the failed app so
 			// its state holds still while the rollback is planned.
-			func() error { return stopApp(updateIncus, incusProject) },
+			func() error {
+				done, err := composeProjectCommand(project, "down", "--timeout", "30s")
+				if err != nil {
+					return err
+				}
+				if done {
+					return nil
+				}
+				return stopApp(updateIncus, incusProject)
+			},
 			func() error { return republish(actor, project, previous) },
 			func() error { return restoreVolumes(updateIncus, incusProject, snaps) },
 			func() error { _, err := deployRevision(actor, project, previous); return err },

@@ -13,10 +13,6 @@ in {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnCalendar = "daily"; Persistent = true; RandomizedDelaySec = "1h"; };
     };
-    systemd.timers.nixus-secrets-deliver = {
-      wantedBy = [ "timers.target" ];
-      timerConfig = { OnBootSec = "2min"; OnUnitActiveSec = "10min"; };
-    };
     systemd.timers.nixus-apps-repo-check = {
       wantedBy = [ "timers.target" ];
       timerConfig = { OnBootSec = "3min"; OnUnitActiveSec = "10min"; RandomizedDelaySec = "1min"; };
@@ -35,12 +31,16 @@ in {
         wants = [ "network-online.target" ];
         serviceConfig = { Type = "oneshot"; ExecStart = [ "${admin}/bin/nixus-admin image-updates check" "${admin}/bin/nixus-admin image-updates auto" ]; TimeoutStartSec = "6h"; UMask = "0077"; };
       };
-      # Containers lose /run on restart; re-deliver app secrets after boot and periodically.
-      nixus-secrets-deliver = {
-        description = "Deliver each app's decrypted secrets into its running instances";
+      # Materialize decrypted app secrets into host tmpfs (/run/nixus-secrets)
+      # once at boot before Incus autostarts containers; containers mount their
+      # directory read-only at /run/secrets so secrets survive restarts natively.
+      nixus-secrets-materialize = {
+        description = "Materialize decrypted app secrets onto host tmpfs for Incus mounts";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "local-fs.target" ];
+        before = [ "incus-startup.service" ];
         restartIfChanged = false;
-        after = [ "incus.service" ];
-        serviceConfig = { Type = "oneshot"; ExecStart = "${admin}/bin/nixus-admin apps deliver-secrets"; TimeoutStartSec = "10min"; UMask = "0077"; };
+        serviceConfig = { Type = "oneshot"; RemainAfterExit = true; ExecStart = "${admin}/bin/nixus-admin apps deliver-secrets"; TimeoutStartSec = "5min"; UMask = "0077"; };
       };
       # Fetch the apps repository: list remote changes for review, push console changes.
       nixus-apps-repo-check = {

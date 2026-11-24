@@ -59,7 +59,7 @@ function hostOverview() {
   const s = state.status.effectiveSettings || state.status.settings;
   const health = operationView.health;
   const required = ["incus.service", "nixus-admin-backend.service", "nixus-ui.service",
-    ...(s.cockpit?.enable ? ["cockpit.socket"] : []), ...(s.apps?.enable ? ["nginx.service"] : [])];
+    ...(s.cockpit?.enable ? ["cockpit.socket"] : [])];
   const fresh = freshObservation(health);
   const degraded = required.filter(id => !(health?.services || []).some(unit => unit.Id === id && unit.LoadState === "loaded" && unit.ActiveState === "active"));
   const failed = (health?.services || []).filter(unit => unit.ActiveState === "failed" || unit.Result && unit.Result !== "success");
@@ -130,8 +130,8 @@ function hostConnectivity() {
       { name: "vlan20", interface: "", id: 20 },
     ) +
     card(
-      "Private guest firewall integration",
-      `<div class="fields">${field("Private Incus bridge interfaces", "connectivity.guestInterfaces", { list: true, type: "textarea", full: true, hint: "Register private bridge names after creating them in Incus. Never list physical/LAN interfaces here." })}</div>${toggle("Permit trusted LAN clients to reach private guests", "connectivity.trustedLANAccess", "Private guest addresses require a route on your router/client. Incus forwards and ACLs remain in Incus.")}`,
+      "Incus guest network ACL",
+      `${toggle("Permit trusted LAN clients to reach private guests", "connectivity.trustedLANAccess", "Applied via the Incus network ACL on the guest bridge. Private guest addresses still require a route on your router/client.")}`,
     ) +
     recordEditor(
       "Narrow guest access to LAN services",

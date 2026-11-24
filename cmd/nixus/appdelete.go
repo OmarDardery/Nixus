@@ -48,12 +48,15 @@ func deleteApp(actor string, body M) (M, error) {
 			return nil, err
 		}
 	}
-	// 2. Incus removes the project and everything in it.
+	// 2. Tear down via incus-compose (removing project networks, sidecars, and
+	// trust certs) then delete the Incus project and any remaining resources.
+	composeProjectCommand(project, "down", "--volumes")
 	for _, name := range incusProjects {
 		if err := deleteIncusProject(name); err != nil {
 			return nil, Failed("The app's files were removed, but Incus could not delete project "+name+"; retry the delete", err)
 		}
 	}
+	removeProjectSecretsDir(project)
 	// 3. Nixus's own records.
 	b := NewOCIBuilds("", nil)
 	os.RemoveAll(filepath.Join(b.publisher.root, project))
@@ -135,29 +138,6 @@ func appIncusProjects(project string, declared M) ([]string, error) {
 func deleteIncusProject(name string) error {
 	if _, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/projects/"+name+"?force=true"); err != nil {
 		return err
-	}
-	// The app's network lives in the default project (features.networks is
-	// off), so the project delete leaves it.
-	if incusQueryObj(updateIncus, "/1.0/networks/"+appNetworkName(name)) != nil {
-		if _, err := updateIncus(0, "query", "-X", "DELETE", "/1.0/networks/"+appNetworkName(name)); err != nil {
-			return Failed("Could not delete the app's network", err)
-		}
-	}
-	// incus-compose's DNS sidecar holds a client certificate restricted to the
-	// project; the trust store is outside the project, so remove it too.
-	out, err := updateIncus(0, "query", "/1.0/certificates?recursion=1")
-	if err != nil {
-		return nil
-	}
-	certs, err := parseJSON([]byte(out))
-	if err != nil {
-		return nil
-	}
-	for _, raw := range list(certs) {
-		cert := obj(raw)
-		if str(cert["name"]) == "ic-dns-"+name && fullmatch(re(`[0-9a-f]{64}`), str(cert["fingerprint"])) {
-			updateIncus(0, "query", "-X", "DELETE", "/1.0/certificates/"+str(cert["fingerprint"]))
-		}
 	}
 	return nil
 }
