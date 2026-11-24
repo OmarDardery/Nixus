@@ -347,3 +347,22 @@ func TestGlobalComposeControllersAreInfrastructure(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyRetirementVerifiesNativeResult(t *testing.T) {
+	legacy := M{"app": M{"container_name": "app"}}
+	for _, test := range []struct {
+		inventory string
+		wantError bool
+	}{
+		{`[]`, false}, {`[{"name":"other"}]`, false}, {`[{"name":"app","status":"Stopped"}]`, true}, {`{}`, true}, {`broken`, true},
+	} {
+		fake := func(time.Duration, ...string) (string, error) { return test.inventory, nil }
+		if err := verifyLegacyComposeRetired(fake, "testapp", legacy); (err != nil) != test.wantError {
+			t.Fatalf("inventory %s: %v", test.inventory, err)
+		}
+	}
+	fake := func(time.Duration, ...string) (string, error) { return "", Public("unavailable") }
+	if err := verifyLegacyComposeRetired(fake, "testapp", legacy); err == nil {
+		t.Fatal("unavailable inventory treated as empty")
+	}
+}

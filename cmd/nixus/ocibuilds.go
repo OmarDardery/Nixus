@@ -566,6 +566,9 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			if err != nil || result.Code != 0 {
 				return cmdFailed("Could not migrate legacy Compose names", result, err)
 			}
+			if err := verifyLegacyComposeRetired(a.incus, incusProject, legacy); err != nil {
+				return err
+			}
 		}
 	}
 	if len(appInstances(a.incus, incusProject)) > 0 && (str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion || str(projectConfig[composeIntentKey]) != str(build["intentHash"]) || storedLAN != wantLAN) {
@@ -609,6 +612,30 @@ func legacyComposeServices(instances []M, services M) M {
 		out[service] = M{"image": "scratch", "container_name": name, "restart": "unless-stopped"}
 	}
 	return out
+}
+
+// Upstream down may log deletion errors while returning success. Observe the
+// native result before creating replacements; a failed retirement stays partial.
+func verifyLegacyComposeRetired(incus incusFunc, project string, legacy M) error {
+	raw, err := incus(0, "query", "/1.0/instances?recursion=1&project="+project)
+	if err != nil {
+		return Public("Could not verify legacy Compose retirement; retry the reviewed deployment")
+	}
+	decoded, err := parseJSON([]byte(raw))
+	instances, ok := decoded.([]any)
+	if err != nil || !ok {
+		return Public("Invalid native inventory after legacy Compose retirement")
+	}
+	names := map[string]bool{}
+	for _, service := range legacy {
+		names[str(obj(service)["container_name"])] = true
+	}
+	for _, instance := range instances {
+		if name := str(obj(instance)["name"]); names[name] {
+			return Public("Native Compose did not retire legacy instance " + name + "; resolve its Incus error and retry the reviewed deployment")
+		}
+	}
+	return nil
 }
 
 func composeDNSUp(binary, endpoint, scratch string, env []string) error {

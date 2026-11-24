@@ -73,6 +73,8 @@ those tools; the VM fixture explicitly uses HTTP only for its loopback mirror.
 During a reviewed upgrade, instances with the old Nixus-forced service names
 are retired through `incus-compose down` while preserving volumes, networks
 and controllers. Explicit source `container_name` values are retained. New
-instances use upstream naming. Shared `ic-dns`/`ic-healthd` instances are host
+instances use upstream naming. Nixus verifies retirement through the native
+inventory before creating replacements, because an upstream `down` may log
+deletion failures while returning success. Shared `ic-dns`/`ic-healthd` instances are host
 infrastructure and excluded from guest exports; their credentials are issued
 by upstream on deployment to the replacement host.
