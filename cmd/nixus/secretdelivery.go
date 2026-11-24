@@ -244,18 +244,12 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	if !isTrue(project["enable"]) {
 		return 0, nil
 	}
-	s := NewSecrets("", "", "")
-	dir := filepath.Join(s.projects, name)
-	ciphertext, err := s.cipher(dir)
+	// A first deployment has not persisted its entered variables as SOPS yet.
+	// Use the same saved-plus-pending values as native instance creation so
+	// post-deploy delivery cannot clear a required startup credential.
+	values, err := appStartEnv(name)
 	if err != nil {
 		return 0, err
-	}
-	values := M{}
-	if ciphertext != nil {
-		values, err = s.decode(ciphertext, "")
-		if err != nil {
-			return 0, err
-		}
 	}
 	incusProject := str(project["incusProject"])
 	instances := appInstances(updateIncus, incusProject)

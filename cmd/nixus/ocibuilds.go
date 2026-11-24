@@ -748,7 +748,11 @@ func composeProjectCommand(sourceProject string, subcmd ...string) (bool, error)
 func appStartEnv(project string) (M, error) {
 	values := M{}
 	s := NewSecrets("", "", "")
-	if ciphertext, err := s.cipher(filepath.Join(s.projects, project)); err == nil && ciphertext != nil {
+	ciphertext, err := s.cipher(filepath.Join(s.projects, project))
+	if err != nil {
+		return nil, err
+	}
+	if ciphertext != nil {
 		saved, err := s.decode(ciphertext, "")
 		if err != nil {
 			return nil, err

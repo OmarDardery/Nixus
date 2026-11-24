@@ -219,6 +219,23 @@ func TestAppStartEnvUsesPendingValues(t *testing.T) {
 	if got["TUNNEL_TOKEN"] != "t" || got["SECRET_KEY"] != "k" {
 		t.Fatalf("pending variables must be available before the first start: %v", got)
 	}
+	oldIncus, oldMount, oldInject, oldRoot := updateIncus, ensureSecretsDiskMount, injectEnv, secretMountRoot
+	defer func() {
+		updateIncus, ensureSecretsDiskMount, injectEnv, secretMountRoot = oldIncus, oldMount, oldInject, oldRoot
+	}()
+	secretMountRoot = filepath.Join(t.TempDir(), "mounts")
+	updateIncus = func(time.Duration, ...string) (string, error) {
+		return `[{"name":"web-1","config":{"user.label.incus-compose.service":"web"},"status":"Running"}]`, nil
+	}
+	ensureSecretsDiskMount = func(string, string, string) error { return nil }
+	var delivered M
+	injectEnv = func(_, _ string, values M) (bool, error) { delivered = values; return false, nil }
+	if _, err := deliverProjectSecrets("web", M{"enable": true, "backend": composeBackend, "incusProject": "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if !equalJSON(got, delivered) {
+		t.Fatalf("post-deploy delivery cleared pending startup variables: %v", delivered)
+	}
 	os.WriteFile(appEnvPath("web"), []byte("not age data"), 0o600)
 	if _, err := appStartEnv("web"); err == nil {
 		t.Fatal("an unreadable pending file must be an error, not an app started without its variables")
