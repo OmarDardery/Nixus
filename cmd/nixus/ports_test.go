@@ -83,8 +83,8 @@ func TestComposeSidecarSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(offlineArgs, " "), "--no-dns") || !strings.Contains(strings.Join(offlineArgs, " "), "--no-healthd") {
-		t.Fatalf("offline mode should disable sidecars: %v", offlineArgs)
+	if strings.Contains(strings.Join(offlineArgs, " "), "--no-dns") || strings.Contains(strings.Join(offlineArgs, " "), "--no-healthd") {
+		t.Fatalf("offline mirrors must exercise native sidecars: %v", offlineArgs)
 	}
 	if !isComposeSidecar("web", "web-ic-dns") || !isComposeSidecar("web", "web-ic-healthd") || isComposeSidecar("web", "web-1") {
 		t.Fatal("sidecar detection")

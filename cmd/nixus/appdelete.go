@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // deleteApp removes an app and everything Nixus and Incus hold for it: its
@@ -25,8 +26,14 @@ func deleteApp(actor string, body M) (M, error) {
 	if appJobActive(project) || activeProjectDeployment(STATE) != "" {
 		return nil, Public("Wait for the running deployment to finish, then delete the app")
 	}
-	inventory, _ := liveInventory()
-	incusProjects := appIncusProjects(project, obj(obj(inventory["projects"])[project]))
+	inventory, err := liveInventory()
+	if err != nil {
+		return nil, Public("App inventory unavailable; retry when it can be verified")
+	}
+	incusProjects, err := appIncusProjects(project, obj(obj(inventory["projects"])[project]))
+	if err != nil {
+		return nil, err
+	}
 
 	// 1. The app's files and variables leave the workspace through a normal
 	// review, so the published source stays consistent.
@@ -79,7 +86,26 @@ func deleteApp(actor string, body M) (M, error) {
 
 // appIncusProjects returns the Incus projects that belong to the app and that
 // Nixus owns; anything else is never deleted.
-func appIncusProjects(project string, declared M) []string {
+func appIncusProjects(project string, declared M) ([]string, error) {
+	// A failed lookup must not look like an empty inventory: source and
+	// recovery records must survive until the runtime can be verified.
+	raw, err := updateIncus(30*time.Second, "query", "/1.0/projects?recursion=1")
+	if err != nil {
+		return nil, Public("Incus inventory unavailable; no app files were removed")
+	}
+	payload, err := parseJSON([]byte(raw))
+	items, ok := payload.([]any)
+	if err != nil || !ok {
+		return nil, Public("Invalid Incus inventory; no app files were removed")
+	}
+	configs := map[string]M{}
+	for _, item := range items {
+		p := obj(item)
+		if str(p["name"]) == "" || obj(p["config"]) == nil {
+			return nil, Public("Invalid Incus project; no app files were removed")
+		}
+		configs[str(p["name"])] = obj(p["config"])
+	}
 	candidates := []string{str(declared["incusProject"])}
 	if derived, err := incusProjectName(project); err == nil {
 		candidates = append(candidates, derived)
@@ -91,7 +117,7 @@ func appIncusProjects(project string, declared M) []string {
 			continue
 		}
 		seen[name] = true
-		config := obj(incusQueryObj(updateIncus, "/1.0/projects/"+name)["config"])
+		config := configs[name]
 		if str(config[imageOwnerKey]) != "true" {
 			continue
 		}
@@ -103,7 +129,7 @@ func appIncusProjects(project string, declared M) []string {
 		}
 		out = append(out, name)
 	}
-	return out
+	return out, nil
 }
 
 // deleteIncusProject removes an Incus project and everything in it through the

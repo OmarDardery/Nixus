@@ -4,6 +4,13 @@
 # sandbox builds it, and the verified image is imported into Incus.
 { pkgs }:
 let
+  tools = import ./compose-tools.nix { inherit pkgs; };
+  toolEnv = {
+    INCUS_COMPOSE_HEALTHD_IMAGE = "localhost:5000/nixus/healthd:1";
+    INCUS_COMPOSE_DNS_IMAGE = "localhost:5000/nixus/dns:1";
+    INCUS_COMPOSE_SLEEP_IMAGE = "localhost:5000/nixus/sleep:1";
+    NIXUS_OCI_VM_TEST = "1";
+  };
   defaults = import ../site-defaults.nix;
   settings = defaults // {
     hostName = "nixus-test"; cpuVendor = "intel";
@@ -41,7 +48,7 @@ let
   hostNode = withRegistry: { lib, pkgs, ... }: {
       # The bootstrap role has neither the hypervisor modules nor AppArmor; the
       # gzip rule is the production module, with AppArmor enforcing as on a host.
-      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ];
+      imports = [ ../configuration-bootstrap.nix ../modules/incus-apparmor.nix ../modules/compose-runtime.nix ];
       security.apparmor.enable = true;
       virtualisation = { memorySize = if withRegistry then 4096 else 3072; diskSize = 8192; cores = 2; };
       boot.kernelModules = lib.mkForce [ ];
@@ -53,11 +60,21 @@ let
         location = "localhost:5000"
         insecure = true
       '';
+      # incus-compose uses native Incus OCI remotes for non-public registries.
+      # Keep the test mirror in the system config so scratch HOME deployments
+      # and direct CLI lifecycle commands see the same native registry owner.
+      environment.etc."incus/config.yml".text = ''
+        remotes:
+          "localhost:5000":
+            addr: http://localhost:5000
+            protocol: oci
+            public: true
+      '';
       virtualisation.incus = {
         enable = true;
         preseed = {
           # As on real hosts (modules/incus.nix); incus-compose requires a listener.
-          config."core.https_address" = "127.0.0.1:8443";
+          config."core.https_address" = "0.0.0.0:8443";
           storage_pools = [ { name = "default"; driver = "dir"; } ];
           networks = [
             { name = "incusbr0"; type = "bridge";
@@ -71,7 +88,8 @@ let
           }; } ];
         };
       };
-      networking.nftables.enable = true;
+      networking.nftables = { enable = true; flushRuleset = false; };
+      networking.firewall.filterForward = false;
       networking.firewall.extraInputRules = ''
         iifname != "eth0" udp dport { 53, 67 } accept
         iifname != "eth0" tcp dport 53 accept
@@ -79,8 +97,8 @@ let
       networking.dhcpcd.denyInterfaces = [ "veth*" "ic-*" "incus*" "dnsapp-*" ];
       # Surface isolated builder diagnostics and signal offline VM test mode
       # to both the broker service and direct nixus-admin CLI invocations.
-      environment.variables.NIXUS_OCI_VM_TEST = "1";
-      systemd.services.nixus-admin-backend.environment.NIXUS_OCI_VM_TEST = "1";
+      environment.variables = toolEnv;
+      systemd.services.nixus-admin-backend.environment = toolEnv;
       systemd.services.nixus-test-fixture = {
         wantedBy = [ "multi-user.target" ];
         after = [ "systemd-tmpfiles-setup.service" ];
@@ -128,6 +146,7 @@ in pkgs.testers.runNixOSTest {
     machine.start()
     machine.wait_for_unit("nixus-admin-backend.service")
     machine.wait_for_unit("docker-registry.service")
+    assert machine.succeed("printenv INCUS_COMPOSE_HEALTHD_IMAGE").strip() == "localhost:5000/nixus/healthd:1"
     machine.wait_for_unit("incus.service")
     machine.wait_for_open_port(5000)
 
@@ -135,6 +154,11 @@ in pkgs.testers.runNixOSTest {
         machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${baseImage} docker://localhost:5000/nixus/base:1")
         digest = machine.succeed("skopeo --insecure-policy inspect --tls-verify=false docker://localhost:5000/nixus/base:1 | jq -r .Digest").strip()
         assert digest.startswith("sha256:"), digest
+
+    with subtest("official upstream tools are available without public network access"):
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.healthd} docker://localhost:5000/nixus/healthd:1")
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.dns} docker://localhost:5000/nixus/dns:1")
+        machine.succeed("skopeo --insecure-policy copy --dest-tls-verify=false docker-archive:${tools.sleep} docker://localhost:5000/nixus/sleep:1")
 
     with subtest("pin: unpinned references resolve to the registry's digest"):
         pinned = broker("/image-updates/pin", {"files": [{"path": "Dockerfile", "text": "FROM localhost:5000/nixus/base:1\nCOPY a /a\n"}]})
@@ -199,6 +223,23 @@ in pkgs.testers.runNixOSTest {
         assert served == "guarded-oci-build\n", served
         machine.succeed("incus exec " + running[0]["name"] + " --project testapp -- /bin/sh -c 'test -s /etc/base-marker'")
 
+    with subtest("a reviewed redeploy migrates legacy forced names through native Compose"):
+        name = running[0]["name"]
+        machine.succeed("incus stop " + name + " --project testapp && incus rename " + name + " app --project testapp && incus start app --project testapp")
+        machine.succeed("incus project unset testapp user.nixus.compose-runtime")
+        decl += "# reviewed native naming migration\n"
+        migrated = broker("/project/review", {"changes": {"testapp/default.nix": decl}, "sourceRevisions": {"testapp": revision}})
+        broker("/project/publish", {"id": migrated["id"], "planHash": migrated["planHash"]})
+        broker("/project/deploy", {"id": migrated["id"], "planHash": migrated["planHash"]})
+        deadline = time.time() + 180
+        while broker("/project/status")["deployment"] not in ("verified", "partial", "interrupted"):
+            assert time.time() < deadline
+            time.sleep(3)
+        assert broker("/project/status")["deployment"] == "verified", broker("/project/status")
+        running = json.loads(machine.succeed("incus list --project testapp --format=json"))
+        assert len(running) == 1 and running[0]["name"] == "app-1", running
+        assert machine.succeed("incus exec app-1 --project testapp -- cat /payload.txt") == "guarded-oci-build\n"
+
     with subtest("secrets: an app secret is encrypted, published and delivered to /run/secrets"):
         broker("/project-secrets/enroll", {"mode": "generate", "acknowledge": True})
         sreview = broker("/project-secrets/review", {"project": "testapp", "key": "API_TOKEN", "action": "set",
@@ -209,9 +250,8 @@ in pkgs.testers.runNixOSTest {
         delivered = machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN")
         assert delivered == "s3cret-value", delivered
         machine.fail("grep -r s3cret-value /srv/nixus /var/lib/nixus-admin /run/nixus-secret-delivery")
-        # A container restart clears /run; the delivery command restores it.
+        # A native readonly mount keeps secrets available through restart.
         machine.succeed("incus restart " + app + " --project testapp")
-        machine.succeed("nixus-admin apps deliver-secrets >&2")
         assert machine.succeed("incus exec " + app + " --project testapp -- /bin/cat /run/secrets/API_TOKEN") == "s3cret-value"
 
     with subtest("environment variables: Portainer-style list becomes real container environment"):
@@ -433,7 +473,7 @@ in pkgs.testers.runNixOSTest {
 
     with subtest("services in one app share an incus-compose network, including custom Compose networks"):
         dockerfile = ("FROM localhost:5000/nixus/base:1@" + digest + "\nCMD [\"/bin/sh\", \"-c\", \"mkdir -p /www && echo reached-by-name > /www/index.html && exec httpd -f -p 8080 -h /www\"]\n").encode()
-        compose = b"networks:\n  appnet: {}\nservices:\n  web:\n    build: .\n    networks: [default, appnet]\n  client:\n    build: .\n    command: [\"/bin/sleep\", \"86400\"]\n    networks: [default, appnet]\n"
+        compose = b"networks:\n  appnet: {}\nservices:\n  web:\n    build: .\n    restart: unless-stopped\n    healthcheck:\n      test: [\"CMD\", \"/bin/test\", \"-f\", \"/etc/base-marker\"]\n      interval: 2s\n      timeout: 1s\n      retries: 3\n    networks: [default, appnet]\n  client:\n    build: .\n    command: [\"/bin/sleep\", \"86400\"]\n    networks: [default, appnet]\n"
         dfiles = {"Dockerfile": dockerfile, "compose.yaml": compose}
         dentries = [{"path": p, "size": len(d), "sha256": hashlib.sha256(d).hexdigest()} for p, d in dfiles.items()]
         dp = broker("/project-import/prepare", {"project": "dnsapp", "files": dentries})
@@ -450,7 +490,7 @@ in pkgs.testers.runNixOSTest {
             machine.succeed("journalctl -b --no-pager | grep -E 'nixus: |COMPOSE-VM' | tail -n 60 >&2")
         assert djob["status"] == "deployed", djob
         instances = json.loads(machine.succeed("incus list --project dnsapp --format=json"))
-        names = sorted(i["name"] for i in instances)
+        names = sorted(i["name"] for i in instances if i["config"].get("user.label.incus-compose.service"))
         assert names == ["client-1", "web-1"], names
         def inst_ipv4(inst_name, nic="eth0"):
             data = json.loads(machine.succeed("incus list " + inst_name + " --project dnsapp --format=json"))[0]
@@ -460,12 +500,46 @@ in pkgs.testers.runNixOSTest {
             return ""
         machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].state.network.eth0.addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
         machine.wait_until_succeeds("incus list client-1 --project dnsapp --format=json | jq -e '.[0].state.network.eth0.addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
-        # Custom Compose network created by incus-compose natively with service DNS entries.
-        net_dns = machine.succeed("incus network get dnsapp-appnet raw.dnsmasq")
-        assert "web" in net_dns, net_dns
+        # Read native names from the NICs; Compose owns allocation and naming.
+        attached = {}
+        for inst in instances:
+            attached[inst["name"]] = {device["network"] for device in inst["expanded_devices"].values()
+                                      if device.get("type") == "nic" and device.get("network")}
+        assert attached["web-1"] == attached["client-1"] and len(attached["web-1"]) == 2, attached
+        for network in attached["web-1"]:
+            config = json.loads(machine.succeed("incus query /1.0/networks/" + network))["config"]
+            assert config.get("security.acls"), config
+            assert config["security.acls.default.egress.action"] == "reject", config
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        for name in ["web-1", "client-1"]:
+            print("native guest interfaces/routes/listeners", name,
+                  machine.execute("incus exec " + name + " --project dnsapp -- /bin/sh -c 'ip -4 address; ip -4 route; netstat -ltn; cat /etc/resolv.conf'"))
+        print("origin loopback", machine.execute("incus exec web-1 --project dnsapp -- wget -T 5 -qO- http://127.0.0.1:8080/"))
+        print("origin from host", machine.execute("curl --max-time 5 -fsS http://" + web_ip + ":8080/"))
+        try:
+            machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=30)
+        except Exception:
+            print(machine.succeed("nft list ruleset"))
+            for network in attached["web-1"]:
+                print(machine.succeed("incus network show " + network))
+                config = json.loads(machine.succeed("incus query /1.0/networks/" + network))["config"]
+                for acl in config.get("security.acls", "").split(","):
+                    if acl:
+                        print(machine.succeed("incus network acl show " + acl))
+            raise
+
+        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://web:8080/ | grep reached-by-name", timeout=120)
+
+    with subtest("upstream health checks, restart policy and intentional Stop remain enabled offline"):
+        machine.wait_until_succeeds("incus config get web-1 user.healthcheck.status --project dnsapp | grep -qx healthy", timeout=120)
+        machine.succeed("incus stop web-1 --project dnsapp --force")
+        machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].status == \"Running\"'", timeout=120)
+        broker("/apps/power", {"project":"dnsapp","action":"stop"})
+        machine.succeed("sleep 5")
+        assert all(i["status"] == "Stopped" for i in json.loads(machine.succeed("incus list --project dnsapp --format=json")) if i["config"].get("user.label.incus-compose.service"))
+        broker("/apps/power", {"project":"dnsapp","action":"start"})
+        machine.wait_until_succeeds("incus config get web-1 user.healthcheck.status --project dnsapp | grep -qx healthy", timeout=120)
 
     with subtest("a service gets its own LAN address via preseeded nixus-lan when the app asks for it"):
         broker("/apps/deploy", {"project": "dnsapp", "kind": "network", "lan": ["web"]})
@@ -486,7 +560,7 @@ in pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].state.network[\"" + lan_nic + "\"].addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4 after LAN attach"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -T 5 -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
         lan = [i for i in broker("/project-overview")["projects"] if i["name"] == "dnsapp"][0]
         assert lan["lan"] == ["web"], lan
         assert any(i.get("lanAddress") for i in lan["instances"] if i["name"] == "web-1"), lan["instances"]

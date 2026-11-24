@@ -114,3 +114,41 @@ func TestStartAllImageUpdatesNeedsAnUpdate(t *testing.T) {
 		t.Fatalf("started with nothing to update: %v", err)
 	}
 }
+
+func TestRollbackStopsComposeBeforePlanning(t *testing.T) {
+	for _, failure := range []string{"", "query", "invalid", "marker", "stop"} {
+		t.Run(failure, func(t *testing.T) {
+			paused, stopped := false, false
+			incus := func(_ time.Duration, args ...string) (string, error) {
+				switch args[0] {
+				case "query":
+					if failure == "query" {
+						return "", Hidden("unavailable")
+					}
+					if failure == "invalid" {
+						return `{}`, nil
+					}
+					return `[{"name":"web","status":"Running","config":{"` + composeServiceLabel + `":"web"}}]`, nil
+				case "config":
+					if failure == "marker" {
+						return "", Hidden("marker failed")
+					}
+					paused = args[3] == composeStoppedKey+"=true"
+				case "stop":
+					if !paused {
+						t.Fatal("rollback stop raced the upstream restart policy")
+					}
+					if failure == "stop" {
+						return "", Hidden("stop failed")
+					}
+					stopped = true
+				}
+				return "", nil
+			}
+			err := stopApp(incus, "web")
+			if (err != nil) != (failure != "") || stopped != (failure == "") {
+				t.Fatalf("failure=%s paused=%v stopped=%v err=%v", failure, paused, stopped, err)
+			}
+		})
+	}
+}

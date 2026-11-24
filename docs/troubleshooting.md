@@ -194,3 +194,10 @@ Keep both reports and use a local console. Current recovery skips absent service
 and NetworkManager UUIDs that no longer exist, but OS rollback cannot restore
 Incus schema or guest database contents. Follow the [recovery guide](backups.md)
 before attempting manual state changes.
+
+## Cloudflare shows no connected session
+
+Follow the [Tunnel diagnostic sequence](cloudflare-tunnel.md#diagnose-a-disconnected-tunnel).
+Check the connector process, token delivery, DNS and outbound TCP/UDP 7844 before
+changing public DNS or origin routing. A running container is not proof of a
+registered connector.

@@ -41,8 +41,9 @@ func runtimeInstances(incusProject string) []any {
 		}
 		out = append(out, M{"name": i["name"], "type": i["type"], "status": truncate(str(i["status"]), 32),
 			"owned": str(jget(i, "config", OWNER)) == "true", "compose": str(jget(i, "config", composeServiceLabel)) != "",
-			"service": str(jget(i, "config", composeServiceLabel)), "lanAddress": lanAddress(i),
-			"ports": publishedPorts(obj(i["devices"]))})
+			"service": str(jget(i, "config", composeServiceLabel)), "health": truncate(str(jget(i, "config", "user.healthcheck.status")), 32), "lanAddress": lanAddress(i),
+			"healthCheck": str(jget(i, "config", "user.healthcheck.enabled")) == "true" && str(jget(i, "config", "user.healthcheck.test")) != "",
+			"ports":       publishedPorts(obj(i["devices"]))})
 	}
 	return out
 }

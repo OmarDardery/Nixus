@@ -22,6 +22,7 @@ sudo nix --extra-experimental-features 'nix-command flakes' \
 | [Env vars & secrets](docs/secrets.md) | Encrypted env vars, the age key |
 | [Backups & restore](docs/backups.md) | Destinations, what's backed up, restoring a server |
 | [Networking](docs/networking.md) | Host and guest addressing, ingress |
+| [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Connector setup, DNS, egress and disconnected tunnels |
 | [Troubleshooting](docs/troubleshooting.md) | When something doesn't work |
 | [CLI](docs/administration.md) | Host commands |
 | [Credits](docs/credits.md) | The projects Nixus is built on |

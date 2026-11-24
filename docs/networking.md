@@ -41,8 +41,7 @@ pool cannot promise enforced system-container disk quotas.
   a static route `10.77.0.0/24 via 192.168.50.10` on the real router/client, using adapted values.
   This route is an external network initialization step; the host does not change the router.
 
-If guests need a LAN DNS/NTP/server, add a narrowly scoped allow rule before the private-range
-drop. Do not broadly trust `incusbr0` as a connectivity workaround. Verify new rules with nft
+If guests need a LAN DNS/NTP/server, add a narrowly scoped `connectivity.privateAccess` allow rule. Do not broadly trust `incusbr0` as a connectivity workaround. Verify new rules with nft
 counters and connectivity tests, including after a firewall rebuild.
 
 A guest or host with multiple interfaces may require reviewing reverse-path filtering and
@@ -110,8 +109,11 @@ to the LAN. Configure guest/native Incus policy as appropriate.
 
 Additional private managed networks created in Incus work directly without
 host firewall registration: Incus owns their NAT, DHCP/DNS, forwarding, and ACLs.
-`privateAccess` and `trustedLANAccess` configure the preseeded `nixus-guest-egress`
-Incus network ACL attached to `incusbr0`. They never grant host management input.
+`privateAccess` and `trustedLANAccess` configure the reserved `nixus-guest-egress`
+Incus network ACL attached to `incusbr0` and are supplied to native Compose app
+network ACLs at reviewed deployment. They never grant host management input.
+External networks retain their native owner’s policy. ACLs use explicit allows
+and default rejection: a blanket deny rule would override permitted exceptions.
 
 No demo-specific port is opened automatically. Without a router route, use native
 Incus network forwards directly on `incusbr0` or another Incus-owned network, or attach

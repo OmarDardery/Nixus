@@ -12,7 +12,7 @@ async function refreshRepo() {
   catch (error) { repoView.error = error.message || "Repository status unavailable."; }
   finally {
     repoView.loading = false;
-    if (state.page === "operations") shell();
+    if (state.page === "operations" && !(typeof typing === "function" && typing())) shell();
   }
   const job = repoView.data?.status?.deploy;
   if (job && !["deployed", "failed"].includes(job.status)) setTimeout(() => { if (state.page === "operations") void refreshRepo(); }, 4000);
@@ -75,7 +75,7 @@ function repoStatusCard(d) {
 function repositoryCards() {
   if (!repoView.data && !repoView.loading && !repoView.error) void refreshRepo();
   const d = repoView.data;
-  if (!d) return card("Apps repository", "<p>Loading…</p>" + repoNotice());
+  if (!d) return card("Apps repository", (repoView.loading ? "<p>Loading…</p>" : '<button type="button" id="repo-refresh">Retry repository status</button>') + repoNotice());
   return d.configured ? repoPendingCard(d) + repoStatusCard(d) : repoConnectCard(d);
 }
 
@@ -96,6 +96,7 @@ async function repoAction(path, body, message) {
 function bindRepository() {
   if (state.page !== "operations") return;
   const on = (id, fn) => document.querySelector(id)?.addEventListener("click", fn);
+  on("#repo-refresh", () => { repoView.error = ""; void refreshRepo(); });
   const keep = () => {
     repoView.url = document.querySelector("#repo-url")?.value.trim() || repoView.url;
     repoView.branch = document.querySelector("#repo-branch")?.value.trim() || repoView.branch;

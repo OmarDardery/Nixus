@@ -227,7 +227,9 @@
           && (builtins.head native.virtualisation.incus.preseed.networks).config."ipv4.firewall" == "true"
           && (builtins.head native.virtualisation.incus.preseed.networks).config."ipv4.nat" == "true"
           && (builtins.head native.virtualisation.incus.preseed.networks).config."security.acls" == "nixus-guest-egress"
-          && (builtins.head native.virtualisation.incus.preseed.network_acls).name == "nixus-guest-egress";
+          && (builtins.head (builtins.fromJSON native.environment.etc."nixus/owned-infrastructure.json".text).network_acls).name == "nixus-guest-egress";
+        nativeControllerOwnsRuntime = !(nixpkgs.lib.any (network: network.name == "icompose0")
+          (builtins.fromJSON native.environment.etc."nixus/owned-infrastructure.json".text).networks);
         wiredHostPreseedsMacvlan = nixpkgs.lib.any (n: n.name == "nixus-lan" && n.type == "macvlan" && n.config.parent == "eth0")
           self.nixosConfigurations.validation-host.config.virtualisation.incus.preseed.networks;
         wifiManagementActivation = nixpkgs.lib.hasInfix "connection up nixus-wifi" wifi.systemd.services.nixus-connectivity.script;
@@ -251,6 +253,10 @@
         nixus = self.packages.x86_64-linux.nixus;
         # Boots the Go broker and portal in a NixOS VM (needs KVM).
         portal = import ./tests/portal-vm.nix { inherit pkgs; };
+        healthd-image = (import ./tests/compose-tools.nix { inherit pkgs; }).healthd;
+        dns-image = (import ./tests/compose-tools.nix { inherit pkgs; }).dns;
+        sleep-image = (import ./tests/compose-tools.nix { inherit pkgs; }).sleep;
+        networking = import ./tests/networking-vm.nix { inherit pkgs; };
         oci = import ./tests/oci-vm.nix { inherit pkgs; };
         admin = self.packages.x86_64-linux.admin;
         installer = self.packages.x86_64-linux.installer;
@@ -259,7 +265,8 @@
       };
       devShells.x86_64-linux = {
         default = pkgs.mkShell {
-          packages = with pkgs; [ go gopls nixfmt shellcheck incus-lts.client sops age ];
+          packages = [ (import ./pkgs/go.nix { inherit pkgs; }) ]
+            ++ (with pkgs; [ gopls nixfmt shellcheck incus-lts.client sops age ]);
         };
       };
     };

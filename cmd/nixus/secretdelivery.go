@@ -10,7 +10,6 @@ package main
 // stop/start/restart automatically with no polling timer or `incus file push`.
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -103,47 +102,109 @@ func appInstances(incus incusFunc, incusProject string) []M {
 }
 
 func projectSecretsDir(project string) string {
-	return filepath.Join(secretMountRoot, project)
+	return filepath.Join(secretMountRoot, ".scoped", project)
 }
 
-// materializeProjectSecrets atomically syncs decrypted secret files into the
-// host tmpfs directory mounted read-only at /run/secrets inside the app's
-// containers. Returns the directory path.
-func materializeProjectSecrets(project string, values M) (string, error) {
+// Compose-generated instance names can change on scaling/recreation; bind
+// startup credentials to service names. Native declarations bind instances.
+func validateComposeSecretBindings(project M, services []string) error {
+	known := map[string]bool{}
+	for _, name := range services {
+		known[name] = true
+	}
+	for _, raw := range obj(jget(project, "secrets", "bindings")) {
+		if !known[str(obj(raw)["instance"])] {
+			return Public("Compose secret bindings must target service names rather than generated instance names")
+		}
+	}
+	return nil
+}
+
+// materializeInstanceSecrets gives each service (or native instance) its own
+// read-only mount. A project-wide mount would expose sibling services' bindings.
+func materializeInstanceSecrets(project string, declaration M, values M, inst M) (string, error) {
 	if !fullmatch(projectName, project) {
-		return "", Public("Invalid project name for secrets")
+		return "", Public("Invalid secret project")
+	}
+	target := str(inst["service"])
+	if target == "" {
+		target = str(inst["name"])
+	}
+	if !fullmatch(composeServiceName, target) {
+		return "", Public("Invalid secret instance")
+	}
+	bindings := obj(jget(declaration, "secrets", "bindings"))
+	selected := M{}
+	for name, raw := range bindings {
+		if str(obj(raw)["instance"]) == target {
+			selected[name] = raw
+		}
+	}
+	files := M{}
+	if len(bindings) == 0 {
+		files = values
+	} else if len(selected) > 0 {
+		targets, err := secretTargets(M{"secrets": M{"bindings": selected}}, values, []M{{"name": target, "service": target, "status": "Running"}})
+		if err != nil {
+			return "", err
+		}
+		for _, t := range targets {
+			files[strings.TrimPrefix(t.Destination, "/run/secrets/")] = values[t.Key]
+		}
 	}
 	if err := os.MkdirAll(secretMountRoot, 0o700); err != nil {
 		return "", err
 	}
 	os.Chmod(secretMountRoot, 0o700)
-	dir := projectSecretsDir(project)
+	parent := projectSecretsDir(project)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(parent, target)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	os.Chmod(dir, 0o755)
+	// Workers use UMask=0077. The bind-mounted subtree must nevertheless be
+	// traversable by the container's mapped UID; host ancestors remain 0700.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		return "", err
+	}
 	want := map[string]bool{}
-	for _, key := range keys(values) {
-		if !fullmatch(secretKey, key) {
-			continue
+	for name, value := range files {
+		clean := filepath.Clean(name)
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+			return "", Public("Invalid secret destination")
 		}
-		want[key] = true
-		if err := atomic(filepath.Join(dir, key), []byte(str(values[key])), 0o444, ""); err != nil {
+		file := filepath.Join(dir, clean)
+		want[file] = true
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			return "", err
+		}
+		for parent := filepath.Dir(file); parent != dir; parent = filepath.Dir(parent) {
+			if err := os.Chmod(parent, 0o755); err != nil {
+				return "", err
+			}
+		}
+		if err := atomic(file, []byte(str(value)), 0o444, ""); err != nil {
 			return "", err
 		}
 	}
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		if !want[e.Name()] {
-			os.Remove(filepath.Join(dir, e.Name()))
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-	}
-	return dir, nil
+		if path != dir && !entry.IsDir() && !want[path] {
+			return os.Remove(path)
+		}
+		return nil
+	})
+	return dir, err
 }
 
 func removeProjectSecretsDir(project string) {
 	if fullmatch(projectName, project) {
 		os.RemoveAll(projectSecretsDir(project))
+		os.RemoveAll(filepath.Join(secretMountRoot, project))
 	}
 }
 
@@ -183,37 +244,34 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 	if !isTrue(project["enable"]) {
 		return 0, nil
 	}
-	s := NewSecrets("", "", "")
-	dir := filepath.Join(s.projects, name)
-	ciphertext, err := s.cipher(dir)
-	if err != nil {
-		return 0, err
-	}
-	values := M{}
-	if ciphertext != nil {
-		values, err = s.decode(ciphertext, "")
-		if err != nil {
-			return 0, err
-		}
-	}
-	if len(values) == 0 {
-		if isDir(projectSecretsDir(name)) {
-			materializeProjectSecrets(name, M{})
-		}
-		return 0, nil
-	}
-	secretDir, err := materializeProjectSecrets(name, values)
+	// A first deployment has not persisted its entered variables as SOPS yet.
+	// Use the same saved-plus-pending values as native instance creation so
+	// post-deploy delivery cannot clear a required startup credential.
+	values, err := appStartEnv(name)
 	if err != nil {
 		return 0, err
 	}
 	incusProject := str(project["incusProject"])
 	instances := appInstances(updateIncus, incusProject)
+	if str(project["backend"]) == composeBackend {
+		names := []string{}
+		for _, inst := range instances {
+			names = append(names, str(inst["service"]))
+		}
+		if err := validateComposeSecretBindings(project, names); err != nil {
+			return 0, err
+		}
+	}
 	targets, err := secretTargets(project, values, instances)
 	if err != nil {
 		return 0, err
 	}
 	for _, inst := range instances {
 		instName := str(inst["name"])
+		secretDir, err := materializeInstanceSecrets(name, project, values, inst)
+		if err != nil {
+			return 0, err
+		}
 		if err := ensureSecretsDiskMount(incusProject, instName, secretDir); err != nil {
 			return 0, err
 		}
@@ -230,50 +288,78 @@ func deliverProjectSecrets(name string, project M) (int, error) {
 // deliverAllSecrets materializes every published app's secrets onto host tmpfs
 // (invoked once at boot before incus-startup.service, and on demand).
 func deliverAllSecrets() (M, error) {
-	s := NewSecrets("", "", "")
-	entries, err := os.ReadDir(s.projects)
+	inventory, err := liveInventory()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return M{"projects": M{}}, nil
-		}
-		return M{"projects": M{}}, err
+		return nil, err
 	}
 	results := M{}
-	var failed []string
-	for _, e := range entries {
-		name := e.Name()
-		if !e.IsDir() || !fullmatch(projectName, name) {
+	failed := []string{}
+	secrets := NewSecrets("", "", "")
+	for name, raw := range obj(inventory["projects"]) {
+		declaration := obj(raw)
+		if !isTrue(declaration["enable"]) {
 			continue
 		}
-		ciphertext, err := s.cipher(filepath.Join(s.projects, name))
-		if err != nil {
-			failed = append(failed, name)
-			results[name] = M{"error": publicError(err)}
-			continue
-		}
-		if ciphertext == nil {
-			// Ensure an empty mount directory exists so restored/autostarted
-			// containers with the read-only /run/secrets disk mount start cleanly.
-			if _, err := materializeProjectSecrets(name, M{}); err != nil {
-				failed = append(failed, name)
-				results[name] = M{"error": publicError(err)}
+		err := func() error {
+			values := M{}
+			cipher, err := secrets.cipher(filepath.Join(secrets.projects, name))
+			if err != nil {
+				return err
 			}
-			continue
-		}
-		values, err := s.decode(ciphertext, "")
+			if cipher != nil {
+				values, err = secrets.decode(cipher, "")
+				if err != nil {
+					return err
+				}
+			}
+			instances := []M{}
+			if str(declaration["backend"]) == composeBackend {
+				pub := NewPublishedSources("")
+				current, err := pub.current(name)
+				if err != nil {
+					return err
+				}
+				if current == nil {
+					return nil
+				}
+				revision := str(current["revision"])
+				spec, err := sourcePlan(name, revision, pub)
+				if err != nil {
+					return err
+				}
+				scratch, err := os.MkdirTemp(STATE, "secret-model-")
+				if err != nil {
+					return err
+				}
+				defer os.RemoveAll(scratch)
+				model, err := composeJSON(spec, filepath.Join(pub.root, name, "revisions", revision, "source"), scratch, "")
+				if err != nil {
+					return err
+				}
+				if err := validateComposeSecretBindings(declaration, keys(obj(model["services"]))); err != nil {
+					return err
+				}
+				for _, service := range keys(obj(model["services"])) {
+					instances = append(instances, M{"name": service, "service": service})
+				}
+			} else {
+				for _, instance := range keys(obj(declaration["instances"])) {
+					instances = append(instances, M{"name": instance})
+				}
+			}
+			for _, instance := range instances {
+				if _, err := materializeInstanceSecrets(name, declaration, values, instance); err != nil {
+					return err
+				}
+			}
+			return nil
+		}()
 		if err != nil {
 			failed = append(failed, name)
 			results[name] = M{"error": publicError(err)}
-			fmt.Fprintln(os.Stderr, "nixus: secret materialization failed for", name+":", err)
-			continue
+		} else {
+			results[name] = M{"materialized": true}
 		}
-		if _, err := materializeProjectSecrets(name, values); err != nil {
-			failed = append(failed, name)
-			results[name] = M{"error": publicError(err)}
-			fmt.Fprintln(os.Stderr, "nixus: secret materialization failed for", name+":", err)
-			continue
-		}
-		results[name] = M{"files": len(values)}
 	}
 	if len(failed) > 0 {
 		return M{"projects": results}, Public("Secret materialization failed for: " + strings.Join(failed, ", "))

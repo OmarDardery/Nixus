@@ -24,7 +24,6 @@ import (
 	"github.com/yuin/goldmark/parser"
 	ghtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
 )
 
 const domain = "https://nixus.dardery.work"
@@ -38,17 +37,18 @@ type group struct {
 
 var groups = []group{
 	{"GET STARTED", []item{{"index", "Overview"}, {"install", "Install & update"}, {"apps", "Apps"}, {"apps-repo", "Apps repository"}}},
-	{"USE YOUR SERVER", []item{{"secrets", "Env vars & secrets"}, {"backups", "Backups & restore"}, {"networking", "Networking"}, {"administration", "CLI"}}},
+	{"USE YOUR SERVER", []item{{"secrets", "Env vars & secrets"}, {"backups", "Backups & restore"}, {"networking", "Networking"}, {"cloudflare-tunnel", "Cloudflare Tunnel"}, {"administration", "CLI"}}},
 	{"WHEN THINGS HAPPEN", []item{{"troubleshooting", "Troubleshooting"}, {"credits", "Credits"}}},
 }
 
 var descriptions = map[string]string{
-	"index":           "Install, deploy apps, keep them in git, back everything up.",
-	"install":         "One command on an installed NixOS server, then everything else from the browser.",
-	"apps":            "Compose apps, VMs and containers, USB and serial devices, safe image updates.",
-	"apps-repo":       "Keep your apps in git: review remote changes, push console changes.",
-	"troubleshooting": "Symptoms, checks and recovery commands.",
-	"backups":         "Encrypted backups of apps, data and secrets; restore a whole server.",
+	"cloudflare-tunnel": "Run a tunnel beside an app; diagnose token, DNS, transport and origin failures.",
+	"index":             "Install, deploy apps, keep them in git, back everything up.",
+	"install":           "One command on an installed NixOS server, then everything else from the browser.",
+	"apps":              "Compose apps, VMs and containers, USB and serial devices, safe image updates.",
+	"apps-repo":         "Keep your apps in git: review remote changes, push console changes.",
+	"troubleshooting":   "Symptoms, checks and recovery commands.",
+	"backups":           "Encrypted backups of apps, data and secrets; restore a whole server.",
 }
 
 var root, source string
@@ -381,7 +381,9 @@ func build(output, base string) error {
 	}
 	body := "<p>Start with a plain installed NixOS server. The default installer configures Incus, Cockpit and the Nixus console, then verifies the enabled interfaces.</p><div class=\"docs-intro-grid\">" + cards.String() + "</div>"
 	for _, g := range groups[1:] {
-		body += "<h2>" + html.EscapeString(strings.Title(strings.ToLower(g.title))) + "</h2><ul>"
+		// Group titles are fixed, nonempty ASCII labels; use sentence case.
+		heading := strings.ToLower(g.title)
+		body += "<h2>" + html.EscapeString(strings.ToUpper(heading[:1])+heading[1:]) + "</h2><ul>"
 		for _, it := range g.items {
 			body += `<li><a href="` + docURL(base, it.slug) + `">` + html.EscapeString(it.label) + "</a></li>"
 		}
@@ -558,5 +560,3 @@ func main() {
 		}
 	}
 }
-
-var _ = util.Prioritized

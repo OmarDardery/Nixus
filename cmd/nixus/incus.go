@@ -1,7 +1,7 @@
 package main
 
 // Local Incus access: the unix-socket API client, the small ownership-aware
-// instance reconciler, the source-owned infrastructure drift guard and the
+// ownership checks, the source-owned infrastructure drift guard and the
 // sanitized guest network inventory. No shell interpolation or deletion.
 
 import (
@@ -25,14 +25,18 @@ const OWNER = "user.nixus.managed"
 const INITIALIZING = "user.nixus.initializing"
 const LAST_APPLIED = "user.nixus.last-applied"
 const incusSocket = "/var/lib/incus/unix.socket"
-const infrastructureState = "/var/lib/nixus/infrastructure.json"
+
+var infrastructureState = "/var/lib/nixus/infrastructure.json"
+
+var incusTransport = &http.Transport{
+	DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", incusSocket)
+	}, IdleConnTimeout: 30 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 8,
+}
 
 func incusHTTP(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", incusSocket)
-		}}}
+	return &http.Client{Timeout: timeout, Transport: incusTransport}
 }
 
 // incusAPI performs one local API request and returns the decoded payload.
@@ -316,7 +320,29 @@ func infraStable(value M) M {
 				}
 			}
 			out[k] = config
-		case "devices", "driver", "type", "description", "ingress", "egress":
+		case "ingress", "egress":
+			rules := []any{}
+			for _, raw := range list(v) {
+				rule := M{}
+				for field, value := range obj(raw) {
+					text := str(value)
+					if text == "" {
+						continue
+					}
+					if field == "source" || field == "destination" || field == "source_port" || field == "destination_port" {
+						parts := strings.Split(text, ",")
+						for i := range parts {
+							parts[i] = strings.TrimSpace(parts[i])
+						}
+						sort.Strings(parts)
+						text = strings.Join(parts, ",")
+					}
+					rule[field] = text
+				}
+				rules = append(rules, rule)
+			}
+			out[k] = rules
+		case "devices", "driver", "type", "description":
 			out[k] = v
 		}
 	}
@@ -410,8 +436,10 @@ func infraConflicts(preseed, previous M, observed map[string]M) []string {
 	return result
 }
 
+var infraAPI = incusAPI
+
 func infraQuery(p string, missingOK bool) (M, error) {
-	payload, _, status, err := incusAPI("GET", p, nil, "", 30*time.Second, 0)
+	payload, _, status, err := infraAPI("GET", p, nil, "", 30*time.Second, 0)
 	if err != nil {
 		return nil, Hidden("Cannot inspect Incus infrastructure: " + err.Error())
 	}
@@ -442,6 +470,77 @@ func infraCheck(preseed M) error {
 	if drift := infraConflicts(preseed, previous, observed); len(drift) > 0 {
 		return Public("Incus drift in source-owned infrastructure: " + drift[0] +
 			". Restore the declared object in Incus or review its Nix declaration; refusing to reset native edits.")
+	}
+	return nil
+}
+
+// Incus 7.0.2 supports ACLs through its API, but not admin-init preseed.
+// Reuse the source-owned drift guard and native ETags before the bridge is created.
+func infraApplyACLs(preseed M) error {
+	desired := M{"network_acls": preseed["network_acls"]}
+	previous := readObj(infrastructureState)
+	if previous == nil {
+		previous = M{}
+	}
+	observed := map[string]M{}
+	tags := map[string]string{}
+	objects := infraObjects(desired)
+	for _, object := range objects {
+		payload, etag, status, err := infraAPI("GET", object.path, nil, "", 30*time.Second, 0)
+		if err != nil {
+			return err
+		}
+		if status == 404 {
+			continue
+		}
+		if status >= 400 {
+			return Hidden("Could not inspect native network ACL")
+		}
+		observed[object.identity] = obj(payload["metadata"])
+		tags[object.identity] = etag
+	}
+	if conflicts := infraConflicts(desired, previous, observed); len(conflicts) > 0 {
+		return Public("Native ACL drift: " + conflicts[0] + "; review its declaration before changing it")
+	}
+	for index, object := range objects {
+		current := observed[object.identity]
+		body := infraStable(current)
+		for key, value := range object.declaration {
+			if key == "config" {
+				cfg := cloneM(obj(body[key]))
+				if cfg == nil {
+					cfg = M{}
+				}
+				for k, v := range obj(value) {
+					cfg[k] = v
+				}
+				body[key] = cfg
+			} else {
+				body[key] = value
+			}
+		}
+		method, path, etag := "PUT", object.path, tags[object.identity]
+		if current == nil {
+			method, path = "POST", "/1.0/network-acls"
+			body["name"] = obj(list(preseed["network_acls"])[index])["name"]
+		} else {
+			if equalJSON(body, infraStable(current)) {
+				continue
+			}
+			if etag == "" {
+				return Hidden("Incus omitted the ACL ETag; refusing an unsafe update")
+			}
+		}
+		payload, _, status, err := infraAPI(method, path, body, etag, 30*time.Second, 0)
+		if err != nil {
+			return err
+		}
+		if status >= 400 {
+			return Hidden("Incus refused the native network ACL update")
+		}
+		if err := waitOperation(payload); err != nil {
+			return err
+		}
 	}
 	return nil
 }

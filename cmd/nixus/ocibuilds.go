@@ -8,10 +8,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -177,8 +179,72 @@ const composeServiceLabel = "user.label.incus-compose.service"
 // isComposeSidecar reports whether an instance is an incus-compose managed
 // infrastructure sidecar (DNS or health daemon), not one of the app's services.
 func isComposeSidecar(incusProject, name string) bool {
-	return name == incusProject+"-ic-dns" || name == incusProject+"-ic-healthd"
+	return name == incusProject+"-ic-dns" || name == incusProject+"-ic-healthd" ||
+		incusProject == "incus-compose" && (name == "ic-dns" || name == "ic-healthd")
 }
+
+// Upstream prefetches all three tools even with --no-dns. Pin them together;
+// official INCUS_COMPOSE_*_IMAGE variables support mirrors/offline registries.
+const defaultHealthdImage = "ghcr.io/lxc/incus-compose/ic-healthd:1.4.1@sha256:abb8261776b7a5eb966ca8db698e53dd7bf825ba1a630e2e6ebdbf1088f3d84b"
+const defaultDNSImage = "ghcr.io/lxc/incus-compose/ic-dns:1.4.1@sha256:854d0f70b643e7699e5abe39f86de30d58d148c5865489be67e7ea9b32d695a0"
+const defaultSleepImage = "ghcr.io/lxc/incus-compose/ic-sleep:1.4.1@sha256:dbf21a1f638ec9d8df9e09e0618bffae3f3364560b30a2cb2258d184924324ac"
+
+func composeToolImage(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// A local Unix-socket client cannot use upstream's remote-URL fallback when
+// Incus listens on a wildcard. Supply the actual controller bridge endpoint.
+func composeControllerURL(incus incusFunc) (string, error) {
+	bind, err := incus(0, "config", "get", "core.https_address")
+	if err != nil {
+		return "", Public("Could not read the Incus HTTPS listener")
+	}
+	host, port, err := net.SplitHostPort(strings.TrimSpace(bind))
+	number, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || number < 1 || number > 65535 {
+		return "", Public("Configure a reachable Incus HTTPS listener before deploying Compose health policies")
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		network := incusQueryObj(incus, "/1.0/networks/icompose0?project=default")
+		cidr, err := netip.ParsePrefix(str(jget(network, "config", "ipv4.address")))
+		if err != nil || !cidr.Addr().Is4() || cidr.Addr().IsUnspecified() || cidr.Addr().IsLoopback() {
+			return "", Public("The Compose controller bridge is unavailable; apply the host configuration first")
+		}
+		host = cidr.Addr().String()
+	}
+	if address, err := netip.ParseAddr(host); err == nil && address.IsLoopback() {
+		return "", Public("The Incus HTTPS listener is loopback-only; the Compose controller needs a reachable listener")
+	}
+	return "https://" + net.JoinHostPort(host, port), nil
+}
+
+const composeStoppedKey = "user.healthcheck.stopped"
+
+// setComposeStopped uses the upstream controller's intent marker: stopping an
+// instance for backup or by request must not trigger its restart policy.
+func setComposeStopped(incus incusFunc, project, instance string, stopped bool) error {
+	_, err := incus(0, "config", "set", instance, composeStoppedKey+"="+fmt.Sprint(stopped), "--project", project)
+	return err
+}
+
+func restoreComposeStopped(incus incusFunc, guest M) error {
+	if !isTrue(guest["compose"]) {
+		return nil
+	}
+	args := []string{"config", "unset", str(guest["name"]), composeStoppedKey, "--project", str(guest["project"])}
+	if value, ok := guest["healthStopped"].(string); ok {
+		args = []string{"config", "set", str(guest["name"]), composeStoppedKey + "=" + value, "--project", str(guest["project"])}
+	}
+	_, err := incus(0, args...)
+	return err
+}
+
+const composeRuntimeKey = "user.nixus.compose-runtime"
+const composeRuntimeVersion = "3"
 
 const composeIntentKey = "user.nixus.compose-intent"
 
@@ -245,12 +311,6 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 	if project == nil || str(config[imageOwnerKey]) != "true" || str(config[imageBackendKey]) != composeBackend {
 		return nil, Public("The Incus project is not owned by Nixus for Compose")
 	}
-	built := map[string]bool{}
-	for _, raw := range list(build["services"]) {
-		if item := obj(raw); isTrue(item["built"]) {
-			built[str(item["service"])] = true
-		}
-	}
 	var services []string
 	for _, s := range list(build["services"]) {
 		services = append(services, str(obj(s)["service"]))
@@ -280,9 +340,9 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			health = str(settings["user.incus-compose.health"])
 		}
 		observed[str(instance["name"])] = M{"service": service, "status": truncate(str(instance["status"]), 32),
-			"image": str(settings["volatile.base_image"]), "health": health}
+			"image": str(settings["volatile.base_image"]), "health": health, "healthCheck": str(settings["user.healthcheck.enabled"]) == "true" && str(settings["user.healthcheck.test"]) != ""}
 	}
-	current := str(config[composeIntentKey]) == str(build["intentHash"])
+	current := str(config[composeIntentKey]) == str(build["intentHash"]) && str(config[composeRuntimeKey]) == composeRuntimeVersion
 	var recreates []string
 	for _, s := range services {
 		count := 0
@@ -292,7 +352,7 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 				continue
 			}
 			count++
-			if str(om["status"]) != "Running" {
+			if str(om["status"]) != "Running" || str(om["health"]) == "unhealthy" || isTrue(om["healthCheck"]) && str(om["health"]) != "healthy" {
 				current = false
 			}
 		}
@@ -300,11 +360,8 @@ func (a *composeAdapter) observe(sourceProject, incusProject, revision string) (
 			current = false
 		}
 	}
-	if !current && str(config[composeIntentKey]) != str(build["intentHash"]) {
-		// A new revision rebuilds its own services; incus-compose recreates them.
-		for s := range built {
-			recreates = append(recreates, s)
-		}
+	if !current && (str(config[composeIntentKey]) != str(build["intentHash"]) || str(config[composeRuntimeKey]) != composeRuntimeVersion) {
+		recreates = append(recreates, services...)
 	}
 	recreates = uniqueSorted(recreates)
 	before := map[string]bool{}
@@ -420,12 +477,56 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 			return err
 		}
 	}
-	secretDir, err := materializeProjectSecrets(sourceProject, values)
+	inventory, err := liveInventory()
 	if err != nil {
-		return Failed("Could not prepare the app's secrets mount", err)
+		return Public("Could not verify the app secret bindings")
+	}
+	declaration := obj(obj(inventory["projects"])[sourceProject])
+	if declaration == nil {
+		return Public("The app declaration is unavailable")
+	}
+	if err := validateComposeSecretBindings(declaration, names); err != nil {
+		return err
+	}
+	secretDirs := M{}
+	for _, name := range names {
+		dir, err := materializeInstanceSecrets(sourceProject, declaration, values, M{"name": name, "service": name})
+		if err != nil {
+			return Failed("Could not prepare scoped app secrets", err)
+		}
+		secretDirs[name] = dir
 	}
 	override := filepath.Join(scratch, "nixus-services.yaml")
-	if err := atomic(override, appComposeOverride(names, values, lanFor, lanNet, secretDir), 0o600, ""); err != nil {
+	var overrideDoc M
+	if err := json.Unmarshal(appComposeOverride(names, values, lanFor, lanNet, secretDirs, declaration), &overrideDoc); err != nil {
+		return err
+	}
+	controlNetwork := incusQueryObj(a.incus, "/1.0/networks/icompose0?project=default")
+	networks := obj(obj(build["intent"])["networks"])
+	if networks == nil {
+		model, err := composeJSON(plan, source, scratch, "")
+		if err != nil {
+			return err
+		}
+		networks = obj(model["networks"])
+	}
+	policy := composeNetworkPolicy(networks, readObj(effectiveSettingsPath), str(jget(controlNetwork, "config", "ipv4.address")))
+	mergedNetworks := obj(overrideDoc["networks"])
+	if mergedNetworks == nil {
+		mergedNetworks = M{}
+	}
+	for name, raw := range policy {
+		entry := cloneM(obj(mergedNetworks[name]))
+		if entry == nil {
+			entry = M{}
+		}
+		for k, v := range obj(raw) {
+			entry[k] = v
+		}
+		mergedNetworks[name] = entry
+	}
+	overrideDoc["networks"] = mergedNetworks
+	if err := atomic(override, jsonFile(overrideDoc), 0o600, ""); err != nil {
 		return err
 	}
 	flags = append(flags, "-f", override)
@@ -437,6 +538,44 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err != nil {
 		return err
 	}
+	controllerURL, err := composeControllerURL(a.incus)
+	if err != nil {
+		return err
+	}
+	// Upstream 1.4.1 exposes DNS's endpoint on `dns up --incus`, not
+	// `up`. Bootstrap the shared native resolver there; app up reuses it.
+	if err := composeDNSUp(binary, controllerURL, scratch, env); err != nil {
+		return err
+	}
+	args = append(args, "--healthd-incus", controllerURL)
+	if str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion {
+		model, err := composeJSON(plan, source, scratch, "")
+		if err != nil {
+			return err
+		}
+		legacy := legacyComposeServices(appInstances(a.incus, incusProject), obj(model["services"]))
+		if len(legacy) > 0 {
+			file := filepath.Join(scratch, "legacy-compose.json")
+			if err := atomic(file, jsonFile(M{"services": legacy}), 0o600, ""); err != nil {
+				return err
+			}
+			// Native down preserves data volumes, networks and shared controllers.
+			// It also records stop intent before retiring the old forced names.
+			retire := []string{binary, "--ansi", "never", "-p", sourceProject, "-P", scratch, "-f", file, "--image-cache", "", "down", "--no-networks", "--no-dns", "--external-healthd", "--timeout", "30s"}
+			result, err := run(retire, nil, 5*time.Minute, env, scratch)
+			if err != nil || result.Code != 0 {
+				return cmdFailed("Could not migrate legacy Compose names", result, err)
+			}
+			if err := verifyLegacyComposeRetired(a.incus, incusProject, legacy); err != nil {
+				return err
+			}
+		}
+	}
+	if len(appInstances(a.incus, incusProject)) > 0 && (str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion || str(projectConfig[composeIntentKey]) != str(build["intentHash"]) || storedLAN != wantLAN) {
+		args = append(args, "--recreate")
+		args = append(args, names...)
+	}
+
 	if msg := portConflicts(a.incus, incusProject, composeHostPorts(list(build["services"]))); msg != "" {
 		return Public(msg)
 	}
@@ -455,8 +594,61 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 		}
 		return Public("incus-compose could not bring the project up: " + lastLine(tail))
 	}
-	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN)
+	os.RemoveAll(filepath.Join(secretMountRoot, sourceProject)) // obsolete project-wide mount after reviewed migration
+	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN, composeRuntimeKey+"="+composeRuntimeVersion)
 	return err
+}
+
+// Older Nixus versions forced container_name to the service name. Retire
+// only that known legacy shape when the reviewed source no longer asks for it;
+// upstream naming/scaling owns all replacement instances.
+func legacyComposeServices(instances []M, services M) M {
+	out := M{}
+	for _, instance := range instances {
+		name, service := str(instance["name"]), str(instance["service"])
+		if service == "" || name != strings.ReplaceAll(service, "_", "-") || str(jget(services, service, "container_name")) == name {
+			continue
+		}
+		out[service] = M{"image": "scratch", "container_name": name, "restart": "unless-stopped"}
+	}
+	return out
+}
+
+// Upstream down may log deletion errors while returning success. Observe the
+// native result before creating replacements; a failed retirement stays partial.
+func verifyLegacyComposeRetired(incus incusFunc, project string, legacy M) error {
+	raw, err := incus(0, "query", "/1.0/instances?recursion=1&project="+project)
+	if err != nil {
+		return Public("Could not verify legacy Compose retirement; retry the reviewed deployment")
+	}
+	decoded, err := parseJSON([]byte(raw))
+	instances, ok := decoded.([]any)
+	if err != nil || !ok {
+		return Public("Invalid native inventory after legacy Compose retirement")
+	}
+	names := map[string]bool{}
+	for _, service := range legacy {
+		names[str(obj(service)["container_name"])] = true
+	}
+	for _, instance := range instances {
+		if name := str(obj(instance)["name"]); names[name] {
+			return Public("Native Compose did not retire legacy instance " + name + "; resolve its Incus error and retry the reviewed deployment")
+		}
+	}
+	return nil
+}
+
+func composeDNSUp(binary, endpoint, scratch string, env []string) error {
+	args := []string{binary, "--ansi", "never"}
+	if os.Getenv("NIXUS_OCI_VM_TEST") == "1" || os.Getenv("NIXUS_COMPOSE_OFFLINE") == "1" {
+		args = append(args, "--image-cache", "")
+	}
+	args = append(args, "dns", "up", "--incus", endpoint, "--timeout", "2m")
+	result, err := run(args, nil, 5*time.Minute, env, scratch)
+	if err != nil || result.Code != 0 {
+		return cmdFailed("Could not initialize native Compose DNS", result, err)
+	}
+	return nil
 }
 
 func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error) {
@@ -497,8 +689,6 @@ func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error)
 	return M{"status": "verified", "newEtag": verified["etag"], "health": "Running"}, nil
 }
 
-var _ = path.Base
-
 func composeBinary() string {
 	if b := os.Getenv("NIXUS_OCI_COMPOSE_BIN"); b != "" {
 		return b
@@ -511,15 +701,17 @@ func composeEnv(scratch, storage string) []string {
 	env := []string{
 		"PATH=" + os.Getenv("NIXUS_OCI_PATH") + ":" + os.Getenv("PATH"),
 		"HOME=" + scratch,
+		// The upstream client skips global remotes when scratch HOME has no
+		// user config. Read the native system config directly so registry
+		// mirrors/credentials survive isolated build homes.
+		"INCUS_CONF=/etc/incus",
 		"TMPDIR=" + scratch,
 	}
 	if storage != "" {
 		env = append(env, "BUILDAH_ISOLATION=chroot", "CONTAINERS_STORAGE_CONF="+storage)
 	}
-	for _, k := range []string{"INCUS_COMPOSE_DNS_IMAGE", "INCUS_COMPOSE_HEALTHD_IMAGE", "INCUS_COMPOSE_SLEEP_IMAGE"} {
-		if v := os.Getenv(k); v != "" {
-			env = append(env, k+"="+v)
-		}
+	for k, fallback := range map[string]string{"INCUS_COMPOSE_DNS_IMAGE": defaultDNSImage, "INCUS_COMPOSE_HEALTHD_IMAGE": defaultHealthdImage, "INCUS_COMPOSE_SLEEP_IMAGE": defaultSleepImage} {
+		env = append(env, k+"="+composeToolImage(k, fallback))
 	}
 	return env
 }
@@ -569,9 +761,7 @@ func composeProjectCommand(sourceProject string, subcmd ...string) (bool, error)
 		args = append(args, "--image-cache", "")
 	}
 	args = append(args, subcmd...)
-	if offline && len(subcmd) > 0 && subcmd[0] == "down" {
-		args = append(args, "--no-healthd", "--no-dns")
-	}
+
 	res, err := run(args, nil, 5*time.Minute, composeEnv(scratch, ""), srcDir)
 	if err != nil || res.Code != 0 {
 		return true, cmdFailed("incus-compose "+strings.Join(subcmd, " ")+" failed", res, err)
@@ -585,7 +775,11 @@ func composeProjectCommand(sourceProject string, subcmd ...string) (bool, error)
 func appStartEnv(project string) (M, error) {
 	values := M{}
 	s := NewSecrets("", "", "")
-	if ciphertext, err := s.cipher(filepath.Join(s.projects, project)); err == nil && ciphertext != nil {
+	ciphertext, err := s.cipher(filepath.Join(s.projects, project))
+	if err != nil {
+		return nil, err
+	}
+	if ciphertext != nil {
 		saved, err := s.decode(ciphertext, "")
 		if err != nil {
 			return nil, err
@@ -614,30 +808,25 @@ func appStartEnv(project string) (M, error) {
 //     directory read-only at /run/secrets so secrets persist across restarts
 //   - services set to "own IP on your router" join the external Incus LAN
 //     network via standard Compose networks:
-//   - x-incus sets boot.autostart so containers resume after a host reboot.
+//   - upstream restart policies own autostart and recovery behavior.
 //
 // Networking, DNS (ic-dns), and health/restart supervision (ic-healthd) are
 // left to incus-compose natively. JSON is valid YAML.
-func appComposeOverride(services []string, values M, lanFor map[string]bool, lanNet, secretDir string) []byte {
-	env := map[string]string{}
-	for k, v := range values {
-		env[k] = strings.ReplaceAll(str(v), "$", "$$")
-	}
+func appComposeOverride(services []string, values M, lanFor map[string]bool, lanNet string, secretDirs M, declaration M) []byte {
 	out := M{}
 	useLAN := false
-	envKeyList := strings.Join(keys(values), ",")
 	for _, name := range services {
-		xIncus := M{"boot.autostart": "true"}
-		if envKeyList != "" {
-			// Record Nixus-managed env keys at creation time so post-deploy
-			// secret sync sees matching state and never restarts containers twice.
-			xIncus[envKeysConfig] = envKeyList
+		scoped := envValuesFor(declaration, values, M{"name": name, "service": name})
+		env := map[string]string{}
+		for k, v := range scoped {
+			env[k] = strings.ReplaceAll(str(v), "$", "$$")
 		}
+		xIncus := M{envKeysConfig: strings.Join(keys(scoped), ",")}
 		svc := M{"x-incus": xIncus}
 		if len(env) > 0 {
 			svc["environment"] = env
 		}
-		if secretDir != "" {
+		if secretDir := str(secretDirs[name]); secretDir != "" {
 			svc["x-incus-compose"] = M{
 				"devices": M{
 					"nixus-secrets": M{
@@ -668,8 +857,8 @@ func appComposeOverride(services []string, values M, lanFor map[string]bool, lan
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah using persistent
-// overlay storage. Native ic-dns and ic-healthd are enabled by default and
-// disabled only in air-gapped/offline VM test mode.
+// overlay storage. Native ic-dns and ic-healthd remain enabled in offline
+// tests, using the native OCI remotes and mirrored official images.
 func composeUpCommand(binary string, flags []string, build M, scratch string) ([]string, []string, error) {
 	needsBuild := false
 	for _, raw := range list(build["services"]) {
@@ -713,9 +902,7 @@ func composeUpCommand(binary string, flags []string, build M, scratch string) ([
 	}
 	args = append(args, "up", "--detach")
 	args = append(append(args, buildFlags...), "--pull", "missing")
-	if offline {
-		args = append(args, "--no-healthd", "--no-dns")
-	}
+
 	return args, composeEnv(scratch, storage), nil
 }
 

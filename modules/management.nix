@@ -46,19 +46,31 @@ let
 
   interface = site.management.interface;
   sourceCIDRs = site.management.trustedCIDRs;
+  controllerBridges = config.nixus.managementPolicy.controllerBridges;
+  controllerPorts = lib.optional (config.virtualisation.incus.enable && incusBind != null)
+    (lib.toInt (builtins.elemAt incusBind 1));
   trustedPorts = lib.unique (map (item: item.port) (builtins.filter
     (item: item.exposure == "trusted" && item.family != "ipv6" && item.address != "127.0.0.1") listeners));
 in {
   options.nixus.managementPolicy.enforceFirewall = lib.mkEnableOption "the Nixus host management input firewall";
 
+  options.nixus.managementPolicy.controllerBridges = lib.mkOption {
+    type = lib.types.listOf lib.types.str; default = [ ]; internal = true;
+    description = "Dedicated Incus controller bridges allowed to reach the authenticated local API.";
+  };
+
   config = {
     assertions = conflicts;
     environment.etc."nixus/management-exposure.json".text = builtins.toJSON {
       inherit interface sourceCIDRs listeners;
+      controllerIngress = { interfaces = controllerBridges; tcpPorts = controllerPorts; authentication = "Incus client certificate"; };
       ipv6TrustedIngress = false;
       firewallManaged = config.nixus.managementPolicy.enforceFirewall;
     };
-    networking.firewall.extraInputRules = lib.mkIf
+    networking.firewall.extraInputRules = lib.concatMapStringsSep "\n" (bridge: ''
+      iifname ${builtins.toJSON bridge} udp dport { 53, 67 } accept
+      iifname ${builtins.toJSON bridge} tcp dport { ${lib.concatMapStringsSep ", " toString ([ 53 ] ++ controllerPorts)} } accept
+    '') controllerBridges + lib.optionalString
       (config.nixus.managementPolicy.enforceFirewall && trustedPorts != [ ] && sourceCIDRs != [ ]) ''
         iifname ${builtins.toJSON interface} ip saddr { ${lib.concatStringsSep ", " sourceCIDRs} } tcp dport { ${lib.concatMapStringsSep ", " toString trustedPorts} } accept
       '';

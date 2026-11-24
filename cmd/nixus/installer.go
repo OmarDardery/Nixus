@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -2563,5 +2562,3 @@ func networkIdentityMain(args []string) int {
 	}
 	return 0
 }
-
-var _ = exec.Command

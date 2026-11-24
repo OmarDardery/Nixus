@@ -97,3 +97,58 @@ func TestBackupInventoryRedactsEnvironmentValues(t *testing.T) {
 		t.Fatal("the original record must not be modified")
 	}
 }
+
+// The upstream controller must see the stop intent before a cold export.
+// A failed intent restore stays in the journal and can be retried safely.
+func TestBackupPausesComposeRestartPolicy(t *testing.T) {
+	dir := t.TempDir()
+	oldPending, oldIncus := backupPending, backupIncus
+	backupPending = filepath.Join(dir, "pending.json")
+	defer func() { backupPending, backupIncus = oldPending, oldIncus }()
+	destination := filepath.Join(dir, "out")
+	os.MkdirAll(destination, 0o700)
+	state, marker := "Running", "false"
+	restoreFails := true
+	backupIncus = func(_ time.Duration, args ...string) (string, error) {
+		switch args[0] {
+		case "config":
+			if args[3] == composeStoppedKey+"=false" && restoreFails {
+				return "", Hidden("marker restore failed")
+			}
+			marker = strings.TrimPrefix(args[3], composeStoppedKey+"=")
+		case "stop":
+			if marker != "true" {
+				t.Fatal("stopped before suppressing the restart policy")
+			}
+			state = "Stopped"
+		case "export":
+			if marker != "true" || state != "Stopped" {
+				t.Fatal("export raced the restart controller")
+			}
+			if err := os.WriteFile(args[len(args)-3], []byte("archive"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		case "start":
+			state = "Running"
+		case "query":
+			return `{"status":"` + state + `"}`, nil
+		}
+		return "", nil
+	}
+	guest := M{"project": "p", "name": "web", "status": "Running", "archive": "web.tar.gz", "config": M{composeServiceLabel: "web", composeStoppedKey: "false"}}
+	if _, err := backupGroups([]M{{"guests": []any{guest}}}, destination, "gen", nil); err == nil {
+		t.Fatal("marker restoration failure must fail backup")
+	}
+	raw, _ := os.ReadFile(backupPending)
+	if !strings.Contains(string(raw), "web") || marker != "true" {
+		t.Fatalf("recovery intent lost: %s", raw)
+	}
+	restoreFails = false
+	if err := backupRecover(); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(backupPending)
+	if state != "Running" || marker != "false" || strings.Contains(string(raw), "web") {
+		t.Fatalf("recovery incomplete: %s %s %s", state, marker, raw)
+	}
+}

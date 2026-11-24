@@ -31,7 +31,7 @@ func TestComposeUpCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idx := slices.Index(offArgs, "--image-cache"); idx < 0 || offArgs[idx+1] != "" || !slices.Contains(offArgs, "--no-dns") || !slices.Contains(offArgs, "--no-healthd") {
+	if idx := slices.Index(offArgs, "--image-cache"); idx < 0 || offArgs[idx+1] != "" || slices.Contains(offArgs, "--no-dns") || slices.Contains(offArgs, "--no-healthd") {
 		t.Fatalf("offline deploy flags: %v", offArgs)
 	}
 	t.Setenv("NIXUS_COMPOSE_OFFLINE", "")
@@ -159,7 +159,7 @@ func TestReviewRefusesUnpinnedImage(t *testing.T) {
 // created with them and records user.nixus.env-keys; "$" reaches the container literally.
 func TestAppComposeOverrideSetsEnvSecretsAndAutostart(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(appComposeOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, "", "/run/nixus-secrets/demo"), &doc); err != nil {
+	if err := json.Unmarshal(appComposeOverride([]string{"web", "tunnel"}, M{"TUNNEL_TOKEN": "a$b"}, nil, "", M{"web": "/run/nixus-secrets/demo/web", "tunnel": "/run/nixus-secrets/demo/tunnel"}, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"web", "tunnel"} {
@@ -170,11 +170,11 @@ func TestAppComposeOverrideSetsEnvSecretsAndAutostart(t *testing.T) {
 		if got := obj(svc["environment"])["TUNNEL_TOKEN"]; got != "a$$b" {
 			t.Fatalf("%s: %v", s, got)
 		}
-		if str(jget(svc, "x-incus", envKeysConfig)) != "TUNNEL_TOKEN" || str(jget(svc, "x-incus", "boot.autostart")) != "true" {
+		if str(jget(svc, "x-incus", envKeysConfig)) != "TUNNEL_TOKEN" || jget(svc, "x-incus", "boot.autostart") != nil {
 			t.Fatalf("x-incus metadata: %v", svc)
 		}
 		sec := obj(jget(svc, "x-incus-compose", "devices", "nixus-secrets"))
-		if str(sec["type"]) != "disk" || str(sec["source"]) != "/run/nixus-secrets/demo" || str(sec["path"]) != "/run/secrets" || str(sec["readonly"]) != "true" {
+		if str(sec["type"]) != "disk" || str(sec["source"]) != "/run/nixus-secrets/demo/"+s || str(sec["path"]) != "/run/secrets" || str(sec["readonly"]) != "true" {
 			t.Fatalf("secrets mount: %v", sec)
 		}
 	}
@@ -219,6 +219,23 @@ func TestAppStartEnvUsesPendingValues(t *testing.T) {
 	if got["TUNNEL_TOKEN"] != "t" || got["SECRET_KEY"] != "k" {
 		t.Fatalf("pending variables must be available before the first start: %v", got)
 	}
+	oldIncus, oldMount, oldInject, oldRoot := updateIncus, ensureSecretsDiskMount, injectEnv, secretMountRoot
+	defer func() {
+		updateIncus, ensureSecretsDiskMount, injectEnv, secretMountRoot = oldIncus, oldMount, oldInject, oldRoot
+	}()
+	secretMountRoot = filepath.Join(t.TempDir(), "mounts")
+	updateIncus = func(time.Duration, ...string) (string, error) {
+		return `[{"name":"web-1","config":{"user.label.incus-compose.service":"web"},"status":"Running"}]`, nil
+	}
+	ensureSecretsDiskMount = func(string, string, string) error { return nil }
+	var delivered M
+	injectEnv = func(_, _ string, values M) (bool, error) { delivered = values; return false, nil }
+	if _, err := deliverProjectSecrets("web", M{"enable": true, "backend": composeBackend, "incusProject": "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if !equalJSON(got, delivered) {
+		t.Fatalf("post-deploy delivery cleared pending startup variables: %v", delivered)
+	}
 	os.WriteFile(appEnvPath("web"), []byte("not age data"), 0o600)
 	if _, err := appStartEnv("web"); err == nil {
 		t.Fatal("an unreadable pending file must be an error, not an app started without its variables")
@@ -248,7 +265,7 @@ func TestStartDetailNamesVariablesAndLogTail(t *testing.T) {
 // "Own IP on your router": only the chosen services attach to the external LAN network.
 func TestAppComposeOverrideLANNetwork(t *testing.T) {
 	var doc M
-	if err := json.Unmarshal(appComposeOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, "nixus-lan", ""), &doc); err != nil {
+	if err := json.Unmarshal(appComposeOverride([]string{"aiostreams", "cloudflared"}, nil, map[string]bool{"aiostreams": true}, "nixus-lan", nil, nil), &doc); err != nil {
 		t.Fatal(err)
 	}
 	if jget(obj(obj(doc["services"])["aiostreams"]), "networks", "nixus_lan") == nil {
@@ -306,5 +323,46 @@ func TestWaitRunningStopsImmediatelyWhenReady(t *testing.T) {
 	r, _ = waitRunning(func() (M, error) { n++; return M{"action": "compose-up"}, nil }, func(r M) bool { return r["action"] == "noop" })
 	if r["action"] == "noop" || n != 6 {
 		t.Fatalf("a service that stays stopped fails: %v after %d", r, n)
+	}
+}
+
+func TestLegacyNamingMigrationKeepsExplicitNamesAndNativeReplicas(t *testing.T) {
+	instances := []M{{"name": "web", "service": "web"}, {"name": "db-1", "service": "db"}, {"name": "explicit", "service": "explicit"}, {"name": "old-api", "service": "old_api"}}
+	legacy := legacyComposeServices(instances, M{"explicit": M{"container_name": "explicit"}})
+	if len(legacy) != 2 || legacy["web"] == nil || legacy["old_api"] == nil {
+		t.Fatalf("wrong legacy retirement: %v", legacy)
+	}
+	if legacy["db"] != nil || legacy["explicit"] != nil {
+		t.Fatal("native names treated as legacy")
+	}
+}
+
+func TestGlobalComposeControllersAreInfrastructure(t *testing.T) {
+	for _, name := range []string{"ic-dns", "ic-healthd"} {
+		if !isComposeSidecar("incus-compose", name) {
+			t.Fatal("global controller exported as a guest")
+		}
+		if isComposeSidecar("my-app", name) {
+			t.Fatal("app instance mistaken for global infrastructure")
+		}
+	}
+}
+
+func TestLegacyRetirementVerifiesNativeResult(t *testing.T) {
+	legacy := M{"app": M{"container_name": "app"}}
+	for _, test := range []struct {
+		inventory string
+		wantError bool
+	}{
+		{`[]`, false}, {`[{"name":"other"}]`, false}, {`[{"name":"app","status":"Stopped"}]`, true}, {`{}`, true}, {`broken`, true},
+	} {
+		fake := func(time.Duration, ...string) (string, error) { return test.inventory, nil }
+		if err := verifyLegacyComposeRetired(fake, "testapp", legacy); (err != nil) != test.wantError {
+			t.Fatalf("inventory %s: %v", test.inventory, err)
+		}
+	}
+	fake := func(time.Duration, ...string) (string, error) { return "", Public("unavailable") }
+	if err := verifyLegacyComposeRetired(fake, "testapp", legacy); err == nil {
+		t.Fatal("unavailable inventory treated as empty")
 	}
 }

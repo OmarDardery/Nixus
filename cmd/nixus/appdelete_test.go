@@ -39,26 +39,27 @@ func TestAppIncusProjectsOnlyOwned(t *testing.T) {
 	old := updateIncus
 	defer func() { updateIncus = old }()
 	updateIncus = func(_ time.Duration, args ...string) (string, error) {
-		if len(args) == 2 && args[0] == "query" {
-			if body, ok := projects[strings.TrimPrefix(args[1], "/1.0/projects/")]; ok {
-				return body, nil
-			}
+		var items []any
+		for name, raw := range projects {
+			item, _ := parseObject([]byte(raw))
+			item["name"] = name
+			items = append(items, item)
 		}
-		return "", Public("not found")
+		return canonical(items), nil
 	}
-	if got := appIncusProjects("web", nil); len(got) != 1 || got[0] != "web" {
+	if got, err := appIncusProjects("web", nil); err != nil || len(got) != 1 || got[0] != "web" {
 		t.Fatalf("compose app: %v", got)
 	}
-	if got := appIncusProjects("printer", M{"incusProject": "printer"}); len(got) != 1 || got[0] != "printer" {
+	if got, err := appIncusProjects("printer", M{"incusProject": "printer"}); err != nil || len(got) != 1 || got[0] != "printer" {
 		t.Fatalf("native app: %v", got)
 	}
-	if got := appIncusProjects("mine", M{"incusProject": "other"}); len(got) != 0 {
+	if got, err := appIncusProjects("mine", M{"incusProject": "other"}); err != nil || len(got) != 0 {
 		t.Fatalf("another app's project: %v", got)
 	}
-	if got := appIncusProjects("manual", nil); len(got) != 0 {
+	if got, err := appIncusProjects("manual", nil); err != nil || len(got) != 0 {
 		t.Fatalf("a project Nixus does not own: %v", got)
 	}
-	if got := appIncusProjects("default", M{"incusProject": "default"}); len(got) != 0 {
+	if got, err := appIncusProjects("default", M{"incusProject": "default"}); err != nil || len(got) != 0 {
 		t.Fatalf("never the default project: %v", got)
 	}
 }
@@ -78,5 +79,24 @@ func TestDeleteIncusProjectUsesTheAPI(t *testing.T) {
 	want := []string{"query -X DELETE /1.0/projects/web?force=true"}
 	if strings.Join(calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("%v", calls)
+	}
+}
+
+func TestAppDeletionRequiresVerifiedIncusInventory(t *testing.T) {
+	old := updateIncus
+	defer func() { updateIncus = old }()
+	for _, response := range []string{"", "null", "{}", `[{}]`} {
+		updateIncus = func(time.Duration, ...string) (string, error) { return response, nil }
+		if _, err := appIncusProjects("web", nil); err == nil || !strings.Contains(publicError(err), "no app files were removed") {
+			t.Fatalf("accepted %q: %v", response, err)
+		}
+	}
+	updateIncus = func(time.Duration, ...string) (string, error) { return "", Public("offline") }
+	if _, err := appIncusProjects("web", nil); err == nil {
+		t.Fatal("unavailable inventory accepted")
+	}
+	updateIncus = func(time.Duration, ...string) (string, error) { return "[]", nil }
+	if got, err := appIncusProjects("web", nil); err != nil || len(got) != 0 {
+		t.Fatalf("verified empty inventory: %v %v", got, err)
 	}
 }

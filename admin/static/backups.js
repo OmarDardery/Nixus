@@ -4,7 +4,7 @@
 
 const backupView = {
   status: null, snapshots: null, restore: null, loading: false, kind: "rclone",
-  error: "", message: "", password: "", restoreError: "",
+  loadError: "", error: "", message: "", password: "", restoreError: "",
 };
 
 const BACKUP_KINDS = [["rclone", "Google Drive / rclone"], ["s3", "S3"], ["b2", "Backblaze B2"], ["local", "Local disk"]];
@@ -22,12 +22,13 @@ async function refreshBackups() {
   try {
     const [status, restore] = await Promise.all([api("project-backups"), api("backups/restore-status")]);
     Object.assign(backupView, { status, restore });
+    backupView.loadError = "";
     try { backupView.snapshots = await api("backups/snapshots"); } catch (error) { backupView.snapshots = { error: error.message }; }
   } catch (error) {
-    backupView.error = error.message || "Backup status unavailable.";
+    backupView.loadError = error.message || "Backup status unavailable.";
   } finally {
     backupView.loading = false;
-    if (state.page === "operations") shell();
+    if (state.page === "operations" && !(typeof typing === "function" && typing())) shell();
   }
   const running = ["starting", "restoring"].includes(backupView.restore?.status);
   if (running) setTimeout(() => { if (state.page === "operations") void refreshBackups(); }, 4000);
@@ -77,8 +78,8 @@ function backupDestinationCard() {
 
 function snapshotsCard() {
   const s = backupView.snapshots;
+  if (s?.error) return card("Snapshots", '<p class="error">' + esc(s.error) + "</p>");
   if (!s?.configured) return "";
-  if (s.error) return card("Snapshots", '<p class="error">' + esc(s.error) + "</p>");
   const rows = (s.snapshots || []).slice().reverse().map(x =>
     "<tr><td><code>" + esc(x.id) + "</code></td><td>" + esc(new Date(x.time).toLocaleString()) + "</td><td>" +
       (x.complete === false ? '<span class="badge bad" title="Data could not be exported; not used by default restore">Partial</span>' : badge("complete")) + "</td></tr>").join("");
@@ -103,8 +104,9 @@ function restoreCard() {
 }
 
 function backupsCards() {
-  if (!backupView.status && !backupView.loading) void refreshBackups();
-  return backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard() +
+  if (!backupView.status && !backupView.loading && !backupView.loadError) void refreshBackups();
+  return '<div class="toolbar"><button type="button" id="backups-refresh"' + (backupView.loading ? ' disabled' : '') + '>Refresh backup status</button></div>' +
+    (backupView.loadError ? '<p class="error" role="alert">' + esc(backupView.loadError) + '</p>' : '') + backupStatusCard() + restoreCard() + backupDestinationCard() + snapshotsCard() +
     (typeof repositoryCards === "function" ? repositoryCards() : "") +
     (typeof nativeSecretsPanel === "function" ? nativeSecretsPanel() : "");
 }
@@ -151,6 +153,7 @@ async function startRestore() {
 function bindBackups() {
   if (state.page !== "operations") return;
   if (typeof bindNativeSecrets === "function") bindNativeSecrets();
+  document.querySelector("#backups-refresh")?.addEventListener("click", () => void refreshBackups());
   for (const prefix of ["dest", "restore"]) {
     document.querySelector("#" + prefix + "-kind")?.addEventListener("change", event => { backupView.kind = event.target.value; shell(); });
   }

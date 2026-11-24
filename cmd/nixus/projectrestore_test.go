@@ -70,14 +70,14 @@ func TestRestoreIncusRefusesCollisionsBeforeChanging(t *testing.T) {
 		mutations = append(mutations, strings.Join(args, " "))
 		return "", nil
 	}
-	if _, err := restoreIncus(fake, generation); err == nil || !strings.Contains(publicError(err), "already exists") {
+	if _, err := restoreIncusPreflight(fake, generation, nil); err == nil || !strings.Contains(publicError(err), "already exists") {
 		t.Fatalf("restored over an existing instance: %v", err)
 	}
 	if len(mutations) != 0 {
 		t.Fatalf("changed Incus before refusing: %v", mutations)
 	}
 	os.WriteFile(filepath.Join(generation, name), []byte("tampered"), 0o600)
-	if _, err := restoreIncus(fake, generation); err == nil || !strings.Contains(publicError(err), "damaged") {
+	if _, err := restoreIncusPreflight(fake, generation, nil); err == nil || !strings.Contains(publicError(err), "damaged") {
 		t.Fatalf("accepted a damaged archive: %v", err)
 	}
 }
@@ -189,5 +189,39 @@ func TestRestoreResumesAfterAFailedImport(t *testing.T) {
 	}
 	if !isFile(filepath.Join(state, "project-restore-journal.json")) {
 		t.Fatal("the journal must persist between attempts")
+	}
+}
+
+func TestRestoreNativeACLsBeforeReferencedNetworks(t *testing.T) {
+	acl := M{"name": "app-acl", "config": M{}, "ingress": []any{}, "egress": []any{M{"action": "allow", "state": "enabled", "destination": "1.1.1.1"}}}
+	inventory := M{"network_acls": M{"default": []any{acl}}}
+	var stored M
+	writes := 0
+	fake := func(_ time.Duration, args ...string) (string, error) {
+		if len(args) == 2 {
+			if stored != nil {
+				return canonical(stored), nil
+			}
+			return "", Public("not found")
+		}
+		if args[0] != "query" || args[1] != "-X" || args[2] != "POST" || args[3] != "/1.0/network-acls?project=default" {
+			t.Fatalf("unexpected native mutation: %v", args)
+		}
+		stored = must(parseObject([]byte(args[5])))
+		writes++
+		return "", nil
+	}
+	if err := restoreNetworkACLs(fake, inventory); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreNetworkACLs(fake, inventory); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 1 {
+		t.Fatalf("restore not idempotent: %d", writes)
+	}
+	stored["egress"] = []any{}
+	if err := restoreNetworkACLs(fake, inventory); err == nil {
+		t.Fatal("restore overwrote existing native ACL")
 	}
 }

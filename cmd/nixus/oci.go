@@ -553,7 +553,7 @@ func validateComposeModel(model M, project, revision, composePath string, files 
 	}
 	return M{"format": 1, "project": project, "revision": revision, "services": preview, "separateOverride": override,
 		"sourceHash": revision, "intentHash": identity, "requiresBuilder": requiresBuilder, "wouldCreateOrRecreate": wouldCreate,
-		"note": "Intent only. Apply requires separate approval and exact Incus ownership checks."}, nil
+		"networks": model["networks"], "note": "Intent only. Apply requires separate approval and exact Incus ownership checks."}, nil
 }
 
 const maxManifestJSON = 1024 * 1024

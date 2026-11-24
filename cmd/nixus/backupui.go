@@ -88,7 +88,7 @@ func startRestore(actor string, body M) (M, error) {
 	}
 	writeJSONMode(restoreReportPath(), M{"format": 1, "status": "starting", "startedAt": now(), "repository": repository}, 0o640, "")
 	cmd := append([]string{"systemd-run", "--quiet", "--collect", "--no-block", "--unit=nixus-project-restore",
-		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"),
+		"--property=RuntimeMaxSec=43200", "--setenv=NIXUS_STATE=" + STATE, "--setenv=PATH=" + os.Getenv("PATH"), "--setenv=INCUS_COMPOSE_HEALTHD_IMAGE=" + os.Getenv("INCUS_COMPOSE_HEALTHD_IMAGE"), "--setenv=INCUS_COMPOSE_DNS_IMAGE=" + os.Getenv("INCUS_COMPOSE_DNS_IMAGE"), "--setenv=INCUS_COMPOSE_SLEEP_IMAGE=" + os.Getenv("INCUS_COMPOSE_SLEEP_IMAGE"),
 		adminLauncher(), "admin", "project-backup", "restore"}, args...)
 	if _, err := check(cmd, nil, 20*time.Second); err != nil {
 		writeJSONMode(restoreReportPath(), M{"format": 1, "status": "failed", "error": "Could not start the restore"}, 0o640, "")

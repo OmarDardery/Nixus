@@ -250,10 +250,6 @@ func saveRecovery(directory string) error {
 	recovery := filepath.Join(directory, "recovery")
 	os.MkdirAll(recovery, 0o700)
 	record, _ := readJobRecord(filepath.Join(directory, "job.json"), M{})
-	candidate := obj(record["effectiveSettings"])
-	if candidate == nil {
-		candidate = obj(record["settings"])
-	}
 	platform := str(record["platformRevision"]) != "" || isTrue(record["sourcePlatformUpdated"])
 	if platform {
 		if err := snapshot(filepath.Join(recovery, "platform"), ROOT); err != nil {

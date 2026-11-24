@@ -17,34 +17,18 @@ let
   mgmtIsWifi = site.radios.wifi.enable && site.management.interface == site.radios.wifi.interface;
   inventory = pkgs.writeText "inventory.json" (builtins.toJSON site);
   nixus = import ../pkgs/nixus.nix { inherit pkgs; };
-  guestEgressACL = {
-    name = "nixus-guest-egress";
-    description = "Isolate private guests from RFC1918/CGNAT/link-local except explicit allowances";
-    ingress = [
-      { action = "allow"; source = site.guests.cidr; state = "enabled"; }
-    ] ++ lib.optional (site.connectivity.trustedLANAccess && site.management.trustedCIDRs != [ ]) {
-      action = "allow";
-      source = lib.concatStringsSep "," site.management.trustedCIDRs;
-      state = "enabled";
-    } ++ [
-      { action = "drop"; state = "enabled"; }
-    ];
-    egress = [
-      { action = "allow"; destination = site.guests.cidr; state = "enabled"; }
-    ] ++ map (rule: {
-      action = "allow";
-      destination = rule.cidr;
-      protocol = rule.protocol;
-      destination_port = lib.concatMapStringsSep "," toString rule.ports;
-      state = "enabled";
-    }) site.connectivity.privateAccess ++ [
-      { action = "drop"; destination = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,169.254.0.0/16"; state = "enabled"; }
-      { action = "allow"; state = "enabled"; }
-    ];
+  guestEgressACL = import ../lib/network-policy.nix { inherit lib site; };
+  # icompose0 is only bootstrapped here; upstream owns its DHCP/resolver
+  # settings. Recording its full runtime config would mistake native changes
+  # made by Compose for source-owned drift on the next host rebuild.
+  ownedInfrastructure = config.virtualisation.incus.preseed // {
+    networks = lib.filter (network: network.name != "icompose0") config.virtualisation.incus.preseed.networks;
+    network_acls = [ guestEgressACL ];
   };
+
 in {
-  imports = [ ./incus-apparmor.nix ];
-  environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON config.virtualisation.incus.preseed;
+  imports = [ ./incus-apparmor.nix ./compose-runtime.nix ];
+  environment.etc."nixus/owned-infrastructure.json".text = builtins.toJSON ownedInfrastructure;
   virtualisation.incus = {
     enable = true;
     ui.enable = true;
@@ -52,7 +36,6 @@ in {
       config."core.https_address" = "0.0.0.0:8443";
       storage_pools = [ { name = site.storage.pool; driver = site.storage.driver;
         config.source = site.storage.source; } ];
-      network_acls = [ guestEgressACL ];
       networks = [ {
         name = site.guests.bridge; type = "bridge";
         config = {
@@ -62,6 +45,8 @@ in {
           "ipv6.address" = "none"; "ipv6.firewall" = "false";
           "dns.domain" = "guests.internal";
           "security.acls" = guestEgressACL.name;
+          "security.acls.default.ingress.action" = "reject";
+          "security.acls.default.egress.action" = "reject";
         };
       } ] ++ lib.optional (site.management.interface != "" && !mgmtIsBridge && !mgmtIsWifi) {
         name = "nixus-lan";
@@ -89,10 +74,11 @@ in {
   };
   systemd.services.incus-preseed.preStart = lib.mkBefore ''
     ${nixus}/bin/nixus-go preflight ${inventory}
-    ${nixus}/bin/nixus-go infrastructure check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go infrastructure check ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
+    ${nixus}/bin/nixus-go infrastructure apply-acls ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
   '';
   systemd.services.incus-preseed.postStart = ''
-    ${nixus}/bin/nixus-go infrastructure record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON config.virtualisation.incus.preseed)}
+    ${nixus}/bin/nixus-go infrastructure record ${pkgs.writeText "nixus-owned-infrastructure.json" (builtins.toJSON ownedInfrastructure)}
   '';
   systemd.services.incus-preseed.path = [ pkgs.incus-lts.client ];
 }
