@@ -55,3 +55,11 @@ attaches it to the bridge, checking ownership/drift and conditional ETags.
 Compose creates app networks and their ACLs itself. Host forwarding filtering
 is disabled; default-reject native ACLs with explicit allows implement private
 network isolation without competing host firewall or address allocation code.
+
+The control bridge is bootstrapped with native Incus preseed but excluded from
+Nixus’s source-owned drift inventory: Compose adjusts its DHCP and resolver
+settings. These native changes must not block subsequent host rebuilds. Native
+ACL definitions are included in encrypted exports and restored before networks
+that reference them; conflicting existing policy is refused. Cold restore
+imports data and materializes secrets, then asks for a reviewed app redeploy
+to rebuild images and reestablish the shared runtime controllers on the new host.

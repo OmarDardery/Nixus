@@ -18,7 +18,13 @@ let
   inventory = pkgs.writeText "inventory.json" (builtins.toJSON site);
   nixus = import ../pkgs/nixus.nix { inherit pkgs; };
   guestEgressACL = import ../lib/network-policy.nix { inherit lib site; };
-  ownedInfrastructure = config.virtualisation.incus.preseed // { network_acls = [ guestEgressACL ]; };
+  # icompose0 is only bootstrapped here; upstream owns its DHCP/resolver
+  # settings. Recording its full runtime config would mistake native changes
+  # made by Compose for source-owned drift on the next host rebuild.
+  ownedInfrastructure = config.virtualisation.incus.preseed // {
+    networks = lib.filter (network: network.name != "icompose0") config.virtualisation.incus.preseed.networks;
+    network_acls = [ guestEgressACL ];
+  };
 
 in {
   imports = [ ./incus-apparmor.nix ./compose-runtime.nix ];

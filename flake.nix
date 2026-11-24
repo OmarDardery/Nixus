@@ -228,6 +228,8 @@
           && (builtins.head native.virtualisation.incus.preseed.networks).config."ipv4.nat" == "true"
           && (builtins.head native.virtualisation.incus.preseed.networks).config."security.acls" == "nixus-guest-egress"
           && (builtins.head (builtins.fromJSON native.environment.etc."nixus/owned-infrastructure.json".text).network_acls).name == "nixus-guest-egress";
+        nativeControllerOwnsRuntime = !(nixpkgs.lib.any (network: network.name == "icompose0")
+          (builtins.fromJSON native.environment.etc."nixus/owned-infrastructure.json".text).networks);
         wiredHostPreseedsMacvlan = nixpkgs.lib.any (n: n.name == "nixus-lan" && n.type == "macvlan" && n.config.parent == "eth0")
           self.nixosConfigurations.validation-host.config.virtualisation.incus.preseed.networks;
         wifiManagementActivation = nixpkgs.lib.hasInfix "connection up nixus-wifi" wifi.systemd.services.nixus-connectivity.script;
