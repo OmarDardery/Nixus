@@ -786,8 +786,8 @@ func appComposeOverride(services []string, values M, lanFor map[string]bool, lan
 
 // composeUpCommand builds the incus-compose invocation. Prebuilt images are
 // pulled; services with a Dockerfile are built with buildah using persistent
-// overlay storage. Native ic-dns and ic-healthd are enabled by default and
-// disabled only in air-gapped/offline VM test mode.
+// overlay storage. Native ic-dns and ic-healthd remain enabled in offline
+// tests, using the native OCI remotes and mirrored official images.
 func composeUpCommand(binary string, flags []string, build M, scratch string) ([]string, []string, error) {
 	needsBuild := false
 	for _, raw := range list(build["services"]) {

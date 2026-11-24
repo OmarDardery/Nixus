@@ -60,6 +60,16 @@ let
         location = "localhost:5000"
         insecure = true
       '';
+      # incus-compose uses native Incus OCI remotes for non-public registries.
+      # Keep the test mirror in the system config so scratch HOME deployments
+      # and direct CLI lifecycle commands see the same native registry owner.
+      environment.etc."incus/config.yml".text = ''
+        remotes:
+          "localhost:5000":
+            addr: http://localhost:5000
+            protocol: oci
+            public: true
+      '';
       virtualisation.incus = {
         enable = true;
         preseed = {

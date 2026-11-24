@@ -63,3 +63,9 @@ ACL definitions are included in encrypted exports and restored before networks
 that reference them; conflicting existing policy is refused. Cold restore
 imports data and materializes secrets, then asks for a reviewed app redeploy
 to rebuild images and reestablish the shared runtime controllers on the new host.
+
+For a private or local helper registry, also configure it as a native Incus OCI
+remote in `/etc/incus/config.yml` (including its protocol and credentials as
+required). The containers registry file configures Buildah/Skopeo; it does not
+register a remote with incus-compose. Production TLS policy stays native to
+those tools; the VM fixture explicitly uses HTTP only for its loopback mirror.
