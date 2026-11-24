@@ -125,6 +125,22 @@ in pkgs.testers.runNixOSTest {
                                   "--data @- http://localhost" + path + " <<'EOF'\n" + json.dumps(body) + "\nEOF")
         return json.loads(out)
 
+    def reach_or_diagnose(web_ip):
+        try:
+            machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        except Exception:
+            for cmd in ["incus list --project dnsapp --format=csv -c nsN4t",
+                        "incus config show web-1 --project dnsapp --expanded | grep -A4 -E 'eth|nic' || true",
+                        "incus exec web-1 --project dnsapp -- ip -4 addr || true", "incus exec client-1 --project dnsapp -- ip -4 addr || true",
+                        "incus exec client-1 --project dnsapp -- ip route || true",
+                        "incus exec web-1 --project dnsapp -- netstat -ltn || true", "incus exec web-1 --project dnsapp -- ps || true",
+                        "incus console web-1 --project dnsapp --show-log | tail -20 || true",
+                        "incus exec client-1 --project dnsapp -- wget -T 5 -O- http://" + web_ip + ":8080/ 2>&1 || true",
+                        "incus network list --format=csv | grep -E 'ic-|appnet' || true",
+                        "sysctl net.bridge.bridge-nf-call-iptables 2>&1 || true", "nft list ruleset | grep -n -i -E 'drop|reject' | head -40 || true"]:
+                machine.execute("echo '### " + cmd.replace("'", "") + "' >&2; " + cmd + " >&2")
+            raise
+
     machine.start()
     machine.wait_for_unit("nixus-admin-backend.service")
     machine.wait_for_unit("docker-registry.service")
@@ -465,7 +481,7 @@ in pkgs.testers.runNixOSTest {
         assert "web" in net_dns, net_dns
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        reach_or_diagnose(web_ip)
 
     with subtest("a service gets its own LAN address via preseeded nixus-lan when the app asks for it"):
         broker("/apps/deploy", {"project": "dnsapp", "kind": "network", "lan": ["web"]})
@@ -486,7 +502,7 @@ in pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("incus list web-1 --project dnsapp --format=json | jq -e '.[0].state.network[\"" + lan_nic + "\"].addresses | any(.[]; .family == \"inet\" and .scope == \"global\")'", timeout=120)
         web_ip = inst_ipv4("web-1", "eth0")
         assert web_ip, "web-1 has no eth0 IPv4 after LAN attach"
-        machine.wait_until_succeeds("incus exec client-1 --project dnsapp -- wget -qO- http://" + web_ip + ":8080/ | grep reached-by-name", timeout=120)
+        reach_or_diagnose(web_ip)
         lan = [i for i in broker("/project-overview")["projects"] if i["name"] == "dnsapp"][0]
         assert lan["lan"] == ["web"], lan
         assert any(i.get("lanAddress") for i in lan["instances"] if i["name"] == "web-1"), lan["instances"]
