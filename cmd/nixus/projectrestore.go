@@ -10,6 +10,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -280,6 +281,9 @@ func restoreIncusApply(incus incusFunc, generation string, inventory M, j *resto
 		}
 		created = append(created, name)
 	}
+	if err := restoreNetworkACLs(incus, inventory); err != nil {
+		return nil, err
+	}
 	networks, err := restoreNetworks(incus, inventory)
 	if err != nil {
 		return nil, err
@@ -332,6 +336,37 @@ func restoreIncusApply(incus incusFunc, generation string, inventory M, j *resto
 	}
 	return M{"generation": filepath.Base(generation), "projectsCreated": created, "networks": networks, "volumes": volumes,
 		"instances": instances, "started": started}, nil
+}
+
+// Restore native ACL definitions before bridges that reference them. Existing
+// matching policy is reusable; restore never overwrites a host's native edits.
+func restoreNetworkACLs(incus incusFunc, inventory M) error {
+	for _, project := range keys(obj(inventory["network_acls"])) {
+		if !fullmatch(incusIdent, project) {
+			return Public("Invalid ACL project in backup")
+		}
+		for _, raw := range list(obj(inventory["network_acls"])[project]) {
+			acl := obj(raw)
+			name := str(acl["name"])
+			if !fullmatch(incusIdent, name) {
+				return Public("Invalid network ACL in backup")
+			}
+			endpoint := "/1.0/network-acls/" + url.PathEscape(name) + "?project=" + url.QueryEscape(project)
+			if existing := incusQueryObj(incus, endpoint); existing != nil {
+				identity := "network_acls:default/" + name
+				if len(infraConflicts(M{"network_acls": []any{acl}}, M{}, map[string]M{identity: existing})) > 0 {
+					return Public("Network ACL " + project + "/" + name + " already exists with different policy")
+				}
+				continue
+			}
+			body := infraStable(acl)
+			body["name"] = name
+			if _, err := incus(0, "query", "-X", "POST", "/1.0/network-acls?project="+url.QueryEscape(project), "-d", canonical(body)); err != nil {
+				return Failed("Could not recreate network ACL "+name, err)
+			}
+		}
+	}
+	return nil
 }
 
 // restoreNetworks recreates managed bridge networks the exported instances use
@@ -475,7 +510,7 @@ func projectRestore(o restoreOptions) (M, error) {
 	// Materialize /run/nixus-secrets/<project> BEFORE starting restored Incus
 	// containers so their read-only /run/secrets disk mounts are ready at start.
 	if delivered, err := deliverAllSecrets(); err != nil {
-		report["secretDelivery"] = M{"error": publicError(err)}
+		return failWith("secretDelivery", err)
 	} else {
 		report["secretDelivery"] = delivered["projects"]
 	}

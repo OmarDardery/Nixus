@@ -541,7 +541,12 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	if err != nil {
 		return err
 	}
-	args = append(args, "--healthd-incus", controllerURL, "--dns-incus", controllerURL)
+	// Upstream 1.4.1 exposes DNS's endpoint on `dns up --incus`, not
+	// `up`. Bootstrap the shared native resolver there; app up reuses it.
+	if err := composeDNSUp(binary, controllerURL, scratch, env); err != nil {
+		return err
+	}
+	args = append(args, "--healthd-incus", controllerURL)
 	if len(appInstances(a.incus, incusProject)) > 0 && (str(projectConfig[composeRuntimeKey]) != composeRuntimeVersion || str(projectConfig[composeIntentKey]) != str(build["intentHash"]) || storedLAN != wantLAN) {
 		args = append(args, "--recreate")
 		args = append(args, names...)
@@ -568,6 +573,19 @@ func (a *composeAdapter) composeUp(sourceProject, incusProject, revision string)
 	os.RemoveAll(filepath.Join(secretMountRoot, sourceProject)) // obsolete project-wide mount after reviewed migration
 	_, err = a.incus(0, "project", "set", incusProject, composeIntentKey+"="+str(build["intentHash"]), composeLANKey+"="+wantLAN, composeRuntimeKey+"="+composeRuntimeVersion)
 	return err
+}
+
+func composeDNSUp(binary, endpoint, scratch string, env []string) error {
+	args := []string{binary, "--ansi", "never"}
+	if os.Getenv("NIXUS_OCI_VM_TEST") == "1" || os.Getenv("NIXUS_COMPOSE_OFFLINE") == "1" {
+		args = append(args, "--image-cache", "")
+	}
+	args = append(args, "dns", "up", "--incus", endpoint, "--timeout", "2m")
+	result, err := run(args, nil, 5*time.Minute, env, scratch)
+	if err != nil || result.Code != 0 {
+		return cmdFailed("Could not initialize native Compose DNS", result, err)
+	}
+	return nil
 }
 
 func (a *composeAdapter) recheckAndApply(approved M, verifyOnly bool) (M, error) {

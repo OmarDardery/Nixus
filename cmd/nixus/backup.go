@@ -594,7 +594,7 @@ func runBackup(only []string, consistency map[string]string) error {
 		namespaces[str(pm["name"])] = ns
 	}
 	var guests, volumes []M
-	profiles, networks := M{}, M{}
+	profiles, networks, networkACLs := M{}, M{}, M{}
 	seen := map[volumeKey]bool{}
 	for _, p := range projects {
 		project := str(obj(p)["name"])
@@ -603,6 +603,15 @@ func runBackup(only []string, consistency map[string]string) error {
 		}
 		if networks[project], err = backupList("network", "list", "--project", project, "--format=json"); err != nil {
 			return err
+		}
+		aclOwner := "default"
+		if str(jget(obj(p), "config", "features.networks")) == "true" {
+			aclOwner = project
+		}
+		if _, exists := networkACLs[aclOwner]; !exists {
+			if networkACLs[aclOwner], err = backupList("network", "acl", "list", "--project", aclOwner, "--format=json"); err != nil {
+				return err
+			}
 		}
 		instances, err := backupList("list", "--project", project, "--format=json")
 		if err != nil {
@@ -723,7 +732,7 @@ func runBackup(only []string, consistency map[string]string) error {
 	manifest := M{"format": 2, "generation": generation, "created": now(), "consistencyGroups": windows,
 		"excluded": skipped, "coverage": coverageName, "coverageDetails": coverage, "capacity": capacity,
 		"guests": redactGuests(selectedGuests), "projects": projects, "pools": pools, "customVolumes": selectedVolumes,
-		"profiles": profiles, "networks": networks, "trustedCertificates": trusted, "serverConfiguration": server}
+		"profiles": profiles, "networks": networks, "network_acls": networkACLs, "trustedCertificates": trusted, "serverConfiguration": server}
 	archives, _ := filepath.Glob(filepath.Join(destination, "*.tar"))
 	gzArchives, _ := filepath.Glob(filepath.Join(destination, "*.tar.gz"))
 	archives = append(archives, gzArchives...)

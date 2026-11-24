@@ -191,3 +191,37 @@ func TestRestoreResumesAfterAFailedImport(t *testing.T) {
 		t.Fatal("the journal must persist between attempts")
 	}
 }
+
+func TestRestoreNativeACLsBeforeReferencedNetworks(t *testing.T) {
+	acl := M{"name": "app-acl", "config": M{}, "ingress": []any{}, "egress": []any{M{"action": "allow", "state": "enabled", "destination": "1.1.1.1"}}}
+	inventory := M{"network_acls": M{"default": []any{acl}}}
+	var stored M
+	writes := 0
+	fake := func(_ time.Duration, args ...string) (string, error) {
+		if len(args) == 2 {
+			if stored != nil {
+				return canonical(stored), nil
+			}
+			return "", Public("not found")
+		}
+		if args[0] != "query" || args[1] != "-X" || args[2] != "POST" || args[3] != "/1.0/network-acls?project=default" {
+			t.Fatalf("unexpected native mutation: %v", args)
+		}
+		stored = must(parseObject([]byte(args[5])))
+		writes++
+		return "", nil
+	}
+	if err := restoreNetworkACLs(fake, inventory); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreNetworkACLs(fake, inventory); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 1 {
+		t.Fatalf("restore not idempotent: %d", writes)
+	}
+	stored["egress"] = []any{}
+	if err := restoreNetworkACLs(fake, inventory); err == nil {
+		t.Fatal("restore overwrote existing native ACL")
+	}
+}
